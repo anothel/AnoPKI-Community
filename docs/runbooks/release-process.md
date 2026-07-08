@@ -47,12 +47,21 @@ Certbot smoke requires Linux/WSL or elevated Windows with certbot installed.
 1. Confirm `git status --short` contains only intended files.
 2. Run `git diff --check`.
 3. Run the root README quickstart smoke checklist.
-4. Review endpoint, config, migration, and runbook changes.
-5. Record exact verification commands and results in `CHANGELOG.md` or release
+4. Confirm the Community release checklist:
+   - docs validation passed,
+   - service contract validation passed,
+   - core CLI contract validation passed,
+   - secret baseline scan passed,
+   - Go service tests and build passed,
+   - CMake configure/build and CTest passed,
+   - compatibility matrix evidence is current,
+   - known gaps are recorded.
+5. Review endpoint, config, migration, and runbook changes.
+6. Record exact verification commands and results in `CHANGELOG.md` or release
    notes.
-6. Record known gaps from [ROADMAP](../ROADMAP.md), especially compatibility
+7. Record known gaps from [ROADMAP](../ROADMAP.md), especially compatibility
    matrix updates and deferred EAB/DNS-01 conditions.
-7. Attach the GitHub Actions run URL for `.github/workflows/ci.yml`. If this
+8. Attach the GitHub Actions run URL for `.github/workflows/ci.yml`. If this
    repository is published on GitHub, add a README badge/link using the
    canonical remote slug:
 
@@ -60,18 +69,18 @@ Certbot smoke requires Linux/WSL or elevated Windows with certbot installed.
    [![CI](https://github.com/OWNER/REPO/actions/workflows/ci.yml/badge.svg)](https://github.com/OWNER/REPO/actions/workflows/ci.yml)
    ```
 
-8. Attach compatibility evidence from
+9. Attach compatibility evidence from
    [ACME client compatibility](../acme-client-compatibility.md) when ACME
    behavior changed.
-9. Attach RFC 8555 evidence from
+10. Attach RFC 8555 evidence from
    [ACME conformance](../acme-rfc8555-conformance.md) when ACME behavior
    changed.
-10. Attach route/OpenAPI, operation ID, path/query parameter, config/docs, API error
+11. Attach route/OpenAPI, operation ID, path/query parameter, config/docs, API error
    mapping, docs validation, and secret baseline scan evidence from CI.
-11. Attach the `.github/workflows/release.yml` run URL and uploaded
+12. Attach the `.github/workflows/release.yml` run URL and uploaded
    `anopki-release` artifact containing smoke-checked archives,
    `SHA256SUMS`, CycloneDX SBOM, cosign signatures, and cosign certificates.
-12. Copy and complete the compatibility evidence template from
+13. Copy and complete the compatibility evidence template from
    [Release evidence](../reference/release-evidence.md).
 
 ## Version Metadata
