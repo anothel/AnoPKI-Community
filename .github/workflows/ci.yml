@@ -9,30 +9,94 @@ permissions:
   contents: read
 
 jobs:
-  docs:
+  community-boundary:
+    name: Community boundary
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with:
           python-version: "3.x"
-      - run: python scripts/validate-docs.py
-      - run: python scripts/test_validate_docs.py
-      - run: python scripts/test_verify_local.py
-      - run: python scripts/test_webhook_receiver_verification.py
-      - run: python scripts/test_validate_service_contracts.py
-      - run: python scripts/validate-service-contracts.py
-      - run: python scripts/test_validate_core_cli_contracts.py
-      - run: python scripts/validate-core-cli-contracts.py
-      - run: python scripts/test_validate_version_metadata.py
-      - run: python scripts/validate-version-metadata.py
-      - run: python scripts/test_validate_release_artifacts.py
-      - run: python scripts/test_validate_release_evidence.py
-      - run: python scripts/validate-release-evidence.py
-      - run: python scripts/test_security_baseline_scan.py
-      - run: python scripts/security-baseline-scan.py
+      - name: Validate Community boundary
+        run: python scripts/validate-community-boundary.py
+
+  docs-validation:
+    name: Docs validation
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.x"
+      - name: Validate docs
+        run: python scripts/validate-docs.py
+      - name: Test docs validator
+        run: python scripts/test_validate_docs.py
+      - name: Test local verification command list
+        run: python scripts/test_verify_local.py
+      - name: Test webhook receiver verification
+        run: python scripts/test_webhook_receiver_verification.py
+
+  service-contracts:
+    name: Service contracts
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.x"
+      - name: Test service contract validator
+        run: python scripts/test_validate_service_contracts.py
+      - name: Validate service contracts
+        run: python scripts/validate-service-contracts.py
+
+  core-cli-contracts:
+    name: Core CLI contracts
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.x"
+      - name: Test core CLI contract validator
+        run: python scripts/test_validate_core_cli_contracts.py
+      - name: Validate core CLI contracts
+        run: python scripts/validate-core-cli-contracts.py
+
+  release-metadata:
+    name: Release metadata
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.x"
+      - name: Test version metadata validator
+        run: python scripts/test_validate_version_metadata.py
+      - name: Validate version metadata
+        run: python scripts/validate-version-metadata.py
+      - name: Test release artifact validator
+        run: python scripts/test_validate_release_artifacts.py
+      - name: Test release evidence validator
+        run: python scripts/test_validate_release_evidence.py
+      - name: Validate release evidence
+        run: python scripts/validate-release-evidence.py
+
+  secret-baseline:
+    name: Secret baseline scan
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.x"
+      - name: Test secret baseline scanner
+        run: python scripts/test_security_baseline_scan.py
+      - name: Scan for committed secrets
+        run: python scripts/security-baseline-scan.py
 
   go-service:
+    name: Go service
     runs-on: ubuntu-latest
     services:
       postgres:
@@ -73,6 +137,7 @@ jobs:
       - run: go build ./cmd/anopki-service
 
   cpp-core:
+    name: C++ core
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -82,6 +147,7 @@ jobs:
       - run: ctest --test-dir build -C Debug --output-on-failure
 
   cpp-fuzz-smoke:
+    name: C++ fuzz smoke
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4

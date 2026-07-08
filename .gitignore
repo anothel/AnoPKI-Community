@@ -32,3 +32,5 @@ service/.tmp-gocache/*
 
 scripts/__pycache__/*
 .tmp-gocache/*
+
+*.txtt
