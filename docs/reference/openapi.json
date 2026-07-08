@@ -1,0 +1,638 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "AnoPKI lifecycle and operator API",
+    "version": "0.1.0",
+    "description": "Lifecycle, operator, distribution, and local ACME management APIs exposed by anopki-service. RFC 8555 public ACME protocol endpoints are tracked in acme-rfc8555-conformance.md."
+  },
+  "servers": [
+    {
+      "url": "http://localhost:8080",
+      "description": "Local development"
+    }
+  ],
+  "security": [
+    {
+      "bearerAuth": []
+    }
+  ],
+  "tags": [
+    {"name": "identities"},
+    {"name": "issuers"},
+    {"name": "certificate-profiles"},
+    {"name": "enrollments"},
+    {"name": "certificates"},
+    {"name": "crl"},
+    {"name": "ocsp"},
+    {"name": "operator"},
+    {"name": "outbox"},
+    {"name": "notifications"},
+    {"name": "api-keys"},
+    {"name": "audit"},
+    {"name": "trust"},
+    {"name": "acme-management"}
+  ],
+  "paths": {
+    "/identities": {
+      "get": {
+        "tags": ["identities"],
+        "operationId": "listIdentities",
+        "parameters": [
+          {"$ref": "#/components/parameters/owner"},
+          {"$ref": "#/components/parameters/team"},
+          {"$ref": "#/components/parameters/service"},
+          {"$ref": "#/components/parameters/environment"},
+          {"$ref": "#/components/parameters/sort"},
+          {"$ref": "#/components/parameters/limit"},
+          {"$ref": "#/components/parameters/offset"}
+        ],
+        "responses": {"200": {"$ref": "#/components/responses/IdentityList"}, "default": {"$ref": "#/components/responses/Error"}}
+      },
+      "post": {
+        "tags": ["identities"],
+        "operationId": "createIdentity",
+        "requestBody": {"$ref": "#/components/requestBodies/IdentityCreate"},
+        "responses": {"201": {"$ref": "#/components/responses/Identity"}, "default": {"$ref": "#/components/responses/Error"}}
+      }
+    },
+    "/identities/{id}": {
+      "get": {
+        "tags": ["identities"],
+        "operationId": "getIdentity",
+        "parameters": [{"$ref": "#/components/parameters/id"}],
+        "responses": {"200": {"$ref": "#/components/responses/Identity"}, "default": {"$ref": "#/components/responses/Error"}}
+      }
+    },
+    "/issuers": {
+      "post": {
+        "tags": ["issuers"],
+        "operationId": "createIssuer",
+        "requestBody": {"$ref": "#/components/requestBodies/IssuerCreate"},
+        "responses": {"201": {"$ref": "#/components/responses/Issuer"}, "default": {"$ref": "#/components/responses/Error"}}
+      }
+    },
+    "/issuers/{id}/chain": {
+      "get": {
+        "tags": ["issuers"],
+        "operationId": "getIssuerChain",
+        "parameters": [{"$ref": "#/components/parameters/id"}],
+        "responses": {"200": {"$ref": "#/components/responses/IssuerList"}, "default": {"$ref": "#/components/responses/Error"}}
+      }
+    },
+    "/issuers/{id}/crl": {
+      "get": {
+        "tags": ["crl"],
+        "operationId": "getLatestIssuerCRL",
+        "security": [],
+        "parameters": [{"$ref": "#/components/parameters/id"}, {"$ref": "#/components/parameters/distributionPoint"}],
+        "responses": {"200": {"description": "Latest issuer CRL PEM", "content": {"application/pem-certificate-chain": {"schema": {"type": "string"}}}}, "default": {"$ref": "#/components/responses/Error"}}
+      }
+    },
+    "/issuers/{id}/ocsp-responders": {
+      "get": {
+        "tags": ["ocsp"],
+        "operationId": "listOCSPResponders",
+        "parameters": [{"$ref": "#/components/parameters/id"}],
+        "responses": {"200": {"$ref": "#/components/responses/OCSPResponderList"}, "default": {"$ref": "#/components/responses/Error"}}
+      },
+      "post": {
+        "tags": ["ocsp"],
+        "operationId": "createOCSPResponder",
+        "parameters": [{"$ref": "#/components/parameters/id"}],
+        "requestBody": {"$ref": "#/components/requestBodies/OCSPResponderCreate"},
+        "responses": {"201": {"$ref": "#/components/responses/OCSPResponder"}, "default": {"$ref": "#/components/responses/Error"}}
+      }
+    },
+    "/issuers/{id}/ocsp-responders/rotate": {
+      "post": {
+        "tags": ["ocsp"],
+        "operationId": "rotateOCSPResponder",
+        "parameters": [{"$ref": "#/components/parameters/id"}],
+        "requestBody": {"$ref": "#/components/requestBodies/OCSPResponderCreate"},
+        "responses": {"201": {"$ref": "#/components/responses/OCSPResponder"}, "default": {"$ref": "#/components/responses/Error"}}
+      }
+    },
+    "/issuers/{id}/ocsp-responders/{responderID}/disable": {
+      "post": {
+        "tags": ["ocsp"],
+        "operationId": "disableOCSPResponder",
+        "parameters": [{"$ref": "#/components/parameters/id"}, {"$ref": "#/components/parameters/responderID"}],
+        "responses": {"200": {"$ref": "#/components/responses/OCSPResponder"}, "default": {"$ref": "#/components/responses/Error"}}
+      }
+    },
+    "/certificate-profiles": {
+      "get": {
+        "tags": ["certificate-profiles"],
+        "operationId": "listCertificateProfiles",
+        "responses": {"200": {"$ref": "#/components/responses/CertificateProfileList"}, "default": {"$ref": "#/components/responses/Error"}}
+      },
+      "post": {
+        "tags": ["certificate-profiles"],
+        "operationId": "createCertificateProfile",
+        "requestBody": {"$ref": "#/components/requestBodies/CertificateProfileCreate"},
+        "responses": {"201": {"$ref": "#/components/responses/CertificateProfile"}, "default": {"$ref": "#/components/responses/Error"}}
+      }
+    },
+    "/certificate-profiles/{id}": {
+      "get": {
+        "tags": ["certificate-profiles"],
+        "operationId": "getCertificateProfile",
+        "parameters": [{"$ref": "#/components/parameters/id"}],
+        "responses": {"200": {"$ref": "#/components/responses/CertificateProfile"}, "default": {"$ref": "#/components/responses/Error"}}
+      }
+    },
+    "/enrollments": {
+      "get": {
+        "tags": ["enrollments"],
+        "operationId": "listEnrollments",
+        "parameters": [
+          {"$ref": "#/components/parameters/identityID"},
+          {"$ref": "#/components/parameters/issuerID"},
+          {"$ref": "#/components/parameters/profileID"},
+          {"$ref": "#/components/parameters/enrollmentStatus"},
+          {"$ref": "#/components/parameters/sort"},
+          {"$ref": "#/components/parameters/limit"},
+          {"$ref": "#/components/parameters/offset"}
+        ],
+        "responses": {"200": {"$ref": "#/components/responses/EnrollmentList"}, "default": {"$ref": "#/components/responses/Error"}}
+      },
+      "post": {
+        "tags": ["enrollments"],
+        "operationId": "createEnrollment",
+        "requestBody": {"$ref": "#/components/requestBodies/EnrollmentCreate"},
+        "responses": {"201": {"$ref": "#/components/responses/Enrollment"}, "default": {"$ref": "#/components/responses/Error"}}
+      }
+    },
+    "/enrollments/{id}": {
+      "get": {
+        "tags": ["enrollments"],
+        "operationId": "getEnrollment",
+        "parameters": [{"$ref": "#/components/parameters/id"}],
+        "responses": {"200": {"$ref": "#/components/responses/Enrollment"}, "default": {"$ref": "#/components/responses/Error"}}
+      }
+    },
+    "/enrollments/{id}/approve": {
+      "post": {
+        "tags": ["enrollments"],
+        "operationId": "approveEnrollment",
+        "parameters": [{"$ref": "#/components/parameters/id"}],
+        "requestBody": {"$ref": "#/components/requestBodies/EnrollmentApprove"},
+        "responses": {"200": {"$ref": "#/components/responses/Enrollment"}, "default": {"$ref": "#/components/responses/Error"}}
+      }
+    },
+    "/enrollments/{id}/reject": {
+      "post": {
+        "tags": ["enrollments"],
+        "operationId": "rejectEnrollment",
+        "parameters": [{"$ref": "#/components/parameters/id"}],
+        "responses": {"200": {"$ref": "#/components/responses/Enrollment"}, "default": {"$ref": "#/components/responses/Error"}}
+      }
+    },
+    "/certificates": {
+      "get": {
+        "tags": ["certificates"],
+        "operationId": "listCertificates",
+        "parameters": [
+          {"$ref": "#/components/parameters/owner"},
+          {"$ref": "#/components/parameters/team"},
+          {"$ref": "#/components/parameters/service"},
+          {"$ref": "#/components/parameters/environment"},
+          {"$ref": "#/components/parameters/issuerID"},
+          {"$ref": "#/components/parameters/profileID"},
+          {"$ref": "#/components/parameters/certificateSAN"},
+          {"$ref": "#/components/parameters/revocationState"},
+          {"$ref": "#/components/parameters/renewalState"},
+          {"$ref": "#/components/parameters/expiresWithinDays"},
+          {"$ref": "#/components/parameters/sort"},
+          {"$ref": "#/components/parameters/limit"},
+          {"$ref": "#/components/parameters/offset"}
+        ],
+        "responses": {"200": {"$ref": "#/components/responses/CertificateList"}, "default": {"$ref": "#/components/responses/Error"}}
+      },
+      "post": {
+        "tags": ["certificates"],
+        "operationId": "issueCertificate",
+        "requestBody": {"$ref": "#/components/requestBodies/CertificateIssue"},
+        "responses": {"201": {"$ref": "#/components/responses/Certificate"}, "default": {"$ref": "#/components/responses/Error"}}
+      }
+    },
+    "/certificates/{id}": {
+      "get": {
+        "tags": ["certificates"],
+        "operationId": "getCertificate",
+        "parameters": [{"$ref": "#/components/parameters/id"}],
+        "responses": {"200": {"$ref": "#/components/responses/Certificate"}, "default": {"$ref": "#/components/responses/Error"}}
+      }
+    },
+    "/certificates/{id}/revoke": {
+      "post": {
+        "tags": ["certificates"],
+        "operationId": "revokeCertificate",
+        "parameters": [{"$ref": "#/components/parameters/id"}],
+        "requestBody": {"$ref": "#/components/requestBodies/CertificateRevoke"},
+        "responses": {"200": {"$ref": "#/components/responses/Certificate"}, "default": {"$ref": "#/components/responses/Error"}}
+      }
+    },
+    "/certificates/{id}/suspend": {
+      "post": {
+        "tags": ["certificates"],
+        "operationId": "suspendCertificate",
+        "parameters": [{"$ref": "#/components/parameters/id"}],
+        "responses": {"200": {"$ref": "#/components/responses/Certificate"}, "default": {"$ref": "#/components/responses/Error"}}
+      }
+    },
+    "/certificates/{id}/resume": {
+      "post": {
+        "tags": ["certificates"],
+        "operationId": "resumeCertificate",
+        "parameters": [{"$ref": "#/components/parameters/id"}],
+        "responses": {"200": {"$ref": "#/components/responses/Certificate"}, "default": {"$ref": "#/components/responses/Error"}}
+      }
+    },
+    "/certificates/{id}/renew": {
+      "post": {
+        "tags": ["certificates"],
+        "operationId": "renewCertificate",
+        "parameters": [{"$ref": "#/components/parameters/id"}],
+        "requestBody": {"$ref": "#/components/requestBodies/CertificateReplacement"},
+        "responses": {"201": {"$ref": "#/components/responses/Enrollment"}, "default": {"$ref": "#/components/responses/Error"}}
+      }
+    },
+    "/certificates/{id}/reissue": {
+      "post": {
+        "tags": ["certificates"],
+        "operationId": "reissueCertificate",
+        "parameters": [{"$ref": "#/components/parameters/id"}],
+        "requestBody": {"$ref": "#/components/requestBodies/CertificateReplacement"},
+        "responses": {"201": {"$ref": "#/components/responses/Enrollment"}, "default": {"$ref": "#/components/responses/Error"}}
+      }
+    },
+    "/certificates/expiration-scan": {
+      "post": {
+        "tags": ["operator"],
+        "operationId": "scanCertificateExpirations",
+        "requestBody": {"$ref": "#/components/requestBodies/ExpirationScan"},
+        "responses": {"200": {"$ref": "#/components/responses/ExpirationScan"}, "default": {"$ref": "#/components/responses/Error"}}
+      }
+    },
+    "/crls": {
+      "post": {
+        "tags": ["crl"],
+        "operationId": "publishCRL",
+        "requestBody": {"$ref": "#/components/requestBodies/CRLPublish"},
+        "responses": {"201": {"$ref": "#/components/responses/CRLPublication"}, "default": {"$ref": "#/components/responses/Error"}}
+      }
+    },
+    "/crls/{id}": {
+      "get": {
+        "tags": ["crl"],
+        "operationId": "getCRLPublication",
+        "security": [],
+        "parameters": [{"$ref": "#/components/parameters/id"}],
+        "responses": {"200": {"$ref": "#/components/responses/CRLPublication"}, "default": {"$ref": "#/components/responses/Error"}}
+      }
+    },
+    "/ocsp": {
+      "post": {
+        "tags": ["ocsp"],
+        "operationId": "respondOCSP",
+        "security": [],
+        "requestBody": {"required": true, "content": {"application/ocsp-request": {"schema": {"type": "string", "contentEncoding": "base64"}}}},
+        "responses": {"200": {"description": "OCSP response DER", "content": {"application/ocsp-response": {"schema": {"type": "string", "contentEncoding": "base64"}}}}, "default": {"$ref": "#/components/responses/Error"}}
+      }
+    },
+    "/operator/certificate-inventory": {
+      "get": {
+        "tags": ["operator"],
+        "operationId": "listCertificateInventory",
+        "parameters": [
+          {"$ref": "#/components/parameters/owner"},
+          {"$ref": "#/components/parameters/team"},
+          {"$ref": "#/components/parameters/service"},
+          {"$ref": "#/components/parameters/environment"},
+          {"$ref": "#/components/parameters/issuerID"},
+          {"$ref": "#/components/parameters/profileID"},
+          {"$ref": "#/components/parameters/revocationState"},
+          {"$ref": "#/components/parameters/sort"},
+          {"$ref": "#/components/parameters/limit"},
+          {"$ref": "#/components/parameters/offset"}
+        ],
+        "responses": {"200": {"$ref": "#/components/responses/CertificateInventoryList"}, "default": {"$ref": "#/components/responses/Error"}}
+      }
+    },
+    "/operator/expiry-slo": {
+      "get": {
+        "tags": ["operator"],
+        "operationId": "getExpirySLO",
+        "responses": {"200": {"$ref": "#/components/responses/ExpirySLO"}, "default": {"$ref": "#/components/responses/Error"}}
+      }
+    },
+    "/notification-endpoints": {
+      "get": {
+        "tags": ["notifications"],
+        "operationId": "listNotificationEndpoints",
+        "responses": {"200": {"$ref": "#/components/responses/NotificationEndpointList"}, "default": {"$ref": "#/components/responses/Error"}}
+      },
+      "post": {
+        "tags": ["notifications"],
+        "operationId": "createNotificationEndpoint",
+        "requestBody": {"$ref": "#/components/requestBodies/NotificationEndpointCreate"},
+        "responses": {"201": {"$ref": "#/components/responses/NotificationEndpoint"}, "default": {"$ref": "#/components/responses/Error"}}
+      }
+    },
+    "/notification-endpoints/{id}/disable": {
+      "post": {
+        "tags": ["notifications"],
+        "operationId": "disableNotificationEndpoint",
+        "parameters": [{"$ref": "#/components/parameters/id"}],
+        "responses": {"200": {"$ref": "#/components/responses/NotificationEndpoint"}, "default": {"$ref": "#/components/responses/Error"}}
+      }
+    },
+    "/outbox/messages": {
+      "get": {
+        "tags": ["outbox"],
+        "operationId": "listOutboxMessages",
+        "parameters": [
+          {"$ref": "#/components/parameters/outboxStatus"},
+          {"$ref": "#/components/parameters/outboxType"},
+          {"$ref": "#/components/parameters/from"},
+          {"$ref": "#/components/parameters/to"},
+          {"$ref": "#/components/parameters/sort"},
+          {"$ref": "#/components/parameters/limit"},
+          {"$ref": "#/components/parameters/offset"}
+        ],
+        "responses": {"200": {"$ref": "#/components/responses/OutboxMessageList"}, "default": {"$ref": "#/components/responses/Error"}}
+      }
+    },
+    "/outbox/messages/{id}/retry": {
+      "post": {
+        "tags": ["outbox"],
+        "operationId": "retryOutboxMessage",
+        "parameters": [{"$ref": "#/components/parameters/id"}],
+        "responses": {"200": {"$ref": "#/components/responses/OutboxMessage"}, "default": {"$ref": "#/components/responses/Error"}}
+      }
+    },
+    "/outbox/messages/dead-letter/replay": {
+      "post": {
+        "tags": ["outbox"],
+        "operationId": "replayDeadLetterOutboxMessages",
+        "requestBody": {"$ref": "#/components/requestBodies/DeadLetterReplay"},
+        "responses": {"200": {"$ref": "#/components/responses/DeadLetterReplay"}, "default": {"$ref": "#/components/responses/Error"}}
+      }
+    },
+    "/api-keys": {
+      "get": {
+        "tags": ["api-keys"],
+        "operationId": "listAPIKeys",
+        "responses": {"200": {"$ref": "#/components/responses/APIKeyList"}, "default": {"$ref": "#/components/responses/Error"}}
+      },
+      "post": {
+        "tags": ["api-keys"],
+        "operationId": "createAPIKey",
+        "requestBody": {"$ref": "#/components/requestBodies/APIKeyCreate"},
+        "responses": {"201": {"$ref": "#/components/responses/APIKeyWithToken"}, "default": {"$ref": "#/components/responses/Error"}}
+      }
+    },
+    "/api-keys/{id}/rotate": {
+      "post": {
+        "tags": ["api-keys"],
+        "operationId": "rotateAPIKey",
+        "parameters": [{"$ref": "#/components/parameters/id"}],
+        "responses": {"201": {"$ref": "#/components/responses/APIKeyWithToken"}, "default": {"$ref": "#/components/responses/Error"}}
+      }
+    },
+    "/api-keys/{id}/disable": {
+      "post": {
+        "tags": ["api-keys"],
+        "operationId": "disableAPIKey",
+        "parameters": [{"$ref": "#/components/parameters/id"}],
+        "responses": {"200": {"$ref": "#/components/responses/APIKey"}, "default": {"$ref": "#/components/responses/Error"}}
+      }
+    },
+    "/audit-events": {
+      "get": {
+        "tags": ["audit"],
+        "operationId": "listAuditEvents",
+        "parameters": [
+          {"$ref": "#/components/parameters/auditActor"},
+          {"$ref": "#/components/parameters/auditAction"},
+          {"$ref": "#/components/parameters/auditResourceType"},
+          {"$ref": "#/components/parameters/auditResourceID"},
+          {"$ref": "#/components/parameters/auditFrom"},
+          {"$ref": "#/components/parameters/auditTo"},
+          {"$ref": "#/components/parameters/auditSort"},
+          {"$ref": "#/components/parameters/limit"},
+          {"$ref": "#/components/parameters/offset"}
+        ],
+        "responses": {"200": {"$ref": "#/components/responses/AuditEventList"}, "default": {"$ref": "#/components/responses/Error"}}
+      }
+    },
+    "/audit-events/retention/prune": {
+      "post": {
+        "tags": ["audit"],
+        "operationId": "pruneAuditEvents",
+        "requestBody": {"$ref": "#/components/requestBodies/AuditRetentionPrune"},
+        "responses": {"200": {"$ref": "#/components/responses/AuditRetentionPrune"}, "default": {"$ref": "#/components/responses/Error"}}
+      }
+    },
+    "/audit-events/repair/issuance": {
+      "post": {
+        "tags": ["audit"],
+        "operationId": "repairIssuanceAuditEvents",
+        "responses": {"200": {"$ref": "#/components/responses/AuditRepair"}, "default": {"$ref": "#/components/responses/Error"}}
+      }
+    },
+    "/trust/anchors": {
+      "get": {
+        "tags": ["trust"],
+        "operationId": "listTrustAnchors",
+        "responses": {"200": {"$ref": "#/components/responses/IssuerList"}, "default": {"$ref": "#/components/responses/Error"}}
+      }
+    },
+    "/acme/accounts": {
+      "get": {
+        "tags": ["acme-management"],
+        "operationId": "listACMEAccounts",
+        "responses": {"200": {"$ref": "#/components/responses/ACMEAccountList"}, "default": {"$ref": "#/components/responses/Error"}}
+      },
+      "post": {
+        "tags": ["acme-management"],
+        "operationId": "createACMEAccount",
+        "requestBody": {"$ref": "#/components/requestBodies/ACMEAccountCreate"},
+        "responses": {"201": {"$ref": "#/components/responses/ACMEAccount"}, "default": {"$ref": "#/components/responses/Error"}}
+      }
+    },
+    "/acme/orders": {
+      "post": {
+        "tags": ["acme-management"],
+        "operationId": "createACMEOrder",
+        "requestBody": {"$ref": "#/components/requestBodies/ACMEOrderCreate"},
+        "responses": {"201": {"$ref": "#/components/responses/ACMEOrder"}, "default": {"$ref": "#/components/responses/Error"}}
+      }
+    },
+    "/acme/orders/{id}": {
+      "get": {
+        "tags": ["acme-management"],
+        "operationId": "getACMEOrder",
+        "parameters": [{"$ref": "#/components/parameters/id"}],
+        "responses": {"200": {"$ref": "#/components/responses/ACMEOrder"}, "default": {"$ref": "#/components/responses/Error"}}
+      }
+    },
+    "/acme/orders/{id}/authorizations": {
+      "get": {
+        "tags": ["acme-management"],
+        "operationId": "listACMEAuthorizations",
+        "parameters": [{"$ref": "#/components/parameters/id"}],
+        "responses": {"200": {"$ref": "#/components/responses/ACMEAuthorizationList"}, "default": {"$ref": "#/components/responses/Error"}}
+      }
+    },
+    "/acme/orders/{id}/finalize": {
+      "post": {
+        "tags": ["acme-management"],
+        "operationId": "finalizeACMEOrder",
+        "parameters": [{"$ref": "#/components/parameters/id"}],
+        "requestBody": {"$ref": "#/components/requestBodies/ACMEOrderFinalize"},
+        "responses": {"200": {"$ref": "#/components/responses/ACMEOrder"}, "default": {"$ref": "#/components/responses/Error"}}
+      }
+    },
+    "/acme/authorizations/{id}/challenges": {
+      "get": {
+        "tags": ["acme-management"],
+        "operationId": "listACMEChallenges",
+        "parameters": [{"$ref": "#/components/parameters/id"}],
+        "responses": {"200": {"$ref": "#/components/responses/ACMEChallengeList"}, "default": {"$ref": "#/components/responses/Error"}}
+      }
+    },
+    "/acme/challenges/{id}/complete": {
+      "post": {
+        "tags": ["acme-management"],
+        "operationId": "completeACMEChallenge",
+        "parameters": [{"$ref": "#/components/parameters/id"}],
+        "responses": {"200": {"$ref": "#/components/responses/ACMEChallenge"}, "default": {"$ref": "#/components/responses/Error"}}
+      }
+    }
+  },
+  "components": {
+    "securitySchemes": {
+      "bearerAuth": {
+        "type": "http",
+        "scheme": "bearer"
+      }
+    },
+    "parameters": {
+      "id": {"name": "id", "in": "path", "required": true, "schema": {"type": "string"}},
+      "responderID": {"name": "responderID", "in": "path", "required": true, "schema": {"type": "string"}},
+      "limit": {"name": "limit", "in": "query", "schema": {"type": "integer", "minimum": 1}},
+      "offset": {"name": "offset", "in": "query", "schema": {"type": "integer", "minimum": 0}},
+      "expiresWithinDays": {"name": "expires_within_days", "in": "query", "schema": {"type": "integer", "minimum": 1, "enum": [1, 3, 7, 14, 30]}},
+      "owner": {"name": "owner", "in": "query", "schema": {"type": "string"}},
+      "team": {"name": "team", "in": "query", "schema": {"type": "string"}},
+      "service": {"name": "service", "in": "query", "schema": {"type": "string"}},
+      "environment": {"name": "environment", "in": "query", "schema": {"type": "string"}},
+      "distributionPoint": {"name": "distribution_point", "in": "query", "schema": {"type": "string"}},
+      "identityID": {"name": "identity_id", "in": "query", "schema": {"type": "string"}},
+      "issuerID": {"name": "issuer_id", "in": "query", "schema": {"type": "string"}},
+      "profileID": {"name": "profile_id", "in": "query", "schema": {"type": "string"}},
+      "enrollmentStatus": {"name": "status", "in": "query", "schema": {"type": "string", "enum": ["pending", "approved", "rejected", "issued", "canceled"]}},
+      "certificateSAN": {"name": "san", "in": "query", "schema": {"type": "string"}},
+      "revocationState": {"name": "revocation_state", "in": "query", "schema": {"type": "string", "enum": ["valid", "suspended", "revoked", "expired"]}},
+      "renewalState": {"name": "renewal_state", "in": "query", "schema": {"type": "string", "enum": ["notified", "unnotified"]}},
+      "auditActor": {"name": "actor", "in": "query", "schema": {"type": "string"}},
+      "auditAction": {"name": "action", "in": "query", "schema": {"type": "string"}},
+      "auditResourceType": {"name": "resource_type", "in": "query", "schema": {"type": "string"}},
+      "auditResourceID": {"name": "resource_id", "in": "query", "schema": {"type": "string"}},
+      "auditFrom": {"name": "from", "in": "query", "schema": {"type": "string", "format": "date-time"}},
+      "auditTo": {"name": "to", "in": "query", "schema": {"type": "string", "format": "date-time"}},
+      "auditSort": {"name": "sort", "in": "query", "schema": {"type": "string", "enum": ["asc", "desc"]}},
+      "sort": {"name": "sort", "in": "query", "schema": {"type": "string", "enum": ["asc", "desc"]}},
+      "from": {"name": "from", "in": "query", "schema": {"type": "string", "format": "date-time"}},
+      "to": {"name": "to", "in": "query", "schema": {"type": "string", "format": "date-time"}},
+      "outboxStatus": {"name": "status", "in": "query", "schema": {"type": "string", "enum": ["pending", "processing", "completed", "failed", "dead_letter"]}},
+      "outboxType": {"name": "type", "in": "query", "schema": {"type": "string"}}
+    },
+    "requestBodies": {
+      "IdentityCreate": {"required": true, "content": {"application/json": {"schema": {"$ref": "#/components/schemas/IdentityCreate"}}}},
+      "IssuerCreate": {"required": true, "content": {"application/json": {"schema": {"$ref": "#/components/schemas/IssuerCreate"}}}},
+      "OCSPResponderCreate": {"required": true, "content": {"application/json": {"schema": {"$ref": "#/components/schemas/OCSPResponderCreate"}}}},
+      "CertificateProfileCreate": {"required": true, "content": {"application/json": {"schema": {"$ref": "#/components/schemas/CertificateProfileCreate"}}}},
+      "EnrollmentCreate": {"required": true, "content": {"application/json": {"schema": {"$ref": "#/components/schemas/EnrollmentCreate"}}}},
+      "EnrollmentApprove": {"required": false, "content": {"application/json": {"schema": {"type": "object", "properties": {"reason": {"type": "string"}}}}}},
+      "CertificateIssue": {"required": true, "content": {"application/json": {"schema": {"type": "object", "required": ["enrollment_id"], "properties": {"enrollment_id": {"type": "string"}}}}}},
+      "CertificateRevoke": {"required": false, "content": {"application/json": {"schema": {"type": "object", "properties": {"reason": {"type": "string"}, "force": {"type": "boolean"}}}}}},
+      "CertificateReplacement": {"required": true, "content": {"application/json": {"schema": {"type": "object", "required": ["csr_pem"], "properties": {"csr_pem": {"type": "string"}, "requested_not_after": {"type": "string", "format": "date-time"}}}}}},
+      "ExpirationScan": {"required": false, "content": {"application/json": {"schema": {"type": "object", "properties": {"warning_window_seconds": {"type": "integer"}, "limit": {"type": "integer"}}}}}},
+      "CRLPublish": {"required": true, "content": {"application/json": {"schema": {"type": "object", "required": ["issuer_id"], "properties": {"issuer_id": {"type": "string"}}}}}},
+      "NotificationEndpointCreate": {"required": true, "content": {"application/json": {"schema": {"$ref": "#/components/schemas/NotificationEndpointCreate"}}}},
+      "DeadLetterReplay": {"required": true, "content": {"application/json": {"schema": {"type": "object", "required": ["event_type", "created_from", "created_to", "limit"], "properties": {"event_type": {"type": "string"}, "created_from": {"type": "string", "format": "date-time"}, "created_to": {"type": "string", "format": "date-time"}, "limit": {"type": "integer", "minimum": 1}}}}}},
+      "AuditRetentionPrune": {"required": true, "content": {"application/json": {"schema": {"type": "object", "required": ["before"], "properties": {"before": {"type": "string", "format": "date-time"}}}}}},
+      "APIKeyCreate": {"required": true, "content": {"application/json": {"schema": {"type": "object", "required": ["name", "actor", "scopes"], "properties": {"name": {"type": "string"}, "actor": {"type": "string"}, "scopes": {"type": "array", "items": {"type": "string", "enum": ["operator", "write", "read"]}}, "expires_at": {"type": "string", "format": "date-time"}}}}}},
+      "ACMEAccountCreate": {"required": true, "content": {"application/json": {"schema": {"type": "object", "properties": {"contacts": {"type": "array", "items": {"type": "string"}}, "terms_of_service_agreed": {"type": "boolean"}, "key_thumbprint": {"type": "string"}, "key_jwk_json": {"type": "string"}}}}}},
+      "ACMEOrderCreate": {"required": true, "content": {"application/json": {"schema": {"$ref": "#/components/schemas/ACMEOrderCreate"}}}},
+      "ACMEOrderFinalize": {"required": true, "content": {"application/json": {"schema": {"type": "object", "properties": {"csr_pem": {"type": "string"}, "csr": {"type": "string"}, "requested_subject": {"type": "string"}}}}}}
+    },
+    "responses": {
+      "Error": {"description": "Error response", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/Error"}}}},
+      "Identity": {"description": "Identity", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/Identity"}}}},
+      "IdentityList": {"description": "Identity list", "content": {"application/json": {"schema": {"type": "array", "items": {"$ref": "#/components/schemas/Identity"}}}}},
+      "Issuer": {"description": "Issuer", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/Issuer"}}}},
+      "IssuerList": {"description": "Issuer list", "content": {"application/json": {"schema": {"type": "array", "items": {"$ref": "#/components/schemas/Issuer"}}}}},
+      "OCSPResponder": {"description": "OCSP responder", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/OCSPResponder"}}}},
+      "OCSPResponderList": {"description": "OCSP responder list", "content": {"application/json": {"schema": {"type": "array", "items": {"$ref": "#/components/schemas/OCSPResponder"}}}}},
+      "CertificateProfile": {"description": "Certificate profile", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/CertificateProfile"}}}},
+      "CertificateProfileList": {"description": "Certificate profile list", "content": {"application/json": {"schema": {"type": "array", "items": {"$ref": "#/components/schemas/CertificateProfile"}}}}},
+      "Enrollment": {"description": "Enrollment", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/Enrollment"}}}},
+      "EnrollmentList": {"description": "Enrollment list", "content": {"application/json": {"schema": {"type": "array", "items": {"$ref": "#/components/schemas/Enrollment"}}}}},
+      "Certificate": {"description": "Certificate", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/Certificate"}}}},
+      "CertificateList": {"description": "Certificate list", "content": {"application/json": {"schema": {"type": "array", "items": {"$ref": "#/components/schemas/Certificate"}}}}},
+      "CRLPublication": {"description": "CRL publication", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/CRLPublication"}}}},
+      "CertificateInventoryList": {"description": "Certificate inventory list", "content": {"application/json": {"schema": {"type": "array", "items": {"$ref": "#/components/schemas/CertificateInventoryEntry"}}}}},
+      "ExpirySLO": {"description": "Expiry SLO", "content": {"application/json": {"schema": {"type": "object", "additionalProperties": true}}}},
+      "ExpirationScan": {"description": "Expiration scan result", "content": {"application/json": {"schema": {"type": "object", "additionalProperties": true}}}},
+      "NotificationEndpoint": {"description": "Notification endpoint", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/NotificationEndpoint"}}}},
+      "NotificationEndpointList": {"description": "Notification endpoint list", "content": {"application/json": {"schema": {"type": "array", "items": {"$ref": "#/components/schemas/NotificationEndpoint"}}}}},
+      "OutboxMessage": {"description": "Outbox message", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/OutboxMessage"}}}},
+      "OutboxMessageList": {"description": "Outbox message list", "content": {"application/json": {"schema": {"type": "array", "items": {"$ref": "#/components/schemas/OutboxMessage"}}}}},
+      "DeadLetterReplay": {"description": "Dead-letter replay result", "content": {"application/json": {"schema": {"type": "object", "additionalProperties": true}}}},
+      "APIKey": {"description": "API key", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/APIKey"}}}},
+      "APIKeyList": {"description": "API key list", "content": {"application/json": {"schema": {"type": "array", "items": {"$ref": "#/components/schemas/APIKey"}}}}},
+      "APIKeyWithToken": {"description": "API key with one-time token", "content": {"application/json": {"schema": {"allOf": [{"$ref": "#/components/schemas/APIKey"}, {"type": "object", "properties": {"token": {"type": "string"}}}]}}}},
+      "AuditEventList": {"description": "Audit event list", "content": {"application/json": {"schema": {"type": "array", "items": {"$ref": "#/components/schemas/AuditEvent"}}}}},
+      "AuditRetentionPrune": {"description": "Audit retention prune result", "content": {"application/json": {"schema": {"type": "object", "properties": {"deleted_count": {"type": "integer"}}}}}},
+      "AuditRepair": {"description": "Audit repair result", "content": {"application/json": {"schema": {"type": "object", "properties": {"repaired_count": {"type": "integer"}}}}}},
+      "ACMEAccount": {"description": "ACME account", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/ACMEAccount"}}}},
+      "ACMEAccountList": {"description": "ACME account list", "content": {"application/json": {"schema": {"type": "array", "items": {"$ref": "#/components/schemas/ACMEAccount"}}}}},
+      "ACMEOrder": {"description": "ACME order", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/ACMEOrder"}}}},
+      "ACMEAuthorizationList": {"description": "ACME authorization list", "content": {"application/json": {"schema": {"type": "array", "items": {"$ref": "#/components/schemas/ACMEAuthorization"}}}}},
+      "ACMEChallenge": {"description": "ACME challenge", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/ACMEChallenge"}}}},
+      "ACMEChallengeList": {"description": "ACME challenge list", "content": {"application/json": {"schema": {"type": "array", "items": {"$ref": "#/components/schemas/ACMEChallenge"}}}}}
+    },
+    "schemas": {
+      "Error": {"type": "object", "required": ["error"], "properties": {"error": {"type": "string"}}},
+      "IdentityCreate": {"type": "object", "required": ["type", "name"], "properties": {"type": {"type": "string", "enum": ["user", "machine", "service", "iot_device", "workload"]}, "name": {"type": "string"}, "external_id": {"type": "string"}, "owner": {"type": "string"}, "team": {"type": "string"}, "service": {"type": "string"}, "environment": {"type": "string"}, "deployment_target": {"type": "string"}, "last_seen_at": {"type": "string", "format": "date-time"}, "metadata_json": {"type": "string"}, "allowed_dns_names": {"type": "array", "items": {"type": "string"}}, "allowed_ip_addresses": {"type": "array", "items": {"type": "string"}}}},
+      "Identity": {"allOf": [{"$ref": "#/components/schemas/IdentityCreate"}, {"$ref": "#/components/schemas/ResourceStatus"}]},
+      "IssuerCreate": {"type": "object", "required": ["name", "kind", "certificate_pem", "key_ref"], "properties": {"name": {"type": "string"}, "kind": {"type": "string", "enum": ["root_ca", "intermediate_ca"]}, "parent_issuer_id": {"type": "string"}, "certificate_pem": {"type": "string"}, "key_ref": {"type": "string"}, "aia_url": {"type": "string"}, "crl_distribution_points": {"type": "array", "items": {"type": "string"}}, "trust_anchor": {"type": "boolean"}}},
+      "Issuer": {"allOf": [{"$ref": "#/components/schemas/IssuerCreate"}, {"$ref": "#/components/schemas/ResourceStatus"}]},
+      "OCSPResponderCreate": {"type": "object", "required": ["name", "certificate_pem", "key_ref"], "properties": {"name": {"type": "string"}, "certificate_pem": {"type": "string"}, "key_ref": {"type": "string"}}},
+      "OCSPResponder": {"allOf": [{"$ref": "#/components/schemas/OCSPResponderCreate"}, {"$ref": "#/components/schemas/ResourceStatus"}]},
+      "CertificateProfileCreate": {"type": "object", "required": ["name", "issuer_id", "validity_period_seconds"], "properties": {"name": {"type": "string"}, "description": {"type": "string"}, "issuer_id": {"type": "string"}, "validity_period_seconds": {"type": "integer"}, "public_tls": {"type": "boolean"}, "subject_template": {"type": "string"}, "allowed_dns_patterns": {"type": "array", "items": {"type": "string"}}, "allowed_ip_ranges": {"type": "array", "items": {"type": "string"}}, "allowed_key_algorithms": {"type": "array", "items": {"type": "string"}}, "min_key_size_bits": {"type": "integer"}, "allowed_signature_algorithms": {"type": "array", "items": {"type": "string"}}, "key_usage": {"type": "object", "additionalProperties": true}, "extended_key_usage": {"type": "object", "additionalProperties": true}, "basic_constraints": {"type": "object", "additionalProperties": true}, "subject_key_identifier": {"type": "boolean"}, "authority_key_identifier": {"type": "boolean"}}},
+      "CertificateProfile": {"allOf": [{"$ref": "#/components/schemas/CertificateProfileCreate"}, {"$ref": "#/components/schemas/ResourceTimestamps"}]},
+      "EnrollmentCreate": {"type": "object", "required": ["identity_id", "issuer_id", "csr_pem", "requested_subject", "requested_not_after"], "properties": {"identity_id": {"type": "string"}, "issuer_id": {"type": "string"}, "certificate_profile_id": {"type": "string"}, "csr_pem": {"type": "string"}, "requested_subject": {"type": "string"}, "requested_dns_names": {"type": "array", "items": {"type": "string"}}, "requested_ip_addresses": {"type": "array", "items": {"type": "string"}}, "requested_not_after": {"type": "string", "format": "date-time"}}},
+      "Enrollment": {"allOf": [{"$ref": "#/components/schemas/EnrollmentCreate"}, {"type": "object", "properties": {"source_certificate_id": {"type": "string"}}}, {"$ref": "#/components/schemas/ResourceStatus"}]},
+      "Certificate": {"allOf": [{"$ref": "#/components/schemas/ResourceStatus"}, {"type": "object", "properties": {"identity_id": {"type": "string"}, "issuer_id": {"type": "string"}, "enrollment_id": {"type": "string"}, "certificate_profile_id": {"type": "string"}, "serial_number": {"type": "string"}, "subject": {"type": "string"}, "dns_names": {"type": "array", "items": {"type": "string"}}, "ip_addresses": {"type": "array", "items": {"type": "string"}}, "not_before": {"type": "string", "format": "date-time"}, "not_after": {"type": "string", "format": "date-time"}, "certificate_pem": {"type": "string"}}}]},
+      "CRLPublication": {"allOf": [{"$ref": "#/components/schemas/ResourceStatus"}, {"type": "object", "properties": {"issuer_id": {"type": "string"}, "crl_number": {"type": "integer"}, "crl_pem": {"type": "string"}}}]},
+      "CertificateInventoryEntry": {"type": "object", "additionalProperties": true},
+      "NotificationEndpointCreate": {"type": "object", "required": ["name", "url", "secret"], "properties": {"name": {"type": "string"}, "url": {"type": "string"}, "secret": {"type": "string"}, "event_types": {"type": "array", "items": {"type": "string"}}}},
+      "NotificationEndpoint": {"allOf": [{"$ref": "#/components/schemas/NotificationEndpointCreate"}, {"$ref": "#/components/schemas/ResourceStatus"}]},
+      "OutboxMessage": {"type": "object", "additionalProperties": true},
+      "APIKey": {"allOf": [{"$ref": "#/components/schemas/ResourceStatus"}, {"type": "object", "properties": {"name": {"type": "string"}, "actor": {"type": "string"}, "scopes": {"type": "array", "items": {"type": "string"}}, "expires_at": {"type": "string", "format": "date-time"}, "last_used_at": {"type": "string", "format": "date-time"}, "token_fingerprint": {"type": "string"}}}]},
+      "AuditEvent": {"type": "object", "additionalProperties": true},
+      "ACMEAccount": {"allOf": [{"$ref": "#/components/schemas/ResourceStatus"}, {"type": "object", "properties": {"contacts": {"type": "array", "items": {"type": "string"}}, "terms_of_service_agreed": {"type": "boolean"}, "key_thumbprint": {"type": "string"}}}]},
+      "ACMEOrderCreate": {"type": "object", "required": ["account_id", "identity_id", "issuer_id", "requested_not_after"], "properties": {"account_id": {"type": "string"}, "identity_id": {"type": "string"}, "issuer_id": {"type": "string"}, "certificate_profile_id": {"type": "string"}, "requested_dns_names": {"type": "array", "items": {"type": "string"}}, "requested_ip_addresses": {"type": "array", "items": {"type": "string"}}, "requested_not_after": {"type": "string", "format": "date-time"}}},
+      "ACMEOrder": {"allOf": [{"$ref": "#/components/schemas/ACMEOrderCreate"}, {"$ref": "#/components/schemas/ResourceStatus"}]},
+      "ACMEAuthorization": {"allOf": [{"$ref": "#/components/schemas/ResourceStatus"}, {"type": "object", "properties": {"order_id": {"type": "string"}, "identifier_type": {"type": "string"}, "identifier_value": {"type": "string"}}}]},
+      "ACMEChallenge": {"allOf": [{"$ref": "#/components/schemas/ResourceStatus"}, {"type": "object", "properties": {"authorization_id": {"type": "string"}, "type": {"type": "string"}, "token": {"type": "string"}, "validated_at": {"type": "string", "format": "date-time"}}}]},
+      "ResourceStatus": {"allOf": [{"$ref": "#/components/schemas/ResourceTimestamps"}, {"type": "object", "properties": {"status": {"type": "string"}}}]},
+      "ResourceTimestamps": {"type": "object", "required": ["id"], "properties": {"id": {"type": "string"}, "created_at": {"type": "string", "format": "date-time"}, "updated_at": {"type": "string", "format": "date-time"}}}
+    }
+  }
+}

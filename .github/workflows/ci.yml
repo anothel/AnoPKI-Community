@@ -1,0 +1,93 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  docs:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.x"
+      - run: python scripts/validate-docs.py
+      - run: python scripts/test_validate_docs.py
+      - run: python scripts/test_verify_local.py
+      - run: python scripts/test_webhook_receiver_verification.py
+      - run: python scripts/test_validate_service_contracts.py
+      - run: python scripts/validate-service-contracts.py
+      - run: python scripts/test_validate_core_cli_contracts.py
+      - run: python scripts/validate-core-cli-contracts.py
+      - run: python scripts/test_validate_version_metadata.py
+      - run: python scripts/validate-version-metadata.py
+      - run: python scripts/test_validate_release_artifacts.py
+      - run: python scripts/test_validate_release_evidence.py
+      - run: python scripts/validate-release-evidence.py
+      - run: python scripts/test_security_baseline_scan.py
+      - run: python scripts/security-baseline-scan.py
+
+  go-service:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_DB: anopki_test
+          POSTGRES_USER: anopki
+          POSTGRES_PASSWORD: anopki
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U anopki -d anopki_test"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    defaults:
+      run:
+        working-directory: service
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.25.11"
+          cache-dependency-path: |
+            service/go.mod
+            service/go.sum
+      - run: go test ./...
+      - run: go test -race ./...
+        env:
+          CGO_ENABLED: "1"
+      - run: go vet ./...
+      - run: go run honnef.co/go/tools/cmd/staticcheck@latest ./...
+      - run: go run github.com/securego/gosec/v2/cmd/gosec@latest ./...
+      - run: go run golang.org/x/vuln/cmd/govulncheck@latest ./...
+      - run: go test -p 1 ./internal/store ./internal/httpapi -run PostgresIntegration -v
+        env:
+          ANOPKI_POSTGRES_TEST_DSN: postgres://anopki:anopki@localhost:5432/anopki_test?sslmode=disable
+      - run: go build ./cmd/anopki-service
+
+  cpp-core:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: sudo apt-get update && sudo apt-get install -y cmake g++ libssl-dev
+      - run: cmake -S . -B build -DCMAKE_BUILD_TYPE=Debug
+      - run: cmake --build build --config Debug
+      - run: ctest --test-dir build -C Debug --output-on-failure
+
+  cpp-fuzz-smoke:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: sudo apt-get update && sudo apt-get install -y cmake clang libssl-dev
+      - run: cmake -S . -B build-fuzz -DANOPKI_ENABLE_FUZZING=ON -DCMAKE_CXX_COMPILER=clang++
+      - run: cmake --build build-fuzz --target anopki_core_csr_fuzz anopki_core_ocsp_fuzz anopki_core_crl_fuzz
+      - run: ./build-fuzz/anopki_core_csr_fuzz -runs=1
+      - run: ./build-fuzz/anopki_core_ocsp_fuzz -runs=1
+      - run: ./build-fuzz/anopki_core_crl_fuzz -runs=1

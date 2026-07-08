@@ -1,0 +1,14 @@
+{
+  "project": "AnoPKI",
+  "edition": "Community",
+  "repository_slug": "anopki-community",
+  "technical_identifiers": {
+    "go_service_command": "anopki-service",
+    "core_cli_binary": "anopki-core",
+    "environment_prefix": "ANOPKI_",
+    "webhook_header_prefix": "X-AnoPKI-"
+  },
+  "crypto_backend_default": "OpenSSL-backed C++ core",
+  "release_maturity": "pre-1.0 / not-production-stable",
+  "generated_from": "uploaded AnoPKI.zip"
+}

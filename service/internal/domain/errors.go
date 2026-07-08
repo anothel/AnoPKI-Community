@@ -1,0 +1,37 @@
+// SPDX-License-Identifier: MPL-2.0
+package domain
+
+import "errors"
+
+var (
+	ErrInvalidRequest                = errors.New("invalid request")
+	ErrUnsupportedMediaType          = errors.New("unsupported media type")
+	ErrUnauthorized                  = errors.New("unauthorized")
+	ErrForbidden                     = errors.New("forbidden")
+	ErrRateLimited                   = errors.New("rate limited")
+	ErrIdentityNotFound              = errors.New("identity not found")
+	ErrIssuerNotFound                = errors.New("issuer not found")
+	ErrOCSPResponderNotFound         = errors.New("ocsp responder not found")
+	ErrNotificationEndpointNotFound  = errors.New("notification endpoint not found")
+	ErrCertificateProfileNotFound    = errors.New("certificate profile not found")
+	ErrEnrollmentNotFound            = errors.New("enrollment not found")
+	ErrCertificateNotFound           = errors.New("certificate not found")
+	ErrIssuanceAttemptNotFound       = errors.New("issuance attempt not found")
+	ErrCRLPublicationNotFound        = errors.New("crl publication not found")
+	ErrOutboxMessageNotFound         = errors.New("outbox message not found")
+	ErrWebhookDeliveryNotFound       = errors.New("webhook delivery not found")
+	ErrAPIKeyNotFound                = errors.New("api key not found")
+	ErrACMEAccountNotFound           = errors.New("acme account not found")
+	ErrACMEAccountDeactivated        = errors.New("acme account deactivated")
+	ErrACMEOrderNotFound             = errors.New("acme order not found")
+	ErrACMEAuthorizationNotFound     = errors.New("acme authorization not found")
+	ErrACMEChallengeNotFound         = errors.New("acme challenge not found")
+	ErrInvalidTransition             = errors.New("invalid lifecycle transition")
+	ErrCSRParseFailed                = errors.New("csr parse failed")
+	ErrCertificateIssuanceFailed     = errors.New("certificate issuance failed")
+	ErrCRLGenerationFailed           = errors.New("crl generation failed")
+	ErrOCSPDecodeFailed              = errors.New("ocsp decode failed")
+	ErrOCSPResponseFailed            = errors.New("ocsp response failed")
+	ErrOCSPResponderValidationFailed = errors.New("ocsp responder validation failed")
+	ErrStorageFailure                = errors.New("storage failure")
+)

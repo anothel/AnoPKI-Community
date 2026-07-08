@@ -1,0 +1,67 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  id-token: write
+
+jobs:
+  release-artifacts:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.25.11"
+          cache-dependency-path: |
+            service/go.mod
+            service/go.sum
+      - run: sudo apt-get update && sudo apt-get install -y cmake g++ libssl-dev
+      - uses: sigstore/cosign-installer@v3.8.1
+      - uses: anchore/sbom-action/download-syft@v0.17.9
+      - run: mkdir -p dist
+      - name: Read release version
+        run: |
+          VERSION="$(cat VERSION)"
+          test "${GITHUB_REF_NAME#v}" = "$VERSION"
+          echo "VERSION=$VERSION" >> "$GITHUB_ENV"
+      - run: go build -ldflags "-X main.serviceVersion=${VERSION} -X main.serviceCommit=${GITHUB_SHA} -X main.serviceBuildTime=$(date -u +%Y-%m-%dT%H:%M:%SZ)" -o ../dist/anopki-service ./cmd/anopki-service
+        working-directory: service
+      - run: cmake -S . -B build-release -DCMAKE_BUILD_TYPE=Release
+      - run: cmake --build build-release --config Release
+      - run: cp build-release/anopki-core dist/anopki-core
+      - run: tar -czf "dist/anopki-service-v${VERSION}-linux-amd64.tar.gz" -C dist anopki-service
+      - run: tar -czf "dist/anopki-core-v${VERSION}-linux-amd64.tar.gz" -C dist anopki-core
+      - run: rm dist/anopki-service dist/anopki-core
+      - run: sha256sum dist/*.tar.gz > dist/SHA256SUMS
+      - run: python scripts/validate-release-artifacts.py dist
+      - run: syft scan dir:dist -o cyclonedx-json=dist/anopki.sbom.cdx.json
+      - name: Sign release evidence
+        run: |
+          for artifact in dist/*.tar.gz dist/SHA256SUMS dist/*.json; do
+            cosign sign-blob --yes \
+              --output-signature "${artifact}.sig" \
+              --output-certificate "${artifact}.pem" \
+              "$artifact"
+          done
+      - uses: actions/upload-artifact@v4
+        with:
+          name: anopki-release
+          path: dist/
+      - name: Publish GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if gh release view "$GITHUB_REF_NAME" >/dev/null 2>&1; then
+            gh release upload "$GITHUB_REF_NAME" dist/* --clobber
+          else
+            gh release create "$GITHUB_REF_NAME" dist/* \
+              --title "$GITHUB_REF_NAME" \
+              --notes-file CHANGELOG.md \
+              --verify-tag
+          fi
