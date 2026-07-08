@@ -137,4 +137,10 @@ if(BUILD_TESTING)
         NAME anopki.core_openssl_golden
         COMMAND anopki_core_openssl_golden_test ${CMAKE_CURRENT_BINARY_DIR} ${CMAKE_CURRENT_SOURCE_DIR}/tests/fixtures/openssl-baseline
     )
+
+    add_executable(anopki_crypto_backend_interface_test
+        tests/crypto_backend_interface_test.cpp
+    )
+    target_link_libraries(anopki_crypto_backend_interface_test PRIVATE anopki::core)
+    add_test(NAME anopki.crypto_backend_interface COMMAND anopki_crypto_backend_interface_test)
 endif()
