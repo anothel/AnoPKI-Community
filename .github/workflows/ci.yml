@@ -17,6 +17,8 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.x"
+      - name: Test Community boundary validator
+        run: python scripts/test_validate_community_boundary.py
       - name: Validate Community boundary
         run: python scripts/validate-community-boundary.py
 

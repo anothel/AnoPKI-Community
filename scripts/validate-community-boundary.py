@@ -5,7 +5,9 @@
 from __future__ import annotations
 
 import sys
+import subprocess
 from pathlib import Path
+from typing import Iterable
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -21,41 +23,129 @@ FORBIDDEN_PATHS = [
 
 FORBIDDEN_TOKENS = [
     "LicenseRef-AnoPKI-Enterprise",
+    "ENTERPRISE-LICENSE-NOTICE",
     "ANOPKI_ENTERPRISE_EDITION",
     "ANOPKI_ENTERPRISE_ANOCRYPTO",
 ]
 
-def fail(message: str) -> None:
-    print(message, file=sys.stderr)
-    raise SystemExit(1)
+SKIP_DIRS = {
+    ".git",
+    ".tmp",
+    ".tmp-gocache",
+    ".pytest_cache",
+    "build",
+    "build-fuzz",
+    "docs-pack",
+    "node_modules",
+    "vendor",
+    "__pycache__",
+}
 
-def main() -> None:
-    hits = [p for p in FORBIDDEN_PATHS if (ROOT / p).exists()]
+SELF_TEST_FILES = {
+    "validate-community-boundary.py",
+    "test_validate_community_boundary.py",
+}
+
+ANOCRYPTO_CLAIM_WORDS = ("implemented", "implementation", "active", "current", "default", "production", "ready")
+KCMVP_CLAIM_WORDS = ("certified", "validated")
+ALLOW_QUALIFIERS = (
+    "planned",
+    "intended",
+    "pending",
+    "future",
+    "target",
+    "ready architecture",
+    "not implemented",
+    "does not implement",
+    "do not",
+    "must not claim",
+    "not claim",
+    "not mark",
+    "excluded",
+    "until",
+    "before switching",
+    "begins",
+    "when the first",
+    "work as an",
+    "adoption",
+    "source or binaries",
+    "certification evidence",
+    "until code",
+)
+
+
+def fail(message: str) -> None:
+    raise SystemExit(message)
+
+def should_skip(path: Path, root: Path) -> bool:
+    rel_parts = path.relative_to(root).parts
+    return path.name in SELF_TEST_FILES or any(part in SKIP_DIRS for part in rel_parts)
+
+
+def text_files(root: Path) -> Iterable[Path]:
+    git_dir = root / ".git"
+    if git_dir.exists():
+        result = subprocess.run(
+            ["git", "-C", str(root), "ls-files"],
+            text=True,
+            capture_output=True,
+            check=False,
+        )
+        if result.returncode == 0:
+            for rel in result.stdout.splitlines():
+                path = root / rel
+                if path.is_file() and not should_skip(path, root):
+                    yield path
+            return
+
+    for path in root.rglob("*"):
+        if path.is_file() and not should_skip(path, root):
+            yield path
+
+
+def has_allow_qualifier(line: str) -> bool:
+    lowered = line.lower()
+    return any(qualifier in lowered for qualifier in ALLOW_QUALIFIERS)
+
+
+def validate(root: Path = ROOT) -> None:
+    hits = [p for p in FORBIDDEN_PATHS if (root / p).exists()]
+    hits.extend(str(p.relative_to(root)) for p in (root / "src/core/crypto").glob("anocrypto_backend.*"))
     if hits:
         fail("Community tree contains Enterprise-only paths:\n" + "\n".join(hits))
 
     token_hits = []
-    for path in ROOT.rglob("*"):
-        if not path.is_file():
-            continue
-        rel_parts = path.relative_to(ROOT).parts
-        if any(part in {".git", "build", "docs-pack"} for part in rel_parts):
-            continue
-        if path.name == "validate-community-boundary.py":
-            continue
+    anocrypto_hits = []
+    kcmvp_hits = []
+    for path in text_files(root):
         try:
             content = path.read_text(encoding="utf-8")
         except UnicodeDecodeError:
             continue
+        rel = path.relative_to(root)
         for token in FORBIDDEN_TOKENS:
             if token in content:
-                token_hits.append(f"{path.relative_to(ROOT)}: {token}")
+                token_hits.append(f"{rel}: {token}")
+        for number, line in enumerate(content.splitlines(), start=1):
+            lowered = line.lower()
+            if "anocrypto" in lowered and any(word in lowered for word in ANOCRYPTO_CLAIM_WORDS) and not has_allow_qualifier(line):
+                anocrypto_hits.append(f"{rel}:{number}: {line.strip()}")
+            if "kcmvp" in lowered and any(word in lowered for word in KCMVP_CLAIM_WORDS) and not has_allow_qualifier(line):
+                kcmvp_hits.append(f"{rel}:{number}: {line.strip()}")
     if token_hits:
         fail("Community tree contains Enterprise-only tokens:\n" + "\n".join(sorted(token_hits)))
+    if anocrypto_hits:
+        fail("Community tree contains premature AnoCrypto claims:\n" + "\n".join(sorted(anocrypto_hits)))
+    if kcmvp_hits:
+        fail("Community tree contains KCMVP certification claims:\n" + "\n".join(sorted(kcmvp_hits)))
 
-    cmake = (ROOT / "CMakeLists.txt").read_text(encoding="utf-8")
+    cmake = (root / "CMakeLists.txt").read_text(encoding="utf-8")
     if "find_package(OpenSSL REQUIRED COMPONENTS Crypto)" not in cmake:
         fail("Community CMakeLists.txt must keep OpenSSL as the active backend")
+
+
+def main() -> None:
+    validate(ROOT)
     print("community boundary ok")
 
 if __name__ == "__main__":
