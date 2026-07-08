@@ -1,0 +1,23 @@
+csr.subject=/CN=leaf
+csr.dns=leaf.example.test
+csr.ip=127.0.0.1
+csr.public_key_algorithm=rsa
+csr.public_key_size_bits=2048
+csr.signature_algorithm=sha256
+csr.extension_oids=2.5.29.17,2.5.29.15
+issue.subject=CN=leaf
+issue.result_not_before=2026-06-13T00:00:00Z
+issue.result_not_after=2026-06-14T00:00:00Z
+issue.cert_not_before=Jun 13 00:00:00 2026 GMT
+issue.cert_not_after=Jun 14 00:00:00 2026 GMT
+issue.basic_constraints=CA:FALSE
+issue.key_usage=Digital Signature, Key Encipherment
+issue.extended_key_usage=TLS Web Server Authentication
+crl.issuer=/CN=Test CA
+crl.number=2147483648
+crl.revoked_count=1
+ocsp.serial_number=1001
+ocsp.hash_algorithm=sha1
+ocsp.has_nonce=true
+ocsp.nonce_hex=01020304a5
+ocsp.response_status=successful

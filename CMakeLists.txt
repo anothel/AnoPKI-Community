@@ -128,4 +128,13 @@ if(BUILD_TESTING)
         NAME anopki.core_ocsp
         COMMAND anopki_core_ocsp_test ${CMAKE_CURRENT_BINARY_DIR} ${CMAKE_CURRENT_SOURCE_DIR}/tests/fixtures/ocsp
     )
+
+    add_executable(anopki_core_openssl_golden_test
+        tests/core_openssl_golden_test.cpp
+    )
+    target_link_libraries(anopki_core_openssl_golden_test PRIVATE anopki::core OpenSSL::Crypto)
+    add_test(
+        NAME anopki.core_openssl_golden
+        COMMAND anopki_core_openssl_golden_test ${CMAKE_CURRENT_BINARY_DIR} ${CMAKE_CURRENT_SOURCE_DIR}/tests/fixtures/openssl-baseline
+    )
 endif()
