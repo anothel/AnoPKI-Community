@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: MPL-2.0
 #include "anopki/core/issue.hpp"
+#include "openssl_backend.hpp"
 
 #include <openssl/asn1.h>
 #include <openssl/bio.h>
@@ -958,7 +959,7 @@ const EVP_MD *signature_digest(const IssueRequest &request)
 
 } // namespace
 
-IssueResult issue_certificate(const IssueRequest &request)
+IssueResult OpenSSLBackend::issue_certificate(const IssueRequest &request) const
 {
 	X509ReqPtr csr = parse_csr(request.csr_pem);
 	EvpPkeyPtr public_key = verify_csr_proof_of_possession(csr.get());
@@ -1029,6 +1030,11 @@ IssueResult issue_certificate(const IssueRequest &request)
 	result.not_before = times.not_before;
 	result.not_after = times.not_after;
 	return result;
+}
+
+IssueResult issue_certificate(const IssueRequest &request)
+{
+	return default_crypto_backend().issue_certificate(request);
 }
 
 } // namespace anopki::core

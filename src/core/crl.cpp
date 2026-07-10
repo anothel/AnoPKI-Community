@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: MPL-2.0
 #include "anopki/core/crl.hpp"
+#include "openssl_backend.hpp"
 
 #include <openssl/asn1.h>
 #include <openssl/bio.h>
@@ -381,7 +382,7 @@ std::string crl_to_pem(X509_CRL *crl)
 
 } // namespace
 
-GenerateCRLResult generate_crl(const GenerateCRLRequest &request)
+GenerateCRLResult OpenSSLBackend::generate_crl(const GenerateCRLRequest &request) const
 {
 	X509Ptr issuer = parse_certificate(request.issuer_certificate_pem);
 	EvpPkeyPtr issuer_key = parse_private_key(read_file(request.issuer_key_ref));
@@ -412,6 +413,11 @@ GenerateCRLResult generate_crl(const GenerateCRLRequest &request)
 	GenerateCRLResult result;
 	result.crl_pem = crl_to_pem(crl.get());
 	return result;
+}
+
+GenerateCRLResult generate_crl(const GenerateCRLRequest &request)
+{
+	return default_crypto_backend().generate_crl(request);
 }
 
 CRLInfo inspect_crl_pem(const std::string &crl_pem)

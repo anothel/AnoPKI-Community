@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: MPL-2.0
 #include "anopki/core/csr.hpp"
+#include "openssl_backend.hpp"
 
 #include <openssl/bio.h>
 #include <openssl/crypto.h>
@@ -261,7 +262,7 @@ std::string signature_algorithm(X509_REQ *request)
 
 } // namespace
 
-CsrInfo inspect_csr_pem(const std::string &csr_pem)
+CsrInfo OpenSSLBackend::inspect_csr_pem(const std::string &csr_pem) const
 {
 	if (csr_pem.size() > static_cast<std::string::size_type>(std::numeric_limits<int>::max()))
 	{
@@ -304,6 +305,11 @@ CsrInfo inspect_csr_pem(const std::string &csr_pem)
 	info.public_key_size_bits = EVP_PKEY_bits(public_key.get());
 	info.signature_algorithm = signature_algorithm(request.get());
 	return info;
+}
+
+CsrInfo inspect_csr_pem(const std::string &csr_pem)
+{
+	return default_crypto_backend().inspect_csr_pem(csr_pem);
 }
 
 } // namespace anopki::core

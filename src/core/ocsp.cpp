@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: MPL-2.0
 #include "anopki/core/ocsp.hpp"
+#include "openssl_backend.hpp"
 
 #include <openssl/asn1.h>
 #include <openssl/bio.h>
@@ -456,7 +457,7 @@ std::string response_to_der(OCSP_RESPONSE *response)
 
 } // namespace
 
-OCSPRequestInfo inspect_ocsp_request_der(const std::string &request_der)
+OCSPRequestInfo OpenSSLBackend::inspect_ocsp_request_der(const std::string &request_der) const
 {
 	const OCSPRequestPtr request = parse_request_der(request_der);
 	OCSPRequestInfo info;
@@ -475,6 +476,11 @@ OCSPRequestInfo inspect_ocsp_request_der(const std::string &request_der)
 	return info;
 }
 
+OCSPRequestInfo inspect_ocsp_request_der(const std::string &request_der)
+{
+	return default_crypto_backend().inspect_ocsp_request_der(request_der);
+}
+
 OCSPIssuerInfo inspect_ocsp_issuer_pem(const std::string &issuer_certificate_pem, const std::string &hash_algorithm)
 {
 	const X509Ptr issuer = parse_certificate(issuer_certificate_pem);
@@ -488,7 +494,9 @@ OCSPIssuerInfo inspect_ocsp_issuer_pem(const std::string &issuer_certificate_pem
 	return OCSPIssuerInfo{parsed_id.issuer_name_hash, parsed_id.issuer_key_hash, parsed_id.hash_algorithm};
 }
 
-ValidateOCSPResponderResult validate_ocsp_responder(const std::string &issuer_certificate_pem, const std::string &responder_certificate_pem)
+ValidateOCSPResponderResult OpenSSLBackend::validate_ocsp_responder(
+    const std::string &issuer_certificate_pem,
+    const std::string &responder_certificate_pem) const
 {
 	const X509Ptr issuer = parse_certificate(issuer_certificate_pem);
 	const X509Ptr responder = parse_certificate(responder_certificate_pem);
@@ -498,7 +506,14 @@ ValidateOCSPResponderResult validate_ocsp_responder(const std::string &issuer_ce
 	return ValidateOCSPResponderResult{true};
 }
 
-GenerateOCSPResponseResult generate_ocsp_response(const GenerateOCSPResponseRequest &request)
+ValidateOCSPResponderResult validate_ocsp_responder(
+    const std::string &issuer_certificate_pem,
+    const std::string &responder_certificate_pem)
+{
+	return default_crypto_backend().validate_ocsp_responder(issuer_certificate_pem, responder_certificate_pem);
+}
+
+GenerateOCSPResponseResult OpenSSLBackend::generate_ocsp_response(const GenerateOCSPResponseRequest &request) const
 {
 	const OCSPRequestPtr ocsp_request = parse_request_der(request.request_der);
 	const X509Ptr issuer = parse_certificate(request.issuer_certificate_pem);
@@ -572,6 +587,11 @@ GenerateOCSPResponseResult generate_ocsp_response(const GenerateOCSPResponseRequ
 		throw_error(kOCSPCreateFailed);
 	}
 	return GenerateOCSPResponseResult{response_to_der(response.get())};
+}
+
+GenerateOCSPResponseResult generate_ocsp_response(const GenerateOCSPResponseRequest &request)
+{
+	return default_crypto_backend().generate_ocsp_response(request);
 }
 
 } // namespace anopki::core
