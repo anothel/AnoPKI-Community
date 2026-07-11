@@ -9,16 +9,17 @@ Current draft: [v0.1.0-alpha.0 candidate evidence](release-candidate-v0.1.0-alph
 
 | Area | Selected tool | Evidence hook |
 | --- | --- | --- |
-| Go static analysis | `go vet ./...` | CI `go-service` job. |
-| Go staticcheck | `staticcheck` | CI `go-service` job via `go run honnef.co/go/tools/cmd/staticcheck@latest ./...`. |
-| Go security scan | `gosec` | CI `go-service` job via `go run github.com/securego/gosec/v2/cmd/gosec@latest ./...`. |
-| Go race detector | `go test -race ./...` | CI `go-service` job with `CGO_ENABLED=1`. |
-| Go dependency vulnerability scan | `govulncheck` | CI `go-service` job via `go run golang.org/x/vuln/cmd/govulncheck@latest ./...`. |
-| C++ parser fuzz/sanitizer smoke | Clang/libFuzzer with AddressSanitizer | CI `cpp-fuzz-smoke` job builds CSR, OCSP, and CRL parser fuzz targets and runs `-runs=1`. |
+| Go test, vet, and build | Go 1.25.11 minimum plus current CI Go | CI `go-baseline` matrix. |
+| Go staticcheck | `staticcheck` | CI `go-analysis` job via `go run honnef.co/go/tools/cmd/staticcheck@latest ./...`. |
+| Go security scan | `gosec` | CI `go-analysis` job via `go run github.com/securego/gosec/v2/cmd/gosec@latest ./...`. |
+| Go race detector | `go test -race ./...` | CI `go-analysis` job with `CGO_ENABLED=1`. |
+| Go dependency vulnerability scan | `govulncheck` | CI `go-analysis` job via `go run golang.org/x/vuln/cmd/govulncheck@latest ./...`. |
+| PostgreSQL | PostgreSQL 16 service integration | CI `postgres-integration` job records client/server versions. |
+| C++ parser fuzz/sanitizer smoke | Clang/libFuzzer with AddressSanitizer | CI `cpp-fuzz-smoke` job builds CSR, OCSP, and CRL parser targets and runs each for at most 20 seconds. |
 | Community boundary | `scripts/validate-community-boundary.py` | CI `community-boundary` job. |
 | Secret baseline | `scripts/security-baseline-scan.py` | CI `secret-baseline` job and README smoke checklist. |
 | SBOM | `syft` CycloneDX JSON | Release workflow writes `dist/anopki.sbom.cdx.json`. |
-| Artifact signing | `cosign` keyless signing | Release workflow signs checksums, SBOM, and archives. |
+| Artifact signing | `cosign` keyless signing | Tag-only publish job signs checksums, SBOM, and archives; manual dry-runs record signing as skipped. |
 
 ## Release Artifacts
 
@@ -32,12 +33,16 @@ Pre-1.0 releases distribute archives, not installers or container images:
 - cosign signatures and transparency-log references for archives, checksums,
   and SBOM.
 
-The tagged release workflow reads the repository `VERSION` file, requires the
-tag name to match it, builds Linux amd64 service/core archives with the version
-in their filenames, writes `SHA256SUMS`, smoke-checks the archives and
-checksums, generates a CycloneDX SBOM with `syft`, signs release evidence with
-`cosign`, uploads the `dist/` directory as a workflow artifact, and publishes
-or updates the matching GitHub Release.
+The manually dispatched release workflow runs with read-only repository
+permissions. It builds Linux amd64 service/core archives with the repository
+version in their filenames, writes `SHA256SUMS`, validates archive contents,
+generates a CycloneDX SBOM with `syft`, records signing as skipped, and uploads
+the `dist/` directory only to the workflow run.
+
+Publishing is a separate job limited to a matching `v*` tag push. It requires
+a signed annotated tag and the `release` GitHub environment before receiving
+`contents: write` and OIDC permissions, signing evidence with `cosign`, and
+creating or updating the matching GitHub Release.
 
 Container images, OS packages, and Helm charts stay out until a deployment
 target is selected.

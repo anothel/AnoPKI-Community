@@ -97,8 +97,53 @@ jobs:
       - name: Scan for committed secrets
         run: python scripts/security-baseline-scan.py
 
-  go-service:
-    name: Go service
+  go-baseline:
+    name: Go baseline (${{ matrix.go }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        go: ["1.25.11", "1.26.x"]
+    defaults:
+      run:
+        working-directory: service
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: ${{ matrix.go }}
+          cache-dependency-path: |
+            service/go.mod
+            service/go.sum
+      - run: go version
+      - run: go test ./...
+      - run: go vet ./...
+      - run: mkdir -p ../.tmp/ci && go build -o ../.tmp/ci/anopki-service ./cmd/anopki-service
+
+  go-analysis:
+    name: Go race and analysis
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: service
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.26.x"
+          cache-dependency-path: |
+            service/go.mod
+            service/go.sum
+      - run: go version
+      - run: go test -race ./...
+        env:
+          CGO_ENABLED: "1"
+      - run: go run honnef.co/go/tools/cmd/staticcheck@latest ./...
+      - run: go run github.com/securego/gosec/v2/cmd/gosec@latest ./...
+      - run: go run golang.org/x/vuln/cmd/govulncheck@latest ./...
+
+  postgres-integration:
+    name: PostgreSQL 16 integration
     runs-on: ubuntu-latest
     services:
       postgres:
@@ -125,25 +170,27 @@ jobs:
           cache-dependency-path: |
             service/go.mod
             service/go.sum
-      - run: go test ./...
-      - run: go test -race ./...
-        env:
-          CGO_ENABLED: "1"
-      - run: go vet ./...
-      - run: go run honnef.co/go/tools/cmd/staticcheck@latest ./...
-      - run: go run github.com/securego/gosec/v2/cmd/gosec@latest ./...
-      - run: go run golang.org/x/vuln/cmd/govulncheck@latest ./...
+      - run: sudo apt-get update && sudo apt-get install -y postgresql-client
+        working-directory: .
+      - name: Record PostgreSQL version
+        run: |
+          psql --version
+          PGPASSWORD=anopki psql -h localhost -U anopki -d anopki_test -Atc "SHOW server_version;"
       - run: go test -p 1 ./internal/store ./internal/httpapi -run PostgresIntegration -v
         env:
           ANOPKI_POSTGRES_TEST_DSN: postgres://anopki:anopki@localhost:5432/anopki_test?sslmode=disable
-      - run: go build ./cmd/anopki-service
 
   cpp-core:
     name: C++ core
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - run: sudo apt-get update && sudo apt-get install -y cmake g++ libssl-dev
+      - run: sudo apt-get update && sudo apt-get install -y cmake g++ libssl-dev pkg-config
+      - name: Record C++ toolchain
+        run: |
+          cmake --version
+          c++ --version
+          pkg-config --modversion openssl
       - run: cmake -S . -B build -DCMAKE_BUILD_TYPE=Debug
       - run: cmake --build build --config Debug
       - run: ctest --test-dir build -C Debug --output-on-failure
@@ -153,9 +200,36 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - run: sudo apt-get update && sudo apt-get install -y cmake clang libssl-dev
+      - run: sudo apt-get update && sudo apt-get install -y cmake clang libssl-dev pkg-config
+      - name: Record fuzz toolchain
+        run: |
+          cmake --version
+          clang++ --version
+          pkg-config --modversion openssl
       - run: cmake -S . -B build-fuzz -DANOPKI_ENABLE_FUZZING=ON -DCMAKE_CXX_COMPILER=clang++
       - run: cmake --build build-fuzz --target anopki_core_csr_fuzz anopki_core_ocsp_fuzz anopki_core_crl_fuzz
-      - run: ./build-fuzz/anopki_core_csr_fuzz -runs=1
-      - run: ./build-fuzz/anopki_core_ocsp_fuzz -runs=1
-      - run: ./build-fuzz/anopki_core_crl_fuzz -runs=1
+      - run: timeout 30s ./build-fuzz/anopki_core_csr_fuzz -max_total_time=20
+        env:
+          ASAN_OPTIONS: detect_leaks=0:abort_on_error=1
+      - run: timeout 30s ./build-fuzz/anopki_core_ocsp_fuzz -max_total_time=20
+        env:
+          ASAN_OPTIONS: detect_leaks=0:abort_on_error=1
+      - run: timeout 30s ./build-fuzz/anopki_core_crl_fuzz -max_total_time=20
+        env:
+          ASAN_OPTIONS: detect_leaks=0:abort_on_error=1
+
+  acme-harness:
+    name: ACME harness self-test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.25.11"
+          cache-dependency-path: |
+            service/go.mod
+            service/go.sum
+      - name: Run ACME harness tests
+        shell: pwsh
+        run: ./scripts/acme-smoke/test-run-certbot-smoke.ps1
+      - run: echo "Harness passed; no live lego or certbot compatibility claim was produced."

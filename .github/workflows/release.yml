@@ -1,4 +1,4 @@
-name: Release
+name: Release artifacts
 
 on:
   push:
@@ -7,11 +7,11 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: write
-  id-token: write
+  contents: read
 
 jobs:
-  release-artifacts:
+  build-artifacts:
+    name: Build release artifacts
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -21,14 +21,24 @@ jobs:
           cache-dependency-path: |
             service/go.mod
             service/go.sum
-      - run: sudo apt-get update && sudo apt-get install -y cmake g++ libssl-dev
-      - uses: sigstore/cosign-installer@v3.8.1
+      - run: sudo apt-get update && sudo apt-get install -y cmake g++ libssl-dev pkg-config
       - uses: anchore/sbom-action/download-syft@v0.17.9
+      - name: Record stable toolchain
+        run: |
+          go version
+          cmake --version
+          c++ --version
+          pkg-config --modversion openssl
       - run: mkdir -p dist
       - name: Read release version
         run: |
           VERSION="$(cat VERSION)"
-          test "${GITHUB_REF_NAME#v}" = "$VERSION"
+          if [[ "${GITHUB_REF_TYPE}" == "tag" ]]; then
+            test "${GITHUB_REF_NAME#v}" = "$VERSION"
+            echo "RELEASE_MODE=tag" >> "$GITHUB_ENV"
+          else
+            echo "RELEASE_MODE=dry-run" >> "$GITHUB_ENV"
+          fi
           echo "VERSION=$VERSION" >> "$GITHUB_ENV"
       - run: go build -ldflags "-X main.serviceVersion=${VERSION} -X main.serviceCommit=${GITHUB_SHA} -X main.serviceBuildTime=$(date -u +%Y-%m-%dT%H:%M:%SZ)" -o ../dist/anopki-service ./cmd/anopki-service
         working-directory: service
@@ -41,18 +51,50 @@ jobs:
       - run: sha256sum dist/*.tar.gz > dist/SHA256SUMS
       - run: python scripts/validate-release-artifacts.py dist
       - run: syft scan dir:dist -o cyclonedx-json=dist/anopki.sbom.cdx.json
+      - name: Record signing status
+        run: |
+          if [[ "$RELEASE_MODE" == "dry-run" ]]; then
+            echo "Signing skipped: manual dry-run has no publishing or signing authority." > dist/SIGNING-STATUS.txt
+          else
+            echo "Signing pending: tag-only publish job must sign these artifacts." > dist/SIGNING-STATUS.txt
+          fi
+      - uses: actions/upload-artifact@v4
+        with:
+          name: anopki-release-${{ github.run_id }}
+          path: dist/
+          if-no-files-found: error
+
+  publish-tagged-release:
+    name: Sign and publish tagged release
+    if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')
+    needs: build-artifacts
+    runs-on: ubuntu-latest
+    environment: release
+    permissions:
+      contents: write
+      id-token: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Require a signed annotated tag
+        run: |
+          git cat-file -p "$GITHUB_REF_NAME" | grep -Eq -- '-----BEGIN (PGP|SSH) SIGNATURE-----'
+      - uses: actions/download-artifact@v4
+        with:
+          name: anopki-release-${{ github.run_id }}
+          path: dist
+      - uses: sigstore/cosign-installer@v3.8.1
       - name: Sign release evidence
         run: |
+          rm dist/SIGNING-STATUS.txt
           for artifact in dist/*.tar.gz dist/SHA256SUMS dist/*.json; do
             cosign sign-blob --yes \
               --output-signature "${artifact}.sig" \
               --output-certificate "${artifact}.pem" \
               "$artifact"
           done
-      - uses: actions/upload-artifact@v4
-        with:
-          name: anopki-release
-          path: dist/
+          echo "Signed with cosign keyless signing in tag-only publish job." > dist/SIGNING-STATUS.txt
       - name: Publish GitHub Release
         env:
           GH_TOKEN: ${{ github.token }}

@@ -22,7 +22,9 @@ def require_release_workflow() -> None:
     text = RELEASE_WORKFLOW.read_text(encoding="utf-8")
     required = [
         "on:",
+        "workflow_dispatch:",
         "tags:",
+        "contents: read",
         "contents: write",
         "id-token: write",
         'go-version: "1.25.11"',
@@ -35,6 +37,13 @@ def require_release_workflow() -> None:
         "syft scan dir:dist",
         "cosign sign-blob",
         "actions/upload-artifact",
+        "actions/download-artifact",
+        "SIGNING-STATUS.txt",
+        "Signing skipped: manual dry-run",
+        "publish-tagged-release:",
+        "if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')",
+        "environment: release",
+        "Require a signed annotated tag",
         "GH_TOKEN: ${{ github.token }}",
         "gh release create",
         "gh release upload",
@@ -85,7 +94,11 @@ def test_compatibility_matrix_row_detail_drift_fails(tmp_path: Path) -> None:
     copy_release_evidence_inputs(tmp_path)
     evidence = tmp_path / "docs" / "reference" / "release-evidence.md"
     evidence.write_text(
-        evidence.read_text(encoding="utf-8").replace("Go 1.25.11", "Go 1.25", 1),
+        evidence.read_text(encoding="utf-8").replace(
+            "CI pins at least Go 1.25.11",
+            "CI pins at least Go 1.25",
+            1,
+        ),
         encoding="utf-8",
     )
 
@@ -187,6 +200,24 @@ def test_missing_release_signing_evidence_fails(tmp_path: Path) -> None:
     assert "cosign sign-blob" in result.stderr
 
 
+def test_missing_release_dry_run_gate_fails(tmp_path: Path) -> None:
+    copy_release_evidence_inputs(tmp_path)
+    release = tmp_path / ".github" / "workflows" / "release.yml"
+    release.write_text(
+        release.read_text(encoding="utf-8").replace(
+            "if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')",
+            "if: always()",
+            1,
+        ),
+        encoding="utf-8",
+    )
+
+    result = run_validator(tmp_path)
+
+    assert result.returncode == 1
+    assert "github.event_name == 'push'" in result.stderr
+
+
 def test_release_evidence_placeholder_fails(tmp_path: Path) -> None:
     copy_release_evidence_inputs(tmp_path)
     evidence = tmp_path / "docs" / "reference" / "release-evidence.md"
@@ -257,6 +288,8 @@ def main() -> None:
         test_missing_ci_fuzz_smoke_fails(Path(dirname))
     with tempfile.TemporaryDirectory() as dirname:
         test_missing_release_signing_evidence_fails(Path(dirname))
+    with tempfile.TemporaryDirectory() as dirname:
+        test_missing_release_dry_run_gate_fails(Path(dirname))
     with tempfile.TemporaryDirectory() as dirname:
         test_release_evidence_placeholder_fails(Path(dirname))
     with tempfile.TemporaryDirectory() as dirname:

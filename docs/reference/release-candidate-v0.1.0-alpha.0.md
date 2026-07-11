@@ -61,6 +61,31 @@ Run from repository root unless a working directory is shown.
 | `git diff --check` | Pass with line-ending warnings | No whitespace errors; Git reports expected LF-to-CRLF conversion warnings. |
 | `git status --short` before evidence changes | Pass | Clean tracked worktree at verified commit. |
 
+## GitHub Actions Candidate Evidence
+
+These fields remain pending until the candidate commit completes the named
+workflow. A local pass does not populate GitHub Actions evidence.
+
+| Evidence | Status | Evidence pointer |
+| --- | --- | --- |
+| Candidate commit SHA | Pending - candidate commit required | Pending |
+| GitHub Actions run | Pending - `.github/workflows/ci.yml` run required | Pending run URL |
+| Docs and contracts | Pending - validator jobs must complete | Pending job URL |
+| Go test matrix | Pending - Go 1.25.11 and current CI Go must complete | Pending job URLs |
+| Go race, static analysis, and security | Pending - `go-analysis` must complete | Pending job URL |
+| PostgreSQL | Pending - PostgreSQL 16 integration must complete | Pending job URL and recorded server version |
+| C++ build and CTest | Pending - `cpp-core` must complete | Pending job URL, compiler, CMake, and OpenSSL versions |
+| Parser fuzz smoke | Pending - bounded ASan/libFuzzer job must complete | Pending job URL |
+| ACME | Pending - harness self-test only; no live-client claim | Pending job URL |
+| Artifact dry-run | Pending - manual `release.yml` run required | Pending run URL |
+| CycloneDX SBOM | Pending - dry-run artifact must be inspected | Pending artifact name and digest |
+| Signing | Pending - expected to be explicitly skipped in manual dry-run | Pending `SIGNING-STATUS.txt` evidence |
+| Compatibility matrix | Pending - CI values and explicit client gaps required | Pending completed matrix |
+
+CI must record the stable runner CMake version actually used. Local CMake
+`4.4.0-rc1` is supporting evidence only and cannot be the sole candidate
+toolchain evidence.
+
 ## Required Before Tagging
 
 - Commit reviewed candidate changes, then record clean `git status` and final
@@ -72,9 +97,10 @@ Run from repository root unless a working directory is shown.
 - Run or obtain CI evidence for race detector, `go vet`, `staticcheck`, `gosec`,
   `govulncheck`, and parser fuzz/sanitizer smoke. Local `go vet` passed in this
   evidence run.
-- Produce release workflow artifacts in a non-publishing verification run, or
-  retain this as a blocker: source archive, service/core archives,
-  `SHA256SUMS`, CycloneDX SBOM, and cosign evidence.
+- Produce release workflow artifacts in a manual non-publishing dry-run and
+  record the service/core archives, `SHA256SUMS`, CycloneDX SBOM, archive
+  validation, and explicit signing-skip evidence. The source archive and
+  signing evidence remain tag-path requirements.
 - Review known gaps and obtain owner acceptance before creating any tag.
 
 ## Known Gaps
@@ -89,8 +115,9 @@ Run from repository root unless a working directory is shown.
   Clang/libFuzzer/AddressSanitizer build; use the CI fuzz job.
 - `staticcheck`, `gosec`, and `govulncheck` were not rerun locally because they
   require separately acquired tools; candidate CI remains the evidence source.
-- Release archives, `SHA256SUMS`, SBOM, cosign evidence, tagging, and publishing
-  were intentionally not produced because this task forbids release publication.
+- The candidate artifact dry-run has not executed in GitHub Actions. Release
+  archives, `SHA256SUMS`, SBOM, and explicit signing-skip evidence remain
+  pending; tagging and publishing are outside this milestone.
 - No HSM/KMS/PKCS#11 production provider or non-exportable signing path exists.
 - Audit tamper-evidence storage and SIEM exporter integration remain incomplete.
 - Backend parity currently uses semantic comparisons; no deterministic exact-DER
