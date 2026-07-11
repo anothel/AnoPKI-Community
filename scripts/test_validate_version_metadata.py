@@ -42,6 +42,16 @@ def test_current_version_metadata_pass() -> None:
     assert result.returncode == 0, result.stderr or result.stdout
 
 
+def test_prerelease_version_metadata_pass() -> None:
+    with tempfile.TemporaryDirectory() as tmp:
+        root = Path(tmp)
+        copy_version_inputs(root)
+        (root / "VERSION").write_text("0.1.0-alpha.0\n", encoding="utf-8")
+        result = run_validator(root)
+
+    assert result.returncode == 0, result.stderr or result.stdout
+
+
 def test_invalid_version_format_fails() -> None:
     with tempfile.TemporaryDirectory() as tmp:
         root = Path(tmp)
@@ -50,7 +60,7 @@ def test_invalid_version_format_fails() -> None:
         result = run_validator(root)
 
     assert result.returncode == 1
-    assert "VERSION must be MAJOR.MINOR.PATCH" in result.stderr
+    assert "VERSION must be MAJOR.MINOR.PATCH with an optional SemVer prerelease" in result.stderr
 
 
 def test_missing_version_file_fails() -> None:
@@ -81,6 +91,7 @@ def test_release_workflow_version_drift_fails() -> None:
 
 def main() -> None:
     test_current_version_metadata_pass()
+    test_prerelease_version_metadata_pass()
     test_invalid_version_format_fails()
     test_missing_version_file_fails()
     test_release_workflow_version_drift_fails()

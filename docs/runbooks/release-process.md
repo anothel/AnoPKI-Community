@@ -82,6 +82,9 @@ Certbot smoke requires Linux/WSL or elevated Windows with certbot installed.
    `SHA256SUMS`, CycloneDX SBOM, cosign signatures, and cosign certificates.
 13. Copy and complete the compatibility evidence template from
    [Release evidence](../reference/release-evidence.md).
+14. Keep candidate-specific command results, known gaps, and tag blockers in a
+    versioned evidence draft such as
+    [v0.1.0-alpha.0 candidate evidence](../reference/release-candidate-v0.1.0-alpha.0.md).
 
 ## Version Metadata
 

@@ -1,3 +1,12 @@
+# AnoPKI crypto backend parity fixture format, version 1.
+format.version=1
+
+operation.csr_parse.comparison=semantic
+operation.certificate_issue.comparison=semantic
+operation.crl_generate_sign.comparison=semantic
+operation.ocsp_decode.comparison=semantic
+operation.ocsp_response_sign.comparison=semantic
+
 csr.subject=/CN=leaf
 csr.dns=leaf.example.test
 csr.ip=127.0.0.1

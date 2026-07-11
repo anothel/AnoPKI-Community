@@ -6,7 +6,9 @@ This document records the current crypto implementation and the intended directi
 
 AnoPKI currently builds the C++ core against OpenSSL `Crypto` through CMake. The current core CLI uses that implementation for CSR inspection, certificate issuance, CRL generation, OCSP request decoding, and OCSP response signing.
 
-The repository already has a small backend namespace at `include/anopki/crypto/backend.hpp`, but the signing and parsing paths are not yet abstracted behind a complete backend interface.
+The backend contract covers CSR parsing, certificate issuance, CRL generation,
+OCSP request decoding, OCSP response signing, and responder validation. Community
+routes those operations through its OpenSSL implementation.
 
 ## Intended Direction
 
@@ -32,7 +34,7 @@ Use these names consistently:
 Before switching the default backend to AnoCrypto, the project needs:
 
 1. a backend contract for CSR parse, certificate issue, CRL sign, OCSP decode, and OCSP sign operations,
-2. golden fixture parity between OpenSSL-backed behavior and AnoCrypto-backed behavior,
+2. fixture parity using the [shared backend parity harness](crypto-backend-parity.md),
 3. stable error mapping so raw backend errors do not become public API contracts,
 4. release evidence that records OS, compiler, dependency, and artifact behavior,
 5. a fallback or compatibility plan for existing OpenSSL-based deployments,

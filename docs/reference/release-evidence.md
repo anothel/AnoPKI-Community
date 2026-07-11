@@ -3,6 +3,8 @@
 This file records release artifact, supply-chain, and compatibility decisions.
 Release candidates attach evidence here by command output or CI run URL.
 
+Current draft: [v0.1.0-alpha.0 candidate evidence](release-candidate-v0.1.0-alpha.0.md).
+
 ## Tool Decisions
 
 | Area | Selected tool | Evidence hook |
@@ -226,6 +228,7 @@ Current expected entry:
 | Field | Current value | Evidence |
 | --- | --- | --- |
 | Crypto backend | OpenSSL-backed C++ core | CMake configure output, dependency version, and CTest/core CLI contract results. |
+| Backend parity | Fixture format version, per-operation result, and skip reason | [Crypto backend parity](crypto-backend-parity.md) harness output. |
 | Intended migration direction | AnoCrypto | ADR 0006 and [Crypto backend strategy](crypto-backend-strategy.md). |
 
 Do not mark AnoCrypto as active release evidence until an AnoCrypto-backed path exists and passes CSR, issuance, CRL, OCSP, and release artifact checks.

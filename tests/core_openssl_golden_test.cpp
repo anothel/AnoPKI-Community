@@ -28,6 +28,11 @@
 namespace
 {
 
+std::string current_backend = "openssl";
+std::string current_operation = "harness";
+std::string current_comparison = "none";
+bool exact_der_verified = false;
+
 template <typename T, void (*FreeFn)(T *)>
 struct OpenSslDeleter
 {
@@ -59,7 +64,10 @@ void require(bool condition, std::string_view message)
 {
 	if (!condition)
 	{
-		std::cerr << message << "\n";
+		std::cerr << "PARITY backend=" << current_backend
+		          << " operation=" << current_operation
+		          << " comparison=" << current_comparison
+		          << " result=failure reason=" << message << "\n";
 		std::exit(1);
 	}
 }
@@ -103,10 +111,52 @@ void expect_eq(const std::map<std::string, std::string> &expected, const std::st
 	require(item != expected.end(), "missing expected fixture key: " + key);
 	if (item->second != actual)
 	{
-		std::cerr << "OpenSSL golden mismatch for " << key << "\n"
+		std::cerr << "Backend parity mismatch for " << key << "\n"
 		          << "expected: " << item->second << "\n"
 		          << "actual:   " << actual << "\n";
-		std::exit(1);
+		require(false, key + "_mismatch");
+	}
+}
+
+void begin_operation(const std::map<std::string, std::string> &fixture, const std::string &operation)
+{
+	current_operation = operation;
+	const auto comparison = fixture.find("operation." + operation + ".comparison");
+	require(comparison != fixture.end(), "missing_comparison");
+	current_comparison = comparison->second;
+	require(current_comparison == "semantic" || current_comparison == "exact_der", "invalid_comparison");
+	exact_der_verified = false;
+}
+
+void expect_exact_der(std::string_view expected, std::string_view actual)
+{
+	require(current_comparison == "exact_der", "exact_der_mode_required");
+	require(expected == actual, "exact_der_mismatch");
+	exact_der_verified = true;
+}
+
+void report_success()
+{
+	require(current_comparison != "exact_der" || exact_der_verified, "exact_der_not_compared");
+	std::cout << "PARITY backend=" << current_backend
+	          << " operation=" << current_operation
+	          << " comparison=" << current_comparison
+	          << " result=" << (current_comparison == "exact_der" ? "exact_der_equal" : "semantic_equal") << "\n";
+}
+
+void report_pending(
+    const std::map<std::string, std::string> &fixture,
+    const std::string &backend,
+    const std::string &reason)
+{
+	current_backend = backend;
+	for (const std::string &operation : {"csr_parse", "certificate_issue", "crl_generate_sign", "ocsp_decode", "ocsp_response_sign"})
+	{
+		begin_operation(fixture, operation);
+		std::cout << "PARITY backend=" << current_backend
+		          << " operation=" << current_operation
+		          << " comparison=" << current_comparison
+		          << " result=unsupported_pending reason=" << reason << "\n";
 	}
 }
 
@@ -332,6 +382,7 @@ std::string join(const std::vector<std::string> &values)
 
 void assert_csr_baseline(const std::map<std::string, std::string> &expected, const std::string &csr_pem)
 {
+	begin_operation(expected, "csr_parse");
 	const anopki::core::CsrInfo info = anopki::core::inspect_csr_pem(csr_pem);
 	expect_eq(expected, "csr.subject", info.subject);
 	expect_eq(expected, "csr.dns", join(info.dns_names));
@@ -340,6 +391,7 @@ void assert_csr_baseline(const std::map<std::string, std::string> &expected, con
 	expect_eq(expected, "csr.public_key_size_bits", std::to_string(info.public_key_size_bits));
 	expect_eq(expected, "csr.signature_algorithm", info.signature_algorithm);
 	expect_eq(expected, "csr.extension_oids", join(info.extension_oids));
+	report_success();
 }
 
 void assert_issue_baseline(
@@ -349,6 +401,7 @@ void assert_issue_baseline(
     const std::string &issuer_certificate_pem,
     EVP_PKEY *issuer_key)
 {
+	begin_operation(expected, "certificate_issue");
 	const std::filesystem::path issuer_key_path = work_dir / "openssl_golden_issuer.key";
 	write_file(issuer_key_path, pem_from_private_key(issuer_key));
 
@@ -380,6 +433,7 @@ void assert_issue_baseline(
 	expect_eq(expected, "issue.basic_constraints", extension_text(extension_by_nid(certificate.get(), NID_basic_constraints)));
 	expect_eq(expected, "issue.key_usage", extension_text(extension_by_nid(certificate.get(), NID_key_usage)));
 	expect_eq(expected, "issue.extended_key_usage", extension_text(extension_by_nid(certificate.get(), NID_ext_key_usage)));
+	report_success();
 }
 
 void assert_crl_baseline(
@@ -388,6 +442,7 @@ void assert_crl_baseline(
     const std::string &issuer_certificate_pem,
     EVP_PKEY *issuer_key)
 {
+	begin_operation(expected, "crl_generate_sign");
 	const std::filesystem::path issuer_key_path = work_dir / "openssl_golden_crl_issuer.key";
 	write_file(issuer_key_path, pem_from_private_key(issuer_key));
 
@@ -407,6 +462,7 @@ void assert_crl_baseline(
 
 	const X509CrlPtr crl = crl_from_pem(result.crl_pem);
 	require(sk_X509_REVOKED_num(X509_CRL_get_REVOKED(crl.get())) == 1, "CRL revoked count mismatch");
+	report_success();
 }
 
 void assert_ocsp_baseline(
@@ -416,6 +472,7 @@ void assert_ocsp_baseline(
     EVP_PKEY *issuer_key,
     X509 *leaf)
 {
+	begin_operation(expected, "ocsp_decode");
 	const unsigned char nonce[] = {0x01, 0x02, 0x03, 0x04, 0xa5};
 	OCSP_CERTID *raw_id = nullptr;
 	const std::string request_der = ocsp_request_der_with_nonce(leaf, issuer, nonce, sizeof(nonce), &raw_id);
@@ -426,7 +483,9 @@ void assert_ocsp_baseline(
 	expect_eq(expected, "ocsp.hash_algorithm", info.certificates[0].hash_algorithm);
 	expect_eq(expected, "ocsp.has_nonce", info.has_nonce ? "true" : "false");
 	expect_eq(expected, "ocsp.nonce_hex", info.nonce_hex);
+	report_success();
 
+	begin_operation(expected, "ocsp_response_sign");
 	const std::filesystem::path issuer_key_path = work_dir / "openssl_golden_ocsp_issuer.key";
 	write_file(issuer_key_path, pem_from_private_key(issuer_key));
 	anopki::core::GenerateOCSPResponseRequest response_request;
@@ -446,16 +505,25 @@ void assert_ocsp_baseline(
 	const anopki::core::GenerateOCSPResponseResult result = anopki::core::generate_ocsp_response(response_request);
 	const OCSPResponsePtr response = ocsp_response_from_der(result.response_der);
 	expect_eq(expected, "ocsp.response_status", OCSP_response_status_str(OCSP_response_status(response.get())));
+	report_success();
 }
 
 } // namespace
 
 int main(int argc, char *argv[])
 {
-	require(argc == 3, "usage: anopki_core_openssl_golden_test <work-dir> <fixture-dir>");
+	require(argc == 3 || argc == 6, "usage_invalid");
 	const std::filesystem::path work_dir = argv[1];
 	const std::filesystem::path fixture_dir = argv[2];
-	const std::map<std::string, std::string> expected = load_expected(fixture_dir / "expected.txt");
+	const std::map<std::string, std::string> expected = load_expected(fixture_dir / "manifest.txt");
+	expect_eq(expected, "format.version", "1");
+
+	if (argc == 6)
+	{
+		require(std::string_view{argv[3]} == "--pending", "pending_flag_invalid");
+		report_pending(expected, argv[4], argv[5]);
+		return 77;
+	}
 
 	const EvpPkeyPtr issuer_key = make_rsa_key();
 	const X509Ptr issuer = make_ca_certificate(issuer_key.get());

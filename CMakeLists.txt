@@ -4,8 +4,9 @@ cmake_minimum_required(VERSION 3.20)
 
 file(READ "${CMAKE_CURRENT_SOURCE_DIR}/VERSION" ANOPKI_VERSION)
 string(STRIP "${ANOPKI_VERSION}" ANOPKI_VERSION)
+string(REGEX MATCH "^[0-9]+\\.[0-9]+\\.[0-9]+" ANOPKI_PROJECT_VERSION "${ANOPKI_VERSION}")
 
-project(anopki VERSION ${ANOPKI_VERSION} LANGUAGES CXX)
+project(anopki VERSION ${ANOPKI_PROJECT_VERSION} LANGUAGES CXX)
 
 find_package(OpenSSL REQUIRED COMPONENTS Crypto)
 
@@ -135,7 +136,7 @@ if(BUILD_TESTING)
     target_link_libraries(anopki_core_openssl_golden_test PRIVATE anopki::core OpenSSL::Crypto)
     add_test(
         NAME anopki.core_openssl_golden
-        COMMAND anopki_core_openssl_golden_test ${CMAKE_CURRENT_BINARY_DIR} ${CMAKE_CURRENT_SOURCE_DIR}/tests/fixtures/openssl-baseline
+        COMMAND anopki_core_openssl_golden_test ${CMAKE_CURRENT_BINARY_DIR} ${CMAKE_CURRENT_SOURCE_DIR}/tests/fixtures/backend-parity
     )
 
     add_executable(anopki_crypto_backend_interface_test

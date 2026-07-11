@@ -5,7 +5,7 @@ All notable changes to this project will be recorded here.
 This project is pre-1.0. Release candidates must record exact verification
 commands and known gaps before tagging.
 
-## Unreleased
+## Unreleased (`v0.1.0-alpha.0` candidate)
 
 ### Added
 
@@ -35,6 +35,9 @@ commands and known gaps before tagging.
   intended AnoCrypto migration direction per release candidate.
 - Docs validator guard for previous-name identifiers outside migration,
   compatibility, or historical documentation contexts.
+- Backend-neutral crypto parity fixtures and OpenSSL parity reporting for CSR,
+  issuance, CRL, and OCSP operations.
+- Draft local release evidence for the `v0.1.0-alpha.0` candidate.
 
 ### Changed
 
@@ -45,6 +48,8 @@ commands and known gaps before tagging.
   license wording.
 - Root README now delegates the detailed documentation map to `docs/INDEX.md`
   to reduce duplicate documentation drift.
+- Version metadata accepts SemVer prerelease identifiers while CMake uses the
+  numeric `0.1.0` project version and binaries report `0.1.0-alpha.0`.
 
 ### Known Gaps
 

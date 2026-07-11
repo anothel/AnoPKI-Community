@@ -34,15 +34,16 @@ def main() -> None:
     args = parser.parse_args()
     root = args.root.resolve()
     version = require_text(root, root / "VERSION", []).strip()
-    if not re.fullmatch(r"\d+\.\d+\.\d+", version):
-        fail("VERSION must be MAJOR.MINOR.PATCH")
+    if not re.fullmatch(r"\d+\.\d+\.\d+(?:-[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*)?", version):
+        fail("VERSION must be MAJOR.MINOR.PATCH with an optional SemVer prerelease")
 
     require_text(
         root,
         root / "CMakeLists.txt",
         [
             'file(READ "${CMAKE_CURRENT_SOURCE_DIR}/VERSION" ANOPKI_VERSION)',
-            "project(anopki VERSION ${ANOPKI_VERSION} LANGUAGES CXX)",
+            'string(REGEX MATCH "^[0-9]+\\\\.[0-9]+\\\\.[0-9]+" ANOPKI_PROJECT_VERSION "${ANOPKI_VERSION}")',
+            "project(anopki VERSION ${ANOPKI_PROJECT_VERSION} LANGUAGES CXX)",
             "src/version_config.hpp.in",
         ],
     )
