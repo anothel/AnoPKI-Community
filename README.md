@@ -44,7 +44,19 @@ for the current execution order derived from the uploaded analysis reports.
 - C++20 toolchain
 - OpenSSL development libraries
 
-On Windows, set `OPENSSL_ROOT_DIR` if CMake cannot find OpenSSL.
+On Windows, set `OPENSSL_ROOT_DIR` to the vcpkg triplet root, not its `bin`
+directory. Example:
+
+```powershell
+$env:OPENSSL_ROOT_DIR = "C:\vcpkg\installed\x64-windows"
+```
+
+The local verification wrapper also checks `VCPKG_ROOT`, the common
+`C:\vcpkg\installed\x64-windows` path, and repo-local
+`vcpkg_installed\x64-windows`. It adds the detected `bin` directory only to
+the child verification process PATH, restores PATH afterward, and fails before
+building if `libcrypto*.dll` is unavailable. A missing runtime commonly appears
+as Windows exit `0xc0000135` when running CTest directly.
 
 ## Build And Test
 

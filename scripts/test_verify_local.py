@@ -6,6 +6,7 @@ from __future__ import annotations
 
 import subprocess
 import shutil
+import os
 from pathlib import Path
 
 
@@ -78,6 +79,30 @@ def main() -> None:
         raise SystemExit("verify-local must not hard-code nested PowerShell executable")
     if '"go", "build", "-o",' not in script_text or ".tmp" not in script_text:
         raise SystemExit("verify-local must write Go build output under .tmp")
+    if "Resolve-OpenSSLRuntime" not in script_text or "libcrypto*.dll" not in script_text:
+        raise SystemExit("verify-local must validate Windows OpenSSL runtime DLLs")
+    if "$env:PATH = $previousPath" not in script_text:
+        raise SystemExit("verify-local must restore process-local PATH")
+    if os.name == "nt":
+        missing_runtime = subprocess.run(
+            [
+                find_powershell(),
+                "-NoProfile",
+                "-ExecutionPolicy",
+                "Bypass",
+                "-File",
+                str(script),
+                "-CheckOpenSSLRuntime",
+                "-OpenSSLRootDir",
+                str(ROOT / ".tmp" / "missing-openssl-runtime"),
+            ],
+            cwd=ROOT,
+            text=True,
+            capture_output=True,
+            check=False,
+        )
+        if missing_runtime.returncode == 0 or "OpenSSL runtime DLLs not found" not in (missing_runtime.stdout + missing_runtime.stderr):
+            raise SystemExit("verify-local must fail early when Windows OpenSSL runtime DLLs are missing")
     print("verify-local tests ok")
 
 

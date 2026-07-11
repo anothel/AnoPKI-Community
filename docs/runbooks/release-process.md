@@ -28,10 +28,19 @@ go build ./cmd/anopki-service
 Run core checks:
 
 ```powershell
+$env:OPENSSL_ROOT_DIR = "C:\vcpkg\installed\x64-windows"
 cmake -S . -B build -DOPENSSL_ROOT_DIR="$env:OPENSSL_ROOT_DIR"
 cmake --build build --config Debug
 ctest --test-dir build -C Debug --output-on-failure
 ```
+
+On Windows, `OPENSSL_ROOT_DIR` must point to a root containing
+`bin\libcrypto*.dll`. CMake copies detected runtime DLLs beside `anopki-core`.
+For direct test execution, either keep those copied DLLs beside test binaries or
+prepend that `bin` directory to PATH for the current shell only. Do not modify
+global PATH. `scripts\verify-local.ps1` detects common vcpkg locations, applies
+a process-local PATH, restores it afterward, and fails early with setup guidance
+instead of allowing CTest exit `0xc0000135`.
 
 Run optional smoke checks when tools are available:
 

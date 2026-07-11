@@ -1,12 +1,44 @@
 # SPDX-License-Identifier: MPL-2.0
 param(
-    [switch]$List
+    [switch]$List,
+    [switch]$CheckOpenSSLRuntime,
+    [string]$OpenSSLRootDir = $env:OPENSSL_ROOT_DIR
 )
 
 Set-StrictMode -Version Latest
 $ErrorActionPreference = "Stop"
 
 $RepoRoot = Resolve-Path -LiteralPath (Join-Path $PSScriptRoot "..")
+
+function Resolve-OpenSSLRuntime {
+    param([string]$ExplicitRoot)
+
+    $candidates = @()
+    if ($ExplicitRoot) {
+        $candidates += $ExplicitRoot
+    }
+    else {
+        if ($env:VCPKG_ROOT) {
+            $candidates += Join-Path $env:VCPKG_ROOT "installed\x64-windows"
+        }
+        $candidates += "C:\vcpkg\installed\x64-windows"
+        $candidates += Join-Path $RepoRoot "vcpkg_installed\x64-windows"
+    }
+
+    foreach ($candidate in $candidates) {
+        $bin = Join-Path $candidate "bin"
+        if ((Test-Path -LiteralPath $bin -PathType Container) -and
+            (Get-ChildItem -LiteralPath $bin -Filter "libcrypto*.dll" -File -ErrorAction SilentlyContinue)) {
+            return @{
+                Root = (Resolve-Path -LiteralPath $candidate).Path
+                Bin = (Resolve-Path -LiteralPath $bin).Path
+            }
+        }
+    }
+
+    $searched = $candidates -join ", "
+    throw "OpenSSL runtime DLLs not found. Set OPENSSL_ROOT_DIR to a vcpkg triplet root containing bin\libcrypto*.dll (example: C:\vcpkg\installed\x64-windows). Searched: $searched"
+}
 
 function Get-PowerShellCommand {
     $currentProcess = Get-Process -Id $PID
@@ -167,12 +199,29 @@ if ($List) {
     exit 0
 }
 
+$openSSLRuntime = $null
+if ($env:OS -eq "Windows_NT") {
+    $openSSLRuntime = Resolve-OpenSSLRuntime -ExplicitRoot $OpenSSLRootDir
+    Write-Host "Using process-local OpenSSL runtime DLLs from $($openSSLRuntime.Bin)"
+}
+
+if ($CheckOpenSSLRuntime) {
+    Write-Host "OpenSSL runtime check ok"
+    exit 0
+}
+
 $goCache = Join-Path $RepoRoot ".gocache"
 New-Item -ItemType Directory -Force -Path $goCache | Out-Null
 New-Item -ItemType Directory -Force -Path $VerifyTmp | Out-Null
 $previousGoCache = $env:GOCACHE
+$previousOpenSSLRootDir = $env:OPENSSL_ROOT_DIR
+$previousPath = $env:PATH
 try {
     $env:GOCACHE = $goCache
+    if ($null -ne $openSSLRuntime) {
+        $env:OPENSSL_ROOT_DIR = $openSSLRuntime.Root
+        $env:PATH = "$($openSSLRuntime.Bin);$env:PATH"
+    }
     foreach ($step in $steps) {
         Write-Host "==> $($step.Name)"
         Push-Location -LiteralPath $step.Dir
@@ -190,6 +239,8 @@ try {
 }
 finally {
     $env:GOCACHE = $previousGoCache
+    $env:OPENSSL_ROOT_DIR = $previousOpenSSLRootDir
+    $env:PATH = $previousPath
 }
 
 Write-Host "local verification ok"
