@@ -195,12 +195,12 @@ def check_anocrypto_direction(root: Path) -> None:
     strategy = (root / "docs/reference/crypto-backend-strategy.md").read_text(encoding="utf-8")
     adr = (root / "docs/adr/0006-crypto-backend-direction-anocrypto.md").read_text(encoding="utf-8")
     roadmap = (root / "docs/ROADMAP.md").read_text(encoding="utf-8")
-    required = ["AnoCrypto", "OpenSSL", "implementation pending"]
+    required = ["AnoCrypto-C", "OpenSSL", "backend-neutral"]
     missing = [text for text in required if text not in strategy + adr]
     if missing:
         fail("AnoCrypto backend direction docs missing required wording:\n" + "\n".join(missing))
-    if "AnoCrypto" not in roadmap:
-        fail("ROADMAP does not mention the AnoCrypto backend direction")
+    if "AnoCrypto-C" not in roadmap:
+        fail("ROADMAP does not mention the external AnoCrypto-C adapter direction")
 
 
 def should_scan_legacy_identifiers(path: Path, root: Path) -> bool:

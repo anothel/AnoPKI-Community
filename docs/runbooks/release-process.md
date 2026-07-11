@@ -3,6 +3,13 @@
 `AnoPKI` is pre-1.0. This process creates a reviewed release candidate; it
 does not publish packages by itself.
 
+## Community Product Profile
+
+Community release candidates are assembled as `Community/OpenSSL`: AnoPKI Core
+plus the Community OpenSSL adapter. Community artifacts must not include the
+Enterprise AnoCrypto-C adapter, a private AnoCrypto-C SDK, Enterprise licensing,
+or KCMVP claims. Enterprise profiles have separate private release gates.
+
 ## Preconditions
 
 - Roadmap completed items have been removed from [ROADMAP](../ROADMAP.md).

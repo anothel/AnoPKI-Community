@@ -141,4 +141,11 @@ payloads at the process boundary.
 - C++ source: `write_error`.
 - `code`
 - `message`
-- `openssl_errors` (omitted when the OpenSSL error queue is empty)
+- `openssl_errors` (current Community/OpenSSL diagnostic field; omitted when the OpenSSL error queue is empty)
+
+`code` and `message` are the stable cross-adapter contract. `openssl_errors` is
+an OpenSSL-profile diagnostic and must not become a required field for other
+adapters. The AnoCrypto-C profile must use stable backend error codes and
+redacted operator diagnostics; it must not populate `openssl_errors` or retry
+the operation through OpenSSL. A future backend-neutral diagnostic extension is
+a compatibility change and must update both sides and validator tests.

@@ -1,63 +1,150 @@
 # Crypto Backend Strategy
 
-This document records the current crypto implementation and the intended direction for adopting **AnoCrypto**.
+This document defines the backend-neutral core, adapter ownership, product
+composition, and release rules for OpenSSL and external AnoCrypto-C builds.
 
 ## Current State
 
-AnoPKI currently builds the C++ core against OpenSSL `Crypto` through CMake. The current core CLI uses that implementation for CSR inspection, certificate issuance, CRL generation, OCSP request decoding, and OCSP response signing.
+The existing Community implementation is OpenSSL-backed. CSR inspection,
+certificate issuance, CRL generation, OCSP request decoding, and OCSP response
+signing currently depend on OpenSSL behavior.
 
-The backend contract covers CSR parsing, certificate issuance, CRL generation,
-OCSP request decoding, OCSP response signing, and responder validation. Community
-routes those operations through its OpenSSL implementation.
+The refactor target is not to develop AnoCrypto inside AnoPKI. AnoCrypto-C is a
+separate external C99 project and SDK. Enterprise consumes it through an
+AnoPKI-owned adapter.
 
-## Intended Direction
+## Target Architecture
 
-The intended direction is to use **AnoCrypto** as the project-owned crypto backend layer after the current OpenSSL-backed behavior is fully pinned by contract tests and fixture evidence.
+```text
+                         +-> OpenSSL adapter -----> OpenSSL::Crypto
+AnoPKI Core ------------|
+                         `-> AnoCrypto-C adapter -> AnoCryptoC::AnoCryptoC
+```
 
-Use these names consistently:
+`AnoPKI Core` owns backend-neutral operation contracts and domain-safe error
+semantics. Each adapter owns dependency-specific calls and translation.
 
-| Context | Name |
-| --- | --- |
-| Public project/backend name | `AnoCrypto` |
-| Technical package or module name | `anocrypto` |
-| Documentation phrase | `AnoCrypto backend` |
+## Repository Ownership
 
-## Non-Goals For The First AnoCrypto Step
+### Community Repository
 
-- Do not replace all crypto behavior in one broad rewrite.
-- Do not remove OpenSSL until CSR, issuance, CRL, OCSP, ACME, and release evidence parity are proven.
-- Do not mix crypto backend work with HSM/KMS key-provider work in one change.
-- Do not introduce PQC or hybrid certificate production support as part of the backend migration.
+- backend-neutral AnoPKI Core contract,
+- OpenSSL adapter,
+- Community/OpenSSL golden and contract tests,
+- public CLI and service contracts.
+
+Community does not contain AnoCrypto-C source, an AnoCrypto-C adapter, private
+SDK artifacts, KCMVP submissions, or Enterprise release evidence.
+
+### Enterprise Repository
+
+- synchronized Community core and OpenSSL adapter,
+- Enterprise layer,
+- AnoCrypto-C adapter,
+- external SDK acquisition and version/fingerprint policy,
+- Enterprise/OpenSSL and Enterprise/AnoCrypto-C profiles,
+- private parity, packaging, and compliance evidence.
+
+### AnoCrypto-C Repository
+
+- cryptographic algorithm implementation,
+- public C API and CMake package `AnoCryptoC::AnoCryptoC`,
+- module lifecycle and state,
+- self-tests and secure memory behavior,
+- algorithm implementation tests,
+- exact-module KCMVP evidence when available.
+
+## Product Profiles
+
+| Profile | Composition | Functional expectation | Release position |
+| --- | --- | --- | --- |
+| Community/OpenSSL | Core + OpenSSL adapter | Complete Community functionality | Public release candidate allowed after Community evidence passes. |
+| Enterprise/OpenSSL | Core + OpenSSL adapter + Enterprise layer | Complete Community functionality plus Enterprise features | Commercial profile; no AnoCrypto or KCMVP claim. |
+| Enterprise/AnoCrypto-C | Core + AnoCrypto-C adapter + Enterprise layer | Only capabilities implemented by the external SDK and adapter | Development/integration only until required operation parity is complete. |
+
+## Backend Contract
+
+The operation-level adapter contract must cover the operations consumed by the
+service and CLI, including:
+
+- CSR inspection,
+- certificate issuance,
+- CRL generation,
+- OCSP request inspection,
+- OCSP response generation,
+- responder certificate validation,
+- backend identity and capability reporting,
+- stable error mapping.
+
+The contract must not expose OpenSSL or AnoCrypto-C SDK types.
+
+## Capability And Failure Semantics
+
+Every adapter reports a capability set. Unsupported AnoCrypto-C operations must
+return a stable error such as `backend.capability_unavailable`.
+
+A product profile declares required capabilities:
+
+- missing optional capability: request fails explicitly,
+- missing required capability: startup or release gate fails,
+- dependency initialization/version mismatch: profile fails closed.
+
+A skipped test is not proof of support. A parity item moves from pending only
+when the real external SDK path executes and passes the required positive and
+negative tests.
+
+## No Automatic Fallback
+
+The following behavior is prohibited:
+
+- AnoCrypto-C operation failure followed by an OpenSSL retry,
+- unsupported AnoCrypto-C capability transparently calling OpenSSL,
+- AnoCrypto-C initialization failure starting an OpenSSL profile without an
+  explicit configuration change.
+
+OpenSSL compatibility is selected as `Enterprise/OpenSSL` before startup or at
+build/package selection time. It is not an implicit fallback from
+`Enterprise/AnoCrypto-C`.
 
 ## Migration Gates
 
-Before switching the default backend to AnoCrypto, the project needs:
+Before Enterprise/AnoCrypto-C can be production-releasable:
 
-1. a backend contract for CSR parse, certificate issue, CRL sign, OCSP decode, and OCSP sign operations,
-2. fixture parity using the [shared backend parity harness](crypto-backend-parity.md),
-3. stable error mapping so raw backend errors do not become public API contracts,
-4. release evidence that records OS, compiler, dependency, and artifact behavior,
-5. a fallback or compatibility plan for existing OpenSSL-based deployments,
-6. security review of key handling, parser behavior, signature algorithm handling, and failure modes.
+1. direct OpenSSL use is isolated behind the Community OpenSSL adapter,
+2. Community/OpenSSL behavior is pinned by golden and contract tests,
+3. the Enterprise adapter consumes a pinned external AnoCrypto-C SDK,
+4. required CSR, issuance, CRL, and OCSP capability parity is implemented,
+5. stable error and capability-unavailable semantics are verified,
+6. tests prove no hidden OpenSSL fallback occurs,
+7. dependency version, build identity, artifact hash, platform, and capability
+   evidence are recorded,
+8. key handling and failure modes receive security review,
+9. KCMVP claims, if any, are limited to the exact validated AnoCrypto-C module
+   shape and operating environment.
 
 ## Relationship To Key Providers
 
-Crypto backend selection and key-provider selection are related but separate.
+Backend adapter selection and key-provider selection are separate.
 
-- The crypto backend owns parsing, encoding, signing primitives, and certificate/status artifact construction.
-- The key provider owns private-key boundary, non-exportability, readiness checks, and provider audit metadata.
+- The selected backend adapter implements PKI operations through its dependency.
+- The key provider owns `key_ref`, key location, exportability, readiness,
+  authorization, and provider audit metadata.
+- HSM/KMS/PKCS#11 providers may perform signing without exporting private key
+  bytes.
 
-AnoCrypto adoption should not weaken the rule that production private keys are referenced by `key_ref` and must not be stored in the service database.
+Selecting AnoCrypto-C must not weaken non-exportability or cause private key
+material to enter the service database.
 
-## Documentation Impact
+## Required Release Metadata
 
-When AnoCrypto implementation begins, update:
+Each build and release candidate records:
 
-- `CMakeLists.txt` and build docs,
-- `include/anopki/crypto/backend.hpp` and core CLI contract docs,
-- `docs/policy/algorithm-policy.md`,
-- `docs/security/key-provider-semantics.md`,
-- `docs/reference/core-cli-contract.md`,
-- `docs/reference/release-evidence.md`,
-- `docs/reference/compliance-matrix.md`,
-- release notes and migration notes.
+- edition,
+- product profile,
+- selected adapter,
+- backend dependency and exact version,
+- backend capability set,
+- key-provider class,
+- `fallback_used` (normally `false`),
+- production-readiness status,
+- KCMVP status and evidence pointer when applicable.

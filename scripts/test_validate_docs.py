@@ -330,14 +330,14 @@ def test_anocrypto_direction_removed_from_roadmap_fails(tmp_path: Path) -> None:
     copy_docs_inputs(tmp_path)
     roadmap = tmp_path / "docs" / "ROADMAP.md"
     roadmap.write_text(
-        roadmap.read_text(encoding="utf-8").replace("AnoCrypto", "BackendFuture", 1),
+        roadmap.read_text(encoding="utf-8").replace("AnoCrypto-C", "BackendFuture"),
         encoding="utf-8",
     )
 
     result = run_validator(tmp_path)
 
     assert result.returncode == 1
-    assert "ROADMAP does not mention the AnoCrypto backend direction" in result.stderr
+    assert "ROADMAP does not mention the external AnoCrypto-C adapter direction" in result.stderr
 
 
 def test_legacy_identifiers_outside_migration_context_fail(tmp_path: Path) -> None:

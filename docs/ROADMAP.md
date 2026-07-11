@@ -17,8 +17,9 @@ parallel backlogs. Current execution guidance lives in
   failure-mode coverage first, then split along repeated change boundaries.
 - Keep discovery, deploy adapters, EAB, DNS-01, UI, and PQC gated on real
   operator demand.
-- Reject new abstractions until two real implementations exist or current code
-  blocks a concrete requirement.
+- Add abstractions only when they protect a concrete boundary. The backend
+  interface is justified by the OpenSSL adapter and the planned external
+  AnoCrypto-C adapter.
 - Reject new dependencies unless stdlib/native code is materially worse or the
   dependency is a selected release/security tool.
 - Keep README, SECURITY, release evidence, and this roadmap aligned on maturity:
@@ -71,22 +72,35 @@ Goal: split large service files only after behavior is pinned down.
 - Split `service/cmd/anopki-service/main.go` only when config loading,
   validation, bootstrap, and server lifecycle change independently.
 
-## P2: Crypto Backend And Key Boundary
+## P2: Backend Adapters And Key Boundary
 
-Goal: separate crypto implementation details and local file-key development from production signing semantics.
+Goal: make AnoPKI Core backend-neutral while preserving the complete
+Community/OpenSSL baseline and keeping key providers separate.
 
-- Keep OpenSSL as the current implementation until backend parity evidence exists.
-- Treat AnoCrypto as the intended crypto backend direction, with migration gates documented in [Crypto backend strategy](reference/crypto-backend-strategy.md).
-- Move certificate, CRL, and OCSP signing off direct file-key refs to production provider interfaces.
-- Add non-exportable provider support after signing providers exist.
-- Add executable key ceremony evidence capture and intermediate rollover drill.
-- Add offline-root operating model if this project owns CA hierarchy operations.
-- Add PKCS#11 mock or software-token test path.
+- Extract a backend-neutral operation contract from direct OpenSSL paths.
+- Move dependency-specific calls into the Community OpenSSL adapter.
+- Keep Community/OpenSSL golden, CLI-contract, and failure-mode tests passing.
+- Add explicit product/build profiles; do not add automatic fallback.
+- Keep Enterprise/OpenSSL as the full Community-compatible Enterprise profile.
+- Implement the Enterprise AnoCrypto-C adapter only against the external
+  `AnoCryptoC::AnoCryptoC` SDK.
+- Add capability discovery and stable `backend.capability_unavailable` errors.
+- Keep Enterprise/AnoCrypto-C production release blocked until required CSR,
+  issuance, CRL, and OCSP parity is complete.
+- Add negative tests proving that unsupported AnoCrypto-C operations never call
+  OpenSSL.
+- Move certificate, CRL, and OCSP signing off direct file-key refs to provider
+  interfaces.
+- Add non-exportable provider support after signing-provider contracts exist.
+- Add executable key ceremony evidence and intermediate rollover drills.
+- Add an offline-root operating model if this project owns CA hierarchy operations.
+- Add a PKCS#11 mock or software-token test path.
 
 ## P2: Audit, Access, And Operations
 
 Goal: raise operator accountability and recovery confidence.
 
+- Add policy decision reason and validation evidence ref.
 - Add synthetic checks for CRL, OCSP, ACME order/finalize, and post-deployment
   certificate health after a deployment target is selected.
 - Add issuer key rotation, intermediate rollover, CRL/OCSP outage, audit repair,

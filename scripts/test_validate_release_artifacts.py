@@ -131,7 +131,8 @@ def test_checksum_mismatch_fails() -> None:
         dist = Path(tmp)
         write_valid_dist(dist)
         sums = dist / "SHA256SUMS"
-        sums.write_text(sums.read_text(encoding="utf-8").replace("0", "1", 1), encoding="utf-8")
+        text = sums.read_text(encoding="utf-8")
+        sums.write_text(("0" if text[0] != "0" else "1") + text[1:], encoding="utf-8")
         result = run_validator(dist)
 
     assert result.returncode == 1

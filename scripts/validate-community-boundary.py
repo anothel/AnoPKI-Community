@@ -19,6 +19,7 @@ FORBIDDEN_PATHS = [
     "src/enterprise",
     "src/core/crypto/anocrypto_backend.cpp",
     "src/core/crypto/anocrypto_backend.hpp",
+    "src/backends/anocrypto_c",
 ]
 
 FORBIDDEN_TOKENS = [
@@ -71,6 +72,14 @@ ALLOW_QUALIFIERS = (
     "source or binaries",
     "certification evidence",
     "until code",
+    "earlier planning",
+    "production expansion",
+    "production-releasable",
+    "external enterprise",
+    "production release blocked",
+    "full parity",
+    "if any",
+    "exact validated",
 )
 
 

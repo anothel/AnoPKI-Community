@@ -9,20 +9,41 @@
 - Certificate profiles can allow-list CSR public key algorithms, require a
   minimum key size, and select allowed signing algorithms.
 
+## Backend And Algorithm Direction
 
-## Crypto Backend Direction
+Community/OpenSSL is the current complete public profile.
 
-The current implementation is OpenSSL-backed. The intended direction is to adopt **AnoCrypto** as the project-owned crypto backend after behavior is pinned by contract tests, fixture parity, and release evidence.
+AnoCrypto-C is a separate external C99 module consumed only through the
+Enterprise AnoCrypto-C adapter. AnoPKI must not reimplement AnoCrypto-C
+algorithms or describe an adapter skeleton as algorithm support.
 
-This policy must not claim AnoCrypto is implemented until code and tests prove it. Track implementation status in [Crypto backend strategy](../reference/crypto-backend-strategy.md) and ADR 0006.
+Backend selection is explicit:
 
-## Required Before Production Expansion
+- OpenSSL profile: OpenSSL is selected and reported from startup.
+- AnoCrypto-C profile: only proven AnoCrypto-C capabilities are available.
+- Missing capability fails explicitly; OpenSSL is not called automatically.
 
-- Inventory fields for key algorithm, signature algorithm, provider, and
-  relying-party compatibility.
-- Migration plan for RSA/ECDSA policy changes.
+Algorithm policy and capability reporting must be evaluated for the selected
+product profile and exact backend version.
+
+## Required Before Enterprise/AnoCrypto-C Production Expansion
+
+- Complete required Community operation parity.
+- Inventory fields for key algorithm, signature algorithm, adapter, backend
+  dependency, provider, and relying-party compatibility.
+- Stable capability-unavailable and dependency-failure errors.
+- Tests proving that unsupported AnoCrypto-C operations do not invoke OpenSSL.
+- Migration plans for RSA/ECDSA policy changes.
+- Exact release evidence for the AnoCrypto-C SDK version, build, platform, and
+  supported algorithms.
+
+## KCMVP Position
+
+KCMVP claims apply only to the exact AnoCrypto-C module shape and evidence, not
+automatically to AnoPKI Enterprise as a whole. Until evidence exists, use
+`not_validated` and prohibit validation or certified-product claims.
 
 ## PQC Position
 
-PQC and hybrid certificates are lab-only until dependencies, HSM/KMS support,
-TLS libraries, ingress, service mesh, and client platforms prove compatibility.
+PQC and hybrid certificates are lab-only until dependencies, providers, TLS
+libraries, ingress, service mesh, and client platforms prove compatibility.
