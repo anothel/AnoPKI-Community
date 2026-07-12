@@ -1,8 +1,7 @@
 # Target Architecture
 
 This document describes the intended service and product boundaries. It mirrors
-current behavior where possible and marks adapter separation as an active
-refactor target.
+current behavior where possible. Community/OpenSSL adapter separation is implemented; explicit multi-profile assembly remains future work.
 
 ## Components
 
@@ -37,8 +36,7 @@ AnoPKI Core owns backend-neutral operation contracts for CSR inspection,
 certificate issuance, CRL, OCSP, responder validation, capability reporting,
 and stable error semantics.
 
-After refactoring, backend-neutral core code must not directly call OpenSSL or
-AnoCrypto-C APIs.
+Backend-neutral core code under `src/core` does not include OpenSSL or AnoCrypto-C APIs. Dependency-specific calls are compiled in adapter targets.
 
 ### Backend Adapters
 
@@ -48,7 +46,7 @@ AnoPKI Core ------------|
                          `-> AnoCrypto-C adapter -> AnoCryptoC::AnoCryptoC
 ```
 
-- Community owns the OpenSSL adapter.
+- Community owns the OpenSSL adapter under `src/backends/openssl`, and only that production adapter target links `OpenSSL::Crypto`.
 - Enterprise owns the AnoCrypto-C adapter.
 - AnoCrypto-C is an external SDK and separate repository.
 - Adapter selection is explicit; there is no automatic runtime fallback.

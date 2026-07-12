@@ -2,12 +2,11 @@
 
 ## Status
 
-Accepted revised direction; refactor and parity implementation pending.
+Accepted revised direction; Community/OpenSSL extraction implemented, profile and parity work pending.
 
 ## Context
 
-AnoPKI currently has an OpenSSL-backed C++ implementation for CSR inspection,
-certificate issuance, CRL generation, and OCSP processing. AnoCrypto-C is a
+AnoPKI Community now has a backend-neutral operation dispatch layer and a physically separate OpenSSL adapter for CSR inspection, certificate issuance, CRL generation, and OCSP processing. AnoCrypto-C is a
 separate C99 project and SDK. It is not developed inside the Community or
 Enterprise AnoPKI repositories.
 
@@ -58,9 +57,8 @@ missing. It must not silently call OpenSSL.
 
 ## Follow-Up Work
 
-- Extract a concrete backend contract from direct OpenSSL implementation paths.
-- Keep all Community/OpenSSL golden fixtures passing through the OpenSSL
-  adapter.
+- Extend the backend contract with identity, version, capability, readiness, and stable error metadata.
+- Keep all Community/OpenSSL golden fixtures passing through the separated OpenSSL adapter.
 - Add explicit build targets for Community/OpenSSL, Enterprise/OpenSSL, and
   Enterprise/AnoCrypto-C.
 - Implement the Enterprise adapter only against supported external AnoCrypto-C

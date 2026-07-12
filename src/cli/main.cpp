@@ -3,8 +3,7 @@
 #include "anopki/core/csr.hpp"
 #include "anopki/core/issue.hpp"
 #include "anopki/core/ocsp.hpp"
-
-#include <openssl/err.h>
+#include "anopki/crypto/runtime.hpp"
 
 #include <cctype>
 #include <cstdint>
@@ -381,29 +380,18 @@ std::string json_error(std::string_view code, std::string_view message)
 	return "{\"code\":" + json_string(code) + ",\"message\":" + json_string(message) + "}";
 }
 
-std::vector<std::string> openssl_errors()
-{
-	std::vector<std::string> errors;
-	for (unsigned long code = ERR_get_error(); code != 0; code = ERR_get_error())
-	{
-		char buffer[256];
-		ERR_error_string_n(code, buffer, sizeof(buffer));
-		errors.push_back(buffer);
-	}
-	return errors;
-}
-
 void write_error(std::string_view code, std::string_view message)
 {
-	const std::vector<std::string> errors = openssl_errors();
-	if (errors.empty())
+	const anopki::crypto::ErrorDiagnostics diagnostics =
+	    anopki::crypto::default_backend().drain_error_diagnostics();
+	if (diagnostics.field.empty() || diagnostics.entries.empty())
 	{
 		std::cerr << json_error(code, message) << '\n';
 		return;
 	}
 	std::cerr << "{\"code\":" << json_string(code)
 	          << ",\"message\":" << json_string(message)
-	          << ",\"openssl_errors\":" << json_string_array(errors) << "}\n";
+	          << ',' << json_string(diagnostics.field) << ':' << json_string_array(diagnostics.entries) << "}\n";
 }
 
 std::string get_string_field(const JsonObject &object, const std::string &key)

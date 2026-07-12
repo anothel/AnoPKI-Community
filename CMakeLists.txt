@@ -38,7 +38,25 @@ target_include_directories(anopki_core
     PRIVATE
         ${CMAKE_CURRENT_BINARY_DIR}/generated
 )
-target_link_libraries(anopki_core
+
+add_library(anopki_openssl_adapter
+    src/backends/openssl/crl.cpp
+    src/backends/openssl/csr.cpp
+    src/backends/openssl/issue.cpp
+    src/backends/openssl/ocsp.cpp
+    src/backends/openssl/openssl_backend.cpp
+)
+add_library(anopki::openssl_adapter ALIAS anopki_openssl_adapter)
+target_compile_features(anopki_openssl_adapter PUBLIC cxx_std_20)
+if(MSVC)
+    target_compile_options(anopki_openssl_adapter PUBLIC /EHsc)
+endif()
+target_include_directories(anopki_openssl_adapter
+    PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/include
+        ${CMAKE_CURRENT_SOURCE_DIR}/src/backends/openssl
+)
+target_link_libraries(anopki_openssl_adapter
     PRIVATE
         OpenSSL::Crypto
 )
@@ -46,7 +64,7 @@ target_link_libraries(anopki_core
 add_executable(anopki-core
     src/cli/main.cpp
 )
-target_link_libraries(anopki-core PRIVATE anopki::core OpenSSL::Crypto)
+target_link_libraries(anopki-core PRIVATE anopki::core anopki::openssl_adapter)
 
 if(WIN32 AND OPENSSL_ROOT_DIR)
     file(TO_CMAKE_PATH "${OPENSSL_ROOT_DIR}" OPENSSL_ROOT_DIR_CMAKE)
@@ -75,7 +93,7 @@ if(ANOPKI_ENABLE_FUZZING)
         target_compile_definitions(${target} PRIVATE ${compile_definition})
         target_compile_options(${target} PRIVATE -fsanitize=fuzzer,address)
         target_link_options(${target} PRIVATE -fsanitize=fuzzer,address)
-        target_link_libraries(${target} PRIVATE anopki::core OpenSSL::Crypto)
+        target_link_libraries(${target} PRIVATE anopki::core anopki::openssl_adapter)
     endfunction()
 
     add_anopki_parser_fuzzer(anopki_core_csr_fuzz ANOPKI_FUZZ_CSR)
@@ -95,7 +113,7 @@ if(BUILD_TESTING)
     add_executable(anopki_core_cli_contract_test
         tests/core_cli_contract_test.cpp
     )
-    target_link_libraries(anopki_core_cli_contract_test PRIVATE anopki::core OpenSSL::Crypto)
+    target_link_libraries(anopki_core_cli_contract_test PRIVATE anopki::core anopki::openssl_adapter OpenSSL::Crypto)
     add_dependencies(anopki_core_cli_contract_test anopki-core)
     add_test(
         NAME anopki.core_cli_contract
@@ -105,7 +123,7 @@ if(BUILD_TESTING)
     add_executable(anopki_core_issue_profile_test
         tests/core_issue_profile_test.cpp
     )
-    target_link_libraries(anopki_core_issue_profile_test PRIVATE anopki::core OpenSSL::Crypto)
+    target_link_libraries(anopki_core_issue_profile_test PRIVATE anopki::core anopki::openssl_adapter OpenSSL::Crypto)
     add_dependencies(anopki_core_issue_profile_test anopki-core)
     add_test(
         NAME anopki.core_issue_profile
@@ -115,7 +133,7 @@ if(BUILD_TESTING)
     add_executable(anopki_core_crl_test
         tests/core_crl_test.cpp
     )
-    target_link_libraries(anopki_core_crl_test PRIVATE anopki::core OpenSSL::Crypto)
+    target_link_libraries(anopki_core_crl_test PRIVATE anopki::core anopki::openssl_adapter OpenSSL::Crypto)
     add_test(
         NAME anopki.core_crl
         COMMAND anopki_core_crl_test ${CMAKE_CURRENT_BINARY_DIR}
@@ -124,7 +142,7 @@ if(BUILD_TESTING)
     add_executable(anopki_core_ocsp_test
         tests/core_ocsp_test.cpp
     )
-    target_link_libraries(anopki_core_ocsp_test PRIVATE anopki::core OpenSSL::Crypto)
+    target_link_libraries(anopki_core_ocsp_test PRIVATE anopki::core anopki::openssl_adapter OpenSSL::Crypto)
     add_test(
         NAME anopki.core_ocsp
         COMMAND anopki_core_ocsp_test ${CMAKE_CURRENT_BINARY_DIR} ${CMAKE_CURRENT_SOURCE_DIR}/tests/fixtures/ocsp
@@ -133,7 +151,7 @@ if(BUILD_TESTING)
     add_executable(anopki_core_openssl_golden_test
         tests/core_openssl_golden_test.cpp
     )
-    target_link_libraries(anopki_core_openssl_golden_test PRIVATE anopki::core OpenSSL::Crypto)
+    target_link_libraries(anopki_core_openssl_golden_test PRIVATE anopki::core anopki::openssl_adapter OpenSSL::Crypto)
     add_test(
         NAME anopki.core_openssl_golden
         COMMAND anopki_core_openssl_golden_test ${CMAKE_CURRENT_BINARY_DIR} ${CMAKE_CURRENT_SOURCE_DIR}/tests/fixtures/backend-parity

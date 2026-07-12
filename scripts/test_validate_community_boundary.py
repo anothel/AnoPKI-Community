@@ -23,9 +23,26 @@ def load_validator():
 
 def write_required_root(root: Path) -> None:
     (root / "CMakeLists.txt").write_text(
-        "find_package(OpenSSL REQUIRED COMPONENTS Crypto)\n",
+        """find_package(OpenSSL REQUIRED COMPONENTS Crypto)
+add_library(anopki_core)
+add_library(anopki_openssl_adapter)
+target_link_libraries(anopki_openssl_adapter PRIVATE OpenSSL::Crypto)
+add_executable(anopki-core)
+target_link_libraries(anopki-core PRIVATE anopki_core anopki_openssl_adapter)
+""",
         encoding="utf-8",
     )
+    for rel in (
+        "src/backends/openssl/openssl_backend.hpp",
+        "src/backends/openssl/openssl_backend.cpp",
+        "src/backends/openssl/csr.cpp",
+        "src/backends/openssl/issue.cpp",
+        "src/backends/openssl/crl.cpp",
+        "src/backends/openssl/ocsp.cpp",
+    ):
+        path = root / rel
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text("// adapter\n", encoding="utf-8")
 
 
 def assert_fails(root: Path, expected: str) -> None:
@@ -104,6 +121,31 @@ def test_skips_generated_directories() -> None:
         validator.validate(root)
 
 
+
+def test_rejects_direct_openssl_include_in_core() -> None:
+    with tempfile.TemporaryDirectory() as tmp:
+        root = Path(tmp)
+        write_required_root(root)
+        path = root / "src" / "core" / "issue.cpp"
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text("#include <openssl/x509.h>\n", encoding="utf-8")
+
+        assert_fails(root, "direct OpenSSL includes")
+
+
+def test_rejects_direct_openssl_link_from_core_target() -> None:
+    with tempfile.TemporaryDirectory() as tmp:
+        root = Path(tmp)
+        write_required_root(root)
+        cmake = root / "CMakeLists.txt"
+        cmake.write_text(
+            cmake.read_text(encoding="utf-8")
+            + "target_link_libraries(anopki_core PRIVATE OpenSSL::Crypto)\n",
+            encoding="utf-8",
+        )
+
+        assert_fails(root, "anopki_core must not link OpenSSL::Crypto directly")
+
 def main() -> None:
     test_clean_community_root_passes()
     test_finds_enterprise_license_tokens()
@@ -111,6 +153,8 @@ def main() -> None:
     test_finds_premature_anocrypto_claims()
     test_finds_kcmvp_certification_claims()
     test_skips_generated_directories()
+    test_rejects_direct_openssl_include_in_core()
+    test_rejects_direct_openssl_link_from_core_target()
     print("community boundary validator tests ok")
 
 

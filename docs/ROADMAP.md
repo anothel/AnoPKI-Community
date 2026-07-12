@@ -77,9 +77,8 @@ Goal: split large service files only after behavior is pinned down.
 Goal: make AnoPKI Core backend-neutral while preserving the complete
 Community/OpenSSL baseline and keeping key providers separate.
 
-- Extract a backend-neutral operation contract from direct OpenSSL paths.
-- Move dependency-specific calls into the Community OpenSSL adapter.
-- Keep Community/OpenSSL golden, CLI-contract, and failure-mode tests passing.
+- Extend the backend operation contract with adapter identity, dependency version, capability, readiness, and stable error metadata.
+- Keep Community/OpenSSL golden, CLI-contract, and failure-mode tests passing after each contract change.
 - Add explicit product/build profiles; do not add automatic fallback.
 - Keep Enterprise/OpenSSL as the full Community-compatible Enterprise profile.
 - Implement the Enterprise AnoCrypto-C adapter only against the external

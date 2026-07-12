@@ -28,6 +28,7 @@ def copy_contract_inputs(dst: Path) -> None:
     for name in [
         "service/internal/corecli/runner.go",
         "src/cli/main.cpp",
+        "src/backends/openssl/openssl_backend.cpp",
         "docs/reference/core-cli-contract.md",
     ]:
         target = dst / name
@@ -110,6 +111,20 @@ def test_unknown_doc_section_fails(tmp_path: Path) -> None:
     assert "core CLI contract doc has unknown sections" in result.stderr
 
 
+
+def test_openssl_diagnostic_field_drift_fails(tmp_path: Path) -> None:
+    copy_contract_inputs(tmp_path)
+    adapter = tmp_path / "src" / "backends" / "openssl" / "openssl_backend.cpp"
+    adapter.write_text(
+        adapter.read_text(encoding="utf-8").replace('diagnostics.field = "openssl_errors"', 'diagnostics.field = "dependency_errors"', 1),
+        encoding="utf-8",
+    )
+
+    result = run_validator(tmp_path)
+
+    assert result.returncode == 1
+    assert "C++ core CLI emitter fields drift" in result.stderr
+
 def main() -> None:
     test_current_core_cli_contracts_pass()
     with tempfile.TemporaryDirectory() as dirname:
@@ -122,6 +137,8 @@ def main() -> None:
         test_cpp_emitter_key_drift_fails(Path(dirname))
     with tempfile.TemporaryDirectory() as dirname:
         test_unknown_doc_section_fails(Path(dirname))
+    with tempfile.TemporaryDirectory() as dirname:
+        test_openssl_diagnostic_field_drift_fails(Path(dirname))
     print("core CLI contract validator tests ok")
 
 

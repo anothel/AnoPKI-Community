@@ -37,10 +37,36 @@ public:
 		return result;
 	}
 
+
+	[[nodiscard]] anopki::core::CRLInfo inspect_crl_pem(const std::string &crl_pem) const override
+	{
+		anopki::core::CRLInfo info;
+		info.crl_number = crl_pem;
+		return info;
+	}
+
+	[[nodiscard]] anopki::core::CRLInfo inspect_crl_der(const std::string &crl_der) const override
+	{
+		anopki::core::CRLInfo info;
+		info.crl_number = crl_der;
+		return info;
+	}
+
 	[[nodiscard]] anopki::core::OCSPRequestInfo inspect_ocsp_request_der(const std::string &request_der) const override
 	{
 		anopki::core::OCSPRequestInfo info;
 		info.nonce_hex = request_der;
+		return info;
+	}
+
+
+	[[nodiscard]] anopki::core::OCSPIssuerInfo inspect_ocsp_issuer_pem(
+	    const std::string &issuer_certificate_pem,
+	    const std::string &hash_algorithm) const override
+	{
+		anopki::core::OCSPIssuerInfo info;
+		info.issuer_name_hash = issuer_certificate_pem;
+		info.hash_algorithm = hash_algorithm;
 		return info;
 	}
 
@@ -77,7 +103,10 @@ int main()
 	assert(backend.inspect_csr_pem("CN=leaf").subject == "CN=leaf");
 	assert(backend.issue_certificate(issue).subject == "CN=leaf");
 	assert(backend.generate_crl(crl).crl_pem == "42");
+	assert(backend.inspect_crl_pem("43").crl_number == "43");
+	assert(backend.inspect_crl_der("44").crl_number == "44");
 	assert(backend.inspect_ocsp_request_der("0102").nonce_hex == "0102");
+	assert(backend.inspect_ocsp_issuer_pem("issuer", "sha256").hash_algorithm == "sha256");
 	assert(backend.generate_ocsp_response(ocsp).response_der == "2026-06-13T00:00:00Z");
 	assert(backend.validate_ocsp_responder("issuer", "responder").valid);
 	return 0;

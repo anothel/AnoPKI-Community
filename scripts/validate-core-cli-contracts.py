@@ -141,6 +141,9 @@ def check_contracts(root: Path) -> None:
 
         if "cpp_emitter" in contract:
             cpp_fields = cpp_emitter_fields(cpp_source, contract["cpp_emitter"])
+            if contract["cpp_emitter"] == "write_error" and "diagnostics.field" in function_body(cpp_source, "write_error"):
+                adapter_source = read_text(root, "src/backends/openssl/openssl_backend.cpp")
+                cpp_fields.update(re.findall(r'diagnostics\.field\s*=\s*"([a-z0-9_]+)"', adapter_source))
             missing = go_fields - cpp_fields
             if missing:
                 messages.append(

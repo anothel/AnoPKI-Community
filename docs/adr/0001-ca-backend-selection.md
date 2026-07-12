@@ -2,7 +2,7 @@
 
 ## Status
 
-Accepted baseline; refined for adapter separation.
+Accepted baseline; Community/OpenSSL adapter separation implemented.
 
 ## Decision
 
@@ -10,7 +10,7 @@ Use the C++ `anopki-core` CLI as the signing, CSR inspection, CRL, and OCSP
 operation boundary. Keep the Go service as lifecycle, policy, API, persistence,
 and audit owner.
 
-The C++ side must evolve into:
+The C++ side now uses:
 
 ```text
 AnoPKI Core -> selected backend adapter -> backend dependency
@@ -24,8 +24,8 @@ Community OpenSSL adapter or an Enterprise AnoCrypto-C adapter.
 
 - The Go service does not own low-level cryptographic-library behavior.
 - The core operation and JSON contracts remain stable across adapters.
-- Direct OpenSSL calls must move out of backend-neutral core code and into the
-  OpenSSL adapter as the refactor proceeds.
+- Direct OpenSSL calls live under `src/backends/openssl`; backend-neutral
+  dispatch under `src/core` does not include OpenSSL headers.
 - Enterprise adapters must not require public API changes merely to select a
   backend.
 - Core CLI contract and golden tests guard the Go-to-C++ boundary and adapter

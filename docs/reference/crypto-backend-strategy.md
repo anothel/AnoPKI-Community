@@ -5,11 +5,9 @@ composition, and release rules for OpenSSL and external AnoCrypto-C builds.
 
 ## Current State
 
-The existing Community implementation is OpenSSL-backed. CSR inspection,
-certificate issuance, CRL generation, OCSP request decoding, and OCSP response
-signing currently depend on OpenSSL behavior.
+Community/OpenSSL remains the complete implementation. Backend-neutral dispatch lives under `src/core`, while CSR inspection, certificate issuance, CRL generation, OCSP request decoding, OCSP response signing, and OpenSSL diagnostics live under `src/backends/openssl`. The `anopki_core` target no longer links OpenSSL directly; the OpenSSL adapter target owns that dependency.
 
-The refactor target is not to develop AnoCrypto inside AnoPKI. AnoCrypto-C is a
+The next contract work is backend identity, capability, readiness, and stable error metadata. The project does not develop AnoCrypto inside AnoPKI. AnoCrypto-C is a
 separate external C99 project and SDK. Enterprise consumes it through an
 AnoPKI-owned adapter.
 
@@ -110,8 +108,8 @@ build/package selection time. It is not an implicit fallback from
 
 Before Enterprise/AnoCrypto-C can be production-releasable:
 
-1. direct OpenSSL use is isolated behind the Community OpenSSL adapter,
-2. Community/OpenSSL behavior is pinned by golden and contract tests,
+1. Community/OpenSSL behavior remains pinned by golden and contract tests,
+2. explicit product/build profiles select one adapter without automatic fallback,
 3. the Enterprise adapter consumes a pinned external AnoCrypto-C SDK,
 4. required CSR, issuance, CRL, and OCSP capability parity is implemented,
 5. stable error and capability-unavailable semantics are verified,

@@ -6,6 +6,7 @@ from __future__ import annotations
 
 import sys
 import subprocess
+import re
 from pathlib import Path
 from typing import Iterable
 
@@ -41,6 +42,16 @@ SKIP_DIRS = {
     "vendor",
     "__pycache__",
 }
+
+
+OPENSSL_ADAPTER_FILES = [
+    "src/backends/openssl/openssl_backend.hpp",
+    "src/backends/openssl/openssl_backend.cpp",
+    "src/backends/openssl/csr.cpp",
+    "src/backends/openssl/issue.cpp",
+    "src/backends/openssl/crl.cpp",
+    "src/backends/openssl/ocsp.cpp",
+]
 
 SELF_TEST_FILES = {
     "validate-community-boundary.py",
@@ -151,6 +162,46 @@ def validate(root: Path = ROOT) -> None:
     cmake = (root / "CMakeLists.txt").read_text(encoding="utf-8")
     if "find_package(OpenSSL REQUIRED COMPONENTS Crypto)" not in cmake:
         fail("Community CMakeLists.txt must keep OpenSSL as the active backend")
+
+    source_root = root / "src"
+    if source_root.exists():
+        missing_adapter_files = [path for path in OPENSSL_ADAPTER_FILES if not (root / path).is_file()]
+        if missing_adapter_files:
+            fail("Community OpenSSL adapter files are missing:\n" + "\n".join(missing_adapter_files))
+
+        direct_openssl_hits = []
+        core_root = root / "src" / "core"
+        if core_root.exists():
+            for path in core_root.rglob("*"):
+                if not path.is_file():
+                    continue
+                try:
+                    content = path.read_text(encoding="utf-8")
+                except UnicodeDecodeError:
+                    continue
+                for number, line in enumerate(content.splitlines(), start=1):
+                    if "#include <openssl/" in line or "#include \"openssl/" in line:
+                        direct_openssl_hits.append(f"{path.relative_to(root)}:{number}: {line.strip()}")
+        if direct_openssl_hits:
+            fail("Backend-neutral Core contains direct OpenSSL includes:\n" + "\n".join(direct_openssl_hits))
+
+        cli_path = root / "src" / "cli" / "main.cpp"
+        if cli_path.is_file() and "#include <openssl/" in cli_path.read_text(encoding="utf-8"):
+            fail("CLI must obtain dependency diagnostics through the selected adapter")
+
+        if "add_library(anopki_openssl_adapter" not in cmake:
+            fail("Community CMakeLists.txt must define the OpenSSL adapter target")
+        if "target_link_libraries(anopki_openssl_adapter" not in cmake or "OpenSSL::Crypto" not in cmake:
+            fail("Community OpenSSL adapter target must link OpenSSL::Crypto")
+
+        for target in ("anopki_core", "anopki-core"):
+            pattern = re.compile(
+                rf"target_link_libraries\(\s*{re.escape(target)}(?=\s|\))(?P<body>.*?)\)",
+                re.DOTALL,
+            )
+            for match in pattern.finditer(cmake):
+                if "OpenSSL::Crypto" in match.group("body"):
+                    fail(f"{target} must not link OpenSSL::Crypto directly")
 
 
 def main() -> None:

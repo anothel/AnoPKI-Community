@@ -38,6 +38,7 @@ commands and known gaps before tagging.
 - Backend-neutral crypto parity fixtures and OpenSSL parity reporting for CSR,
   issuance, CRL, and OCSP operations.
 - Draft local release evidence for the `v0.1.0-alpha.0` candidate.
+- Physically separated backend-neutral core dispatch from the Community OpenSSL adapter while preserving all existing CLI and golden contracts.
 
 ### Changed
 
@@ -50,6 +51,7 @@ commands and known gaps before tagging.
   to reduce duplicate documentation drift.
 - Version metadata accepts SemVer prerelease identifiers while CMake uses the
   numeric `0.1.0` project version and binaries report `0.1.0-alpha.0`.
+- `anopki_core` no longer links OpenSSL directly; `anopki_openssl_adapter` owns OpenSSL operations and dependency diagnostics.
 
 ### Known Gaps
 

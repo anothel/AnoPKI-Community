@@ -8,8 +8,15 @@
 
 #include <string>
 #include <string_view>
+#include <vector>
 
 namespace anopki::crypto {
+
+struct ErrorDiagnostics
+{
+    std::string field;
+    std::vector<std::string> entries;
+};
 
 class Backend {
 public:
@@ -17,17 +24,30 @@ public:
 
     [[nodiscard]] virtual std::string_view name() const noexcept = 0;
 
-    // OpenSSL is the only Community implementation today; AnoCrypto remains an intended future backend.
-    // Pending parity work must map backend-specific failures to stable core errors.
-    // Raw OpenSSL or future AnoCrypto diagnostics stay below this contract.
+    // The operation contract is dependency-neutral. Adapter-specific types and
+    // raw dependency errors must remain below this boundary.
     [[nodiscard]] virtual core::CsrInfo inspect_csr_pem(const std::string &csr_pem) const = 0;
     [[nodiscard]] virtual core::IssueResult issue_certificate(const core::IssueRequest &request) const = 0;
     [[nodiscard]] virtual core::GenerateCRLResult generate_crl(const core::GenerateCRLRequest &request) const = 0;
+    [[nodiscard]] virtual core::CRLInfo inspect_crl_pem(const std::string &crl_pem) const = 0;
+    [[nodiscard]] virtual core::CRLInfo inspect_crl_der(const std::string &crl_der) const = 0;
     [[nodiscard]] virtual core::OCSPRequestInfo inspect_ocsp_request_der(const std::string &request_der) const = 0;
-    [[nodiscard]] virtual core::GenerateOCSPResponseResult generate_ocsp_response(const core::GenerateOCSPResponseRequest &request) const = 0;
+    [[nodiscard]] virtual core::OCSPIssuerInfo inspect_ocsp_issuer_pem(
+        const std::string &issuer_certificate_pem,
+        const std::string &hash_algorithm) const = 0;
+    [[nodiscard]] virtual core::GenerateOCSPResponseResult generate_ocsp_response(
+        const core::GenerateOCSPResponseRequest &request) const = 0;
     [[nodiscard]] virtual core::ValidateOCSPResponderResult validate_ocsp_responder(
         const std::string &issuer_certificate_pem,
         const std::string &responder_certificate_pem) const = 0;
+
+    // Diagnostics are optional and profile-specific. Stable error codes remain
+    // the cross-adapter contract; the OpenSSL adapter currently exposes the
+    // legacy `openssl_errors` field through this hook.
+    [[nodiscard]] virtual ErrorDiagnostics drain_error_diagnostics() const
+    {
+        return {};
+    }
 };
 
 }  // namespace anopki::crypto

@@ -26,7 +26,8 @@ for the current execution order derived from the uploaded analysis reports.
 | Path | Purpose |
 | --- | --- |
 | `include/anopki` | C++ public headers for core PKI operations. |
-| `src/core` | C++ core implementation. |
+| `src/core` | Backend-neutral C++ operation dispatch. |
+| `src/backends/openssl` | Community OpenSSL adapter implementation. |
 | `src/cli` | `anopki-core` CLI entrypoint used by the service. |
 | `tests` | C++ core and CLI contract tests. |
 | `service` | Go lifecycle API service. |
@@ -225,7 +226,7 @@ Most-used docs:
 - [Release evidence](docs/reference/release-evidence.md): artifact, SBOM, signing, scan, compatibility, and backend evidence baseline.
 - [Documentation governance](docs/reference/documentation-governance.md): what belongs in Git, what belongs in internal/GPT project sources, and how to retire stale docs.
 
-Current execution focus: release operations, supply-chain evidence, and backend/key-boundary migration planning. Public TLS issuance fails closed unless the configured lint hook accepts the CSR/profile before signing; external lint tool selection and fixtures remain future work.
+Current execution focus: backend capability/error metadata, explicit product profile assembly, release operations, and key-boundary migration planning. Public TLS issuance fails closed unless the configured lint hook accepts the CSR/profile before signing; external lint tool selection and fixtures remain future work.
 
 ## License
 
