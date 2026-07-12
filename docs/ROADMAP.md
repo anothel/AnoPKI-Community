@@ -77,13 +77,10 @@ Goal: split large service files only after behavior is pinned down.
 Goal: make AnoPKI Core backend-neutral while preserving the complete
 Community/OpenSSL baseline and keeping key providers separate.
 
-- Extend the backend operation contract with adapter identity, dependency version, capability, readiness, and stable error metadata.
-- Keep Community/OpenSSL golden, CLI-contract, and failure-mode tests passing after each contract change.
-- Add explicit product/build profiles; do not add automatic fallback.
-- Keep Enterprise/OpenSSL as the full Community-compatible Enterprise profile.
-- Implement the Enterprise AnoCrypto-C adapter only against the external
-  `AnoCryptoC::AnoCryptoC` SDK.
-- Add capability discovery and stable `backend.capability_unavailable` errors.
+- Expose selected product profile and backend metadata through the Go service/version and release manifests.
+- Keep Community/OpenSSL golden, CLI-contract, and failure-mode tests passing after each adapter change.
+- Pin a real immutable AnoCrypto-C SDK artifact in trusted Enterprise CI.
+- Expand the external AnoCrypto-C adapter only as supported SDK operations become available.
 - Keep Enterprise/AnoCrypto-C production release blocked until required CSR,
   issuance, CRL, and OCSP parity is complete.
 - Add negative tests proving that unsupported AnoCrypto-C operations never call

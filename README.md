@@ -166,6 +166,22 @@ go build -o .tmp\verify-local\anopki-service.exe ./cmd/anopki-service
 # exit 0
 ```
 
+## Product Profile Build
+
+Community builds use the explicit `community-openssl` profile:
+
+```powershell
+cmake -S . -B build -DANOPKI_PRODUCT_PROFILE=community-openssl -DOPENSSL_ROOT_DIR="$env:OPENSSL_ROOT_DIR"
+```
+
+The selected profile and adapter metadata can be inspected with:
+
+```powershell
+.\build\Debug\anopki-core.exe backend info
+```
+
+Backend selection is immutable for the artifact and automatic fallback is disabled.
+
 ## Run Locally
 
 Build `anopki-core` first, then run the service with `ANOPKI_CORE_BIN` pointing at the CLI binary.
@@ -226,7 +242,7 @@ Most-used docs:
 - [Release evidence](docs/reference/release-evidence.md): artifact, SBOM, signing, scan, compatibility, and backend evidence baseline.
 - [Documentation governance](docs/reference/documentation-governance.md): what belongs in Git, what belongs in internal/GPT project sources, and how to retire stale docs.
 
-Current execution focus: backend capability/error metadata, explicit product profile assembly, release operations, and key-boundary migration planning. Public TLS issuance fails closed unless the configured lint hook accepts the CSR/profile before signing; external lint tool selection and fixtures remain future work.
+Current execution focus: release evidence, exposing backend/profile metadata through service operations, external AnoCrypto-C capability parity, and key-boundary migration planning. Public TLS issuance fails closed unless the configured lint hook accepts the CSR/profile before signing; external lint tool selection and fixtures remain future work.
 
 ## License
 

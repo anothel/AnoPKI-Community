@@ -183,7 +183,7 @@ def test_stale_public_tls_readme_next_work_fails(tmp_path: Path) -> None:
     readme = tmp_path / "README.md"
     readme.write_text(
         readme.read_text(encoding="utf-8").replace(
-            "Current execution focus: backend capability/error metadata, explicit product profile assembly, release operations, and key-boundary migration planning.",
+            "Current execution focus: release evidence, exposing backend/profile metadata through service operations, external AnoCrypto-C capability parity, and key-boundary migration planning.",
             "Current execution focus: release operations, supply-chain evidence, and backend/key-boundary migration planning unless public TLS issuance enables a linting hook.",
         ),
         encoding="utf-8",

@@ -277,3 +277,18 @@ Do not mark Enterprise/AnoCrypto-C production-ready until:
 - unsupported-capability tests prove OpenSSL is not called,
 - all required product capabilities are declared available,
 - KCMVP wording, if used, points to exact valid evidence.
+
+## Backend Control Evidence
+
+Each candidate records the output of:
+
+```text
+anopki-core backend info
+```
+
+The JSON must match the assembled artifact and includes `product_profile`,
+`edition`, `selected_backend`, `fallback_enabled`, dependency/version, readiness,
+capabilities, ABI version, and build fingerprint. Community/OpenSSL and
+Enterprise/OpenSSL require the complete operation capability set.
+Enterprise/AnoCrypto-C remains pending and reports no operation-level capabilities and
+remains a development/integration profile.

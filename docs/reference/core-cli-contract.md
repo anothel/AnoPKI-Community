@@ -134,6 +134,21 @@ payloads at the process boundary.
 - `revoked_at_times`
 - `revocation_reasons`
 
+### backend info result
+
+- Direction: C++ core CLI to operator/release tooling, `backend info`.
+- `product_profile`
+- `edition`
+- `selected_backend`
+- `fallback_enabled`
+- `backend_id`
+- `backend_dependency`
+- `backend_version`
+- `backend_readiness`
+- `backend_capabilities`
+- `backend_abi_version`
+- `backend_build_fingerprint`
+
 ### command error
 
 - Direction: C++ core to Go service, stderr on failed commands.
@@ -149,3 +164,20 @@ adapters. The AnoCrypto-C profile must use stable backend error codes and
 redacted operator diagnostics; it must not populate `openssl_errors` or retry
 the operation through OpenSSL. A future backend-neutral diagnostic extension is
 a compatibility change and must update both sides and validator tests.
+
+## Stable Backend Errors
+
+Product-profile and adapter control failures use these stable codes:
+
+- `backend.capability_unavailable`
+- `backend.dependency_unavailable`
+- `backend.version_incompatible`
+- `backend.initialization_failed`
+- `backend.module_not_operational`
+- `backend.profile_mismatch`
+- `backend.operation_failed`
+
+`backend info` reports the build-selected product profile, adapter identity,
+dependency version, readiness, capabilities, ABI metadata, and the explicit
+`fallback_enabled` value. It does not change any existing issuance/status wire
+payload.

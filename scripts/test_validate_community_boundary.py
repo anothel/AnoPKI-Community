@@ -23,15 +23,21 @@ def load_validator():
 
 def write_required_root(root: Path) -> None:
     (root / "CMakeLists.txt").write_text(
-        """find_package(OpenSSL REQUIRED COMPONENTS Crypto)
+        """set(ANOPKI_PRODUCT_PROFILE "community-openssl" CACHE STRING "profile")
+find_package(OpenSSL REQUIRED COMPONENTS Crypto)
 add_library(anopki_core)
 add_library(anopki_openssl_adapter)
 target_link_libraries(anopki_openssl_adapter PRIVATE OpenSSL::Crypto)
 add_executable(anopki-core)
 target_link_libraries(anopki-core PRIVATE anopki_core anopki_openssl_adapter)
+target_compile_definitions(anopki_core PRIVATE ANOPKI_SELECTED_BACKEND_ID="openssl" ANOPKI_PROFILE_REQUIRES_FULL_OPERATIONS=1)
+add_custom_target(anopki-community-openssl)
 """,
         encoding="utf-8",
     )
+    backend = root / "include/anopki/crypto/backend.hpp"
+    backend.parent.mkdir(parents=True, exist_ok=True)
+    backend.write_text("BackendInfo BackendCapability BackendReadiness BackendErrorCode\n", encoding="utf-8")
     for rel in (
         "src/backends/openssl/openssl_backend.hpp",
         "src/backends/openssl/openssl_backend.cpp",

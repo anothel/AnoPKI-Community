@@ -10,5 +10,8 @@
   },
   "crypto_backend_default": "OpenSSL-backed C++ core",
   "release_maturity": "pre-1.0 / not-production-stable",
-  "generated_from": "uploaded AnoPKI.zip"
+  "generated_from": "uploaded AnoPKI.zip",
+  "product_profile": "community-openssl",
+  "selected_adapter": "openssl",
+  "fallback_enabled": false
 }

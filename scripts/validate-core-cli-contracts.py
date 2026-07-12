@@ -51,6 +51,9 @@ CONTRACTS = {
         "go": "ocspResponseFileRequest",
         "cpp_parser": "ocsp_response_request_from_json",
     },
+    "backend info result": {
+        "cpp_emitter": "backend_info_to_json",
+    },
     "command error": {
         "go": "commandErrorPayload",
         "cpp_emitter": "write_error",
@@ -121,18 +124,20 @@ def check_contracts(root: Path) -> None:
             messages.append(f"core CLI contract doc missing section: {name}")
             continue
 
-        go_fields = go_json_fields(go_source, contract["go"])
-        if go_fields != doc_fields:
-            messages.append(
-                diff_message(
-                    "Go corecli JSON fields drift / core CLI contract doc drift",
-                    name,
-                    go_fields,
-                    doc_fields,
-                    "Go",
-                    "docs",
+        go_fields: set[str] = set()
+        if "go" in contract:
+            go_fields = go_json_fields(go_source, contract["go"])
+            if go_fields != doc_fields:
+                messages.append(
+                    diff_message(
+                        "Go corecli JSON fields drift / core CLI contract doc drift",
+                        name,
+                        go_fields,
+                        doc_fields,
+                        "Go",
+                        "docs",
+                    )
                 )
-            )
 
         if "cpp_parser" in contract:
             cpp_fields = cpp_parser_fields(cpp_source, contract["cpp_parser"])
@@ -144,12 +149,11 @@ def check_contracts(root: Path) -> None:
             if contract["cpp_emitter"] == "write_error" and "diagnostics.field" in function_body(cpp_source, "write_error"):
                 adapter_source = read_text(root, "src/backends/openssl/openssl_backend.cpp")
                 cpp_fields.update(re.findall(r'diagnostics\.field\s*=\s*"([a-z0-9_]+)"', adapter_source))
-            missing = go_fields - cpp_fields
-            if missing:
-                messages.append(
-                    "C++ core CLI emitter fields drift for "
-                    f"{name}: missing {', '.join(sorted(missing))}"
-                )
+            expected_fields = go_fields if "go" in contract else doc_fields
+            missing = expected_fields - cpp_fields
+            extra = cpp_fields - expected_fields if "go" not in contract else set()
+            if missing or extra:
+                messages.append(diff_message("C++ core CLI emitter fields drift", name, expected_fields, cpp_fields, "expected", "C++ emitter"))
 
     extra_sections = sorted(set(docs) - set(CONTRACTS))
     if extra_sections:

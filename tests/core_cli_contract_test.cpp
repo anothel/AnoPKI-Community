@@ -376,6 +376,41 @@ void assert_cli_ocsp_validate_responder(
 	}
 }
 
+void assert_cli_backend_info(const std::filesystem::path &cli_path, const std::filesystem::path &work_dir, const std::string &expected_profile, const std::string &expected_edition)
+{
+	const std::filesystem::path stdout_path = work_dir / "core_cli_contract_backend_info_stdout.txt";
+	const std::filesystem::path stderr_path = work_dir / "core_cli_contract_backend_info_stderr.txt";
+#if defined(_WIN32)
+	const std::string command_prefix = "call ";
+#else
+	const std::string command_prefix;
+#endif
+	const std::string command = command_prefix + shell_quote(cli_path) +
+	                            " backend info > " + shell_quote(stdout_path) +
+	                            " 2> " + shell_quote(stderr_path);
+	const int exit_code = std::system(command.c_str());
+	const std::string output = read_file(stdout_path);
+	const std::string errors = read_file(stderr_path);
+	for (const std::string &fragment : {
+	         std::string{"\"product_profile\":\""} + expected_profile + "\"",
+	         std::string{"\"edition\":\""} + expected_edition + "\"",
+	         std::string{"\"selected_backend\":\"openssl\""},
+	         std::string{"\"fallback_enabled\":false"},
+	         std::string{"\"backend_id\":\"openssl\""},
+	         std::string{"\"backend_readiness\":\"ready\""},
+	         std::string{"\"certificate_issue\""},
+	     })
+	{
+		if (exit_code != 0 || output.find(fragment) == std::string::npos)
+		{
+			std::cerr << "CLI backend info mismatch\ncommand: " << command
+			          << "\nfragment: " << fragment << "\nstdout: " << output
+			          << "\nstderr: " << errors << "\n";
+			std::exit(1);
+		}
+	}
+}
+
 void assert_cli_error_contract(const std::filesystem::path &cli_path, const std::filesystem::path &work_dir)
 {
 	const std::filesystem::path stdout_path = work_dir / "core_cli_contract_stdout.txt";
@@ -447,7 +482,8 @@ void assert_cli_ocsp_validate_responder_contract(const std::filesystem::path &cl
 
 int main(int argc, char *argv[])
 {
-	assert(argc == 4);
+	assert(argc == 6);
+	assert_cli_backend_info(argv[1], argv[2], argv[4], argv[5]);
 	assert_cli_error_contract(argv[1], argv[2]);
 	assert_cli_ocsp_fixture_inspect(argv[1], argv[2], argv[3]);
 	assert_cli_ocsp_validate_responder_contract(argv[1], argv[2]);

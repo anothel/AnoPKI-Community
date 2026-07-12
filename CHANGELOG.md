@@ -9,6 +9,7 @@ commands and known gaps before tagging.
 
 ### Added
 
+- Backend identity, capability, readiness, stable error, and explicit product-profile metadata with `anopki-core backend info`.
 - CI workflow for docs validation, service contract parity, secret baseline
   scan, Go service tests/build, PostgreSQL migration integration, and C++
   CMake/CTest.

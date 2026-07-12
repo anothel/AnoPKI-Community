@@ -3,14 +3,34 @@
 
 #include "anopki/crypto/runtime.hpp"
 
+#include <openssl/crypto.h>
 #include <openssl/err.h>
 
 namespace anopki::core
 {
 
-std::string_view OpenSSLBackend::name() const noexcept
+OpenSSLBackend::OpenSSLBackend()
 {
-    return "openssl";
+    info_.id = "openssl";
+    info_.dependency = "OpenSSL";
+    const char *version = OpenSSL_version(OPENSSL_VERSION);
+    info_.dependency_version = version == nullptr ? "unknown" : version;
+    info_.readiness = crypto::BackendReadiness::ready;
+    info_.capabilities = {
+        crypto::BackendCapability::csr_inspect,
+        crypto::BackendCapability::certificate_issue,
+        crypto::BackendCapability::crl_generate,
+        crypto::BackendCapability::crl_inspect,
+        crypto::BackendCapability::ocsp_request_inspect,
+        crypto::BackendCapability::ocsp_issuer_inspect,
+        crypto::BackendCapability::ocsp_response_generate,
+        crypto::BackendCapability::ocsp_responder_validate,
+    };
+}
+
+const crypto::BackendInfo &OpenSSLBackend::info() const noexcept
+{
+    return info_;
 }
 
 crypto::ErrorDiagnostics OpenSSLBackend::drain_error_diagnostics() const
@@ -31,7 +51,7 @@ crypto::ErrorDiagnostics OpenSSLBackend::drain_error_diagnostics() const
 namespace anopki::crypto
 {
 
-const Backend &default_backend() noexcept
+const Backend &default_backend()
 {
     static const core::OpenSSLBackend backend;
     return backend;

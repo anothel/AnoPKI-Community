@@ -99,7 +99,7 @@ def fail(message: str) -> None:
 
 def should_skip(path: Path, root: Path) -> bool:
     rel_parts = path.relative_to(root).parts
-    return path.name in SELF_TEST_FILES or any(part in SKIP_DIRS for part in rel_parts)
+    return path.name in SELF_TEST_FILES or path.name.startswith("test_") or any(part in SKIP_DIRS for part in rel_parts)
 
 
 def text_files(root: Path) -> Iterable[Path]:
@@ -162,6 +162,15 @@ def validate(root: Path = ROOT) -> None:
     cmake = (root / "CMakeLists.txt").read_text(encoding="utf-8")
     if "find_package(OpenSSL REQUIRED COMPONENTS Crypto)" not in cmake:
         fail("Community CMakeLists.txt must keep OpenSSL as the active backend")
+    required_profile_markers = [
+        'set(ANOPKI_PRODUCT_PROFILE "community-openssl"',
+        'ANOPKI_SELECTED_BACKEND_ID="openssl"',
+        'ANOPKI_PROFILE_REQUIRES_FULL_OPERATIONS=1',
+        'add_custom_target(anopki-community-openssl',
+    ]
+    missing = [marker for marker in required_profile_markers if marker not in cmake]
+    if missing:
+        fail("Community CMakeLists.txt missing explicit product profile markers:\n" + "\n".join(missing))
 
     source_root = root / "src"
     if source_root.exists():
@@ -188,6 +197,13 @@ def validate(root: Path = ROOT) -> None:
         cli_path = root / "src" / "cli" / "main.cpp"
         if cli_path.is_file() and "#include <openssl/" in cli_path.read_text(encoding="utf-8"):
             fail("CLI must obtain dependency diagnostics through the selected adapter")
+
+
+        backend_header = (root / "include/anopki/crypto/backend.hpp").read_text(encoding="utf-8")
+        required_backend_tokens = ["BackendInfo", "BackendCapability", "BackendReadiness", "BackendErrorCode"]
+        missing = [token for token in required_backend_tokens if token not in backend_header]
+        if missing:
+            fail("Community backend control contract missing:\n" + "\n".join(missing))
 
         if "add_library(anopki_openssl_adapter" not in cmake:
             fail("Community CMakeLists.txt must define the OpenSSL adapter target")

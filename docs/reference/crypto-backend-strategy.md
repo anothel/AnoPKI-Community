@@ -7,7 +7,9 @@ composition, and release rules for OpenSSL and external AnoCrypto-C builds.
 
 Community/OpenSSL remains the complete implementation. Backend-neutral dispatch lives under `src/core`, while CSR inspection, certificate issuance, CRL generation, OCSP request decoding, OCSP response signing, and OpenSSL diagnostics live under `src/backends/openssl`. The `anopki_core` target no longer links OpenSSL directly; the OpenSSL adapter target owns that dependency.
 
-The next contract work is backend identity, capability, readiness, and stable error metadata. The project does not develop AnoCrypto inside AnoPKI. AnoCrypto-C is a
+Backend identity, dependency version, capability, readiness, stable error metadata, and explicit product-profile selection are implemented in the C++ control contract.
+
+The project does not develop AnoCrypto inside AnoPKI. AnoCrypto-C is a
 separate external C99 project and SDK. Enterprise consumes it through an
 AnoPKI-owned adapter.
 
@@ -146,3 +148,22 @@ Each build and release candidate records:
 - `fallback_used` (normally `false`),
 - production-readiness status,
 - KCMVP status and evidence pointer when applicable.
+
+## Implemented Control Contract
+
+The shared `Backend` contract now reports `BackendInfo` with adapter ID,
+dependency/version, readiness, ABI/build metadata, and operation capabilities.
+Core dispatch verifies each operation capability before calling an adapter.
+
+Builds select one immutable product profile:
+
+```text
+Community: ANOPKI_PRODUCT_PROFILE=community-openssl
+Enterprise: ANOPKI_PRODUCT_PROFILE=enterprise-openssl
+Enterprise: ANOPKI_PRODUCT_PROFILE=enterprise-anocrypto-c
+```
+
+The CLI command `anopki-core backend info` exposes the selected profile and
+backend metadata for release evidence. `fallback_enabled` is always false.
+Enterprise/AnoCrypto-C builds require the real external CMake package and do not
+link OpenSSL. Missing SDK configuration fails at CMake configure time.

@@ -7,7 +7,9 @@ namespace anopki::core
 
 IssueResult issue_certificate(const IssueRequest &request)
 {
-	return crypto::default_backend().issue_certificate(request);
+	const crypto::Backend &backend = crypto::selected_backend();
+	crypto::require_backend_capability(backend, crypto::BackendCapability::certificate_issue);
+	return backend.issue_certificate(request);
 }
 
 } // namespace anopki::core

@@ -9,7 +9,9 @@ namespace anopki::core
 class OpenSSLBackend final : public crypto::Backend
 {
 public:
-    [[nodiscard]] std::string_view name() const noexcept override;
+    OpenSSLBackend();
+
+    [[nodiscard]] const crypto::BackendInfo &info() const noexcept override;
 
     [[nodiscard]] CsrInfo inspect_csr_pem(const std::string &csr_pem) const override;
     [[nodiscard]] IssueResult issue_certificate(const IssueRequest &request) const override;
@@ -26,6 +28,9 @@ public:
         const std::string &issuer_certificate_pem,
         const std::string &responder_certificate_pem) const override;
     [[nodiscard]] crypto::ErrorDiagnostics drain_error_diagnostics() const override;
+
+private:
+    crypto::BackendInfo info_;
 };
 
 } // namespace anopki::core

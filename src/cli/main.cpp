@@ -383,7 +383,7 @@ std::string json_error(std::string_view code, std::string_view message)
 void write_error(std::string_view code, std::string_view message)
 {
 	const anopki::crypto::ErrorDiagnostics diagnostics =
-	    anopki::crypto::default_backend().drain_error_diagnostics();
+	    anopki::crypto::drain_selected_backend_diagnostics();
 	if (diagnostics.field.empty() || diagnostics.entries.empty())
 	{
 		std::cerr << json_error(code, message) << '\n';
@@ -633,9 +633,44 @@ std::string ocsp_responder_validation_to_json(const anopki::core::ValidateOCSPRe
 	return std::string{"{\"valid\":"} + (result.valid ? "true" : "false") + "}";
 }
 
+
+std::string backend_info_to_json()
+{
+	const anopki::crypto::ProductProfileInfo &profile = anopki::crypto::selected_product_profile();
+	const anopki::crypto::BackendInfo &backend = anopki::crypto::selected_backend().info();
+	std::vector<std::string> capabilities;
+	capabilities.reserve(backend.capabilities.size());
+	for (const anopki::crypto::BackendCapability capability : backend.capabilities)
+	{
+		capabilities.emplace_back(anopki::crypto::to_string(capability));
+	}
+	return "{\"product_profile\":" + json_string(profile.id) +
+	       ",\"edition\":" + json_string(profile.edition) +
+	       ",\"selected_backend\":" + json_string(profile.selected_backend) +
+	       ",\"fallback_enabled\":" + std::string{profile.fallback_enabled ? "true" : "false"} +
+	       ",\"backend_id\":" + json_string(backend.id) +
+	       ",\"backend_dependency\":" + json_string(backend.dependency) +
+	       ",\"backend_version\":" + json_string(backend.dependency_version) +
+	       ",\"backend_readiness\":" + json_string(anopki::crypto::to_string(backend.readiness)) +
+	       ",\"backend_capabilities\":" + json_string_array(capabilities) +
+	       ",\"backend_abi_version\":" + std::to_string(backend.abi_version) +
+	       ",\"backend_build_fingerprint\":" + json_string(backend.build_fingerprint) + "}";
+}
+
 bool arg_is(char *value, std::string_view expected)
 {
 	return value != nullptr && expected == value;
+}
+
+int run_backend_info(int argc, char *argv[])
+{
+	if (argc != 3 || !arg_is(argv[1], "backend") || !arg_is(argv[2], "info"))
+	{
+		write_error("cli.invalid_args", "invalid arguments");
+		return 2;
+	}
+	std::cout << backend_info_to_json() << '\n';
+	return 0;
 }
 
 int run_csr_inspect(int argc, char *argv[])
@@ -752,6 +787,10 @@ int main(int argc, char *argv[])
 {
 	try
 	{
+		if (argc >= 3 && arg_is(argv[1], "backend") && arg_is(argv[2], "info"))
+		{
+			return run_backend_info(argc, argv);
+		}
 		if (argc >= 3 && arg_is(argv[1], "csr") && arg_is(argv[2], "inspect"))
 		{
 			return run_csr_inspect(argc, argv);
@@ -783,6 +822,11 @@ int main(int argc, char *argv[])
 
 		write_error("cli.invalid_args", "invalid arguments");
 		return 2;
+	}
+	catch (const anopki::crypto::BackendError &error)
+	{
+		write_error(anopki::crypto::to_string(error.code()), error.what());
+		return 1;
 	}
 	catch (const std::runtime_error &error)
 	{

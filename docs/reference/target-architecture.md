@@ -1,7 +1,7 @@
 # Target Architecture
 
 This document describes the intended service and product boundaries. It mirrors
-current behavior where possible. Community/OpenSSL adapter separation is implemented; explicit multi-profile assembly remains future work.
+current behavior where possible. Community/OpenSSL adapter separation and explicit build-time product-profile assembly are implemented.
 
 ## Components
 
@@ -50,6 +50,14 @@ AnoPKI Core ------------|
 - Enterprise owns the AnoCrypto-C adapter.
 - AnoCrypto-C is an external SDK and separate repository.
 - Adapter selection is explicit; there is no automatic runtime fallback.
+
+### Backend Control Metadata
+
+Each selected adapter reports identity, dependency version, readiness, ABI/build
+metadata, and operation capabilities. Core dispatch returns stable
+`backend.capability_unavailable` errors before invoking unsupported operations.
+`anopki-core backend info` exposes the selected immutable profile and confirms
+that automatic fallback is disabled.
 
 ### Enterprise Layer
 

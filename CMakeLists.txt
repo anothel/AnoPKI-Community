@@ -8,15 +8,23 @@ string(REGEX MATCH "^[0-9]+\\.[0-9]+\\.[0-9]+" ANOPKI_PROJECT_VERSION "${ANOPKI_
 
 project(anopki VERSION ${ANOPKI_PROJECT_VERSION} LANGUAGES CXX)
 
+set(ANOPKI_PRODUCT_PROFILE "community-openssl" CACHE STRING "AnoPKI product profile")
+set_property(CACHE ANOPKI_PRODUCT_PROFILE PROPERTY STRINGS community-openssl)
+if(NOT ANOPKI_PRODUCT_PROFILE STREQUAL "community-openssl")
+    message(FATAL_ERROR "Community supports only ANOPKI_PRODUCT_PROFILE=community-openssl")
+endif()
+
 find_package(OpenSSL REQUIRED COMPONENTS Crypto)
 
 option(ANOPKI_ENABLE_FUZZING "Build local libFuzzer parser targets" OFF)
 
 add_library(anopki_core
+    src/core/backend.cpp
     src/core/crl.cpp
     src/core/csr.cpp
     src/core/issue.cpp
     src/core/ocsp.cpp
+    src/core/runtime.cpp
     src/version.cpp
 )
 add_library(anopki::core ALIAS anopki_core)
@@ -37,6 +45,13 @@ target_include_directories(anopki_core
         $<INSTALL_INTERFACE:include>
     PRIVATE
         ${CMAKE_CURRENT_BINARY_DIR}/generated
+)
+target_compile_definitions(anopki_core
+    PRIVATE
+        ANOPKI_PRODUCT_PROFILE_ID="community-openssl"
+        ANOPKI_EDITION_ID="community"
+        ANOPKI_SELECTED_BACKEND_ID="openssl"
+        ANOPKI_PROFILE_REQUIRES_FULL_OPERATIONS=1
 )
 
 add_library(anopki_openssl_adapter
@@ -65,6 +80,7 @@ add_executable(anopki-core
     src/cli/main.cpp
 )
 target_link_libraries(anopki-core PRIVATE anopki::core anopki::openssl_adapter)
+add_custom_target(anopki-community-openssl DEPENDS anopki-core)
 
 if(WIN32 AND OPENSSL_ROOT_DIR)
     file(TO_CMAKE_PATH "${OPENSSL_ROOT_DIR}" OPENSSL_ROOT_DIR_CMAKE)
@@ -117,7 +133,7 @@ if(BUILD_TESTING)
     add_dependencies(anopki_core_cli_contract_test anopki-core)
     add_test(
         NAME anopki.core_cli_contract
-        COMMAND anopki_core_cli_contract_test $<TARGET_FILE:anopki-core> ${CMAKE_CURRENT_BINARY_DIR} ${CMAKE_CURRENT_SOURCE_DIR}/tests/fixtures/ocsp
+        COMMAND anopki_core_cli_contract_test $<TARGET_FILE:anopki-core> ${CMAKE_CURRENT_BINARY_DIR} ${CMAKE_CURRENT_SOURCE_DIR}/tests/fixtures/ocsp community-openssl community
     )
 
     add_executable(anopki_core_issue_profile_test
@@ -162,4 +178,10 @@ if(BUILD_TESTING)
     )
     target_link_libraries(anopki_crypto_backend_interface_test PRIVATE anopki::core)
     add_test(NAME anopki.crypto_backend_interface COMMAND anopki_crypto_backend_interface_test)
+
+    add_executable(anopki_backend_profile_test
+        tests/backend_profile_test.cpp
+    )
+    target_link_libraries(anopki_backend_profile_test PRIVATE anopki::core anopki::openssl_adapter)
+    add_test(NAME anopki.backend_profile COMMAND anopki_backend_profile_test)
 endif()

@@ -6,11 +6,54 @@
 #include "anopki/core/issue.hpp"
 #include "anopki/core/ocsp.hpp"
 
+#include <cstdint>
+#include <stdexcept>
 #include <string>
 #include <string_view>
 #include <vector>
 
 namespace anopki::crypto {
+
+enum class BackendReadiness
+{
+    ready,
+    unavailable,
+    error,
+};
+
+enum class BackendCapability
+{
+    csr_inspect,
+    certificate_issue,
+    crl_generate,
+    crl_inspect,
+    ocsp_request_inspect,
+    ocsp_issuer_inspect,
+    ocsp_response_generate,
+    ocsp_responder_validate,
+};
+
+enum class BackendErrorCode
+{
+    capability_unavailable,
+    dependency_unavailable,
+    version_incompatible,
+    initialization_failed,
+    module_not_operational,
+    profile_mismatch,
+    operation_failed,
+};
+
+struct BackendInfo
+{
+    std::string id;
+    std::string dependency;
+    std::string dependency_version;
+    std::string build_fingerprint;
+    std::uint32_t abi_version{0};
+    BackendReadiness readiness{BackendReadiness::unavailable};
+    std::vector<BackendCapability> capabilities;
+};
 
 struct ErrorDiagnostics
 {
@@ -18,11 +61,32 @@ struct ErrorDiagnostics
     std::vector<std::string> entries;
 };
 
+[[nodiscard]] std::string_view to_string(BackendReadiness readiness) noexcept;
+[[nodiscard]] std::string_view to_string(BackendCapability capability) noexcept;
+[[nodiscard]] std::string_view to_string(BackendErrorCode code) noexcept;
+[[nodiscard]] bool has_capability(const BackendInfo &info, BackendCapability capability) noexcept;
+
+class BackendError final : public std::runtime_error
+{
+public:
+    explicit BackendError(BackendErrorCode code);
+    BackendError(BackendErrorCode code, std::string message);
+
+    [[nodiscard]] BackendErrorCode code() const noexcept;
+
+private:
+    BackendErrorCode code_;
+};
+
 class Backend {
 public:
     virtual ~Backend() = default;
 
-    [[nodiscard]] virtual std::string_view name() const noexcept = 0;
+    [[nodiscard]] virtual const BackendInfo &info() const noexcept = 0;
+    [[nodiscard]] std::string_view name() const noexcept
+    {
+        return info().id;
+    }
 
     // The operation contract is dependency-neutral. Adapter-specific types and
     // raw dependency errors must remain below this boundary.
