@@ -68,10 +68,15 @@ fork the Community lifecycle contracts unnecessarily.
 
 ### Key Providers
 
-Issuer and responder keys are addressed by `key_ref`. File references are
-local/dev only. Production providers should be non-exportable HSM/KMS/PKCS#11
-providers with readiness and audit evidence. Key-provider selection remains
-separate from backend-adapter selection.
+Issuer and responder keys are addressed by `key_ref`. ADR 0007 selects a
+deliberately scoped hybrid provider architecture.
+
+- Community/OpenSSL first uses an in-process adapter-compatible provider seam.
+- File providers are local/dev only and preserve current synchronous operation behavior.
+- PKCS#11/local HSM may later provide non-exportable OpenSSL-compatible handles.
+- Remote KMS requires a separately approved Enterprise protocol or provider implementation.
+- Key-provider selection remains separate from backend-adapter selection.
+- OpenSSL/provider native types never cross the backend-neutral Core or public API boundary.
 
 ### Deploy Adapters
 
@@ -116,10 +121,12 @@ development profile until all required Community operation parity is complete.
 3. Lifecycle service validates state and policy against SQL-backed data.
 4. Signing/status operations call `anopki-core` through the core runner.
 5. AnoPKI Core dispatches to the adapter selected by the product profile.
-6. The adapter either completes the operation or returns a stable explicit
-   error; it does not silently switch dependencies.
-7. Lifecycle service persists state changes and audit records.
-8. Workers process expiration scans and outbox delivery.
+6. A signing operation resolves the provider compatible with that adapter and
+   key reference; provider failure does not trigger another provider or backend.
+7. The adapter either completes the operation or returns a stable explicit
+   backend/provider error.
+8. Lifecycle service persists state changes and audit records.
+9. Workers process expiration scans and outbox delivery.
 
 ## Production Shape
 

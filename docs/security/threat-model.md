@@ -15,7 +15,7 @@
 | Threat | Control now | Gap |
 | --- | --- | --- |
 | Mis-issuance | Profile policy, identity allow-lists, approval flow, ACME validation, CSR linting, public TLS pre-signing lint hook, and issued DER golden tests. | Expand public TLS lint fixtures when external tool is selected. |
-| Key exposure | `key_ref`, no DB private key material, production docs, key provider semantics. | HSM/KMS/PKCS#11 implementation and ceremony evidence. |
+| Key exposure | `key_ref`, no DB private key material, production docs, provider policy. | C++ file-key loading remains until ADR 0007 vertical slices complete; HSM/KMS evidence pending. |
 | Privilege abuse | API key scopes, access model, break-glass rules, and audit metadata. | First-class role/ABAC enforcement waits for an operator directory. |
 | Replay/duplicate issuance | Issuance attempts and ACME nonce handling. | More multi-node smoke coverage. |
 | Status outage | CRL/OCSP backed by service state. | HA deployment drills. |
@@ -23,7 +23,7 @@
 
 ## Review Triggers
 
-- new key provider
+- new key provider or signing protocol
 - new discovery/import source
 - new deployment adapter
 - public TLS integration change

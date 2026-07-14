@@ -363,3 +363,27 @@ def test_legacy_identifiers_outside_migration_context_fail(tmp_path: Path) -> No
 
 if __name__ == "__main__":
     main()
+
+
+def test_missing_key_provider_signing_adr_fails(tmp_path: Path) -> None:
+    copy_docs_inputs(tmp_path)
+    (tmp_path / "docs" / "adr" / "0007-key-provider-signing-boundary.md").unlink()
+
+    result = run_validator(tmp_path)
+
+    assert result.returncode == 1
+    assert "missing required docs" in result.stderr
+
+
+def test_key_provider_direction_drift_fails(tmp_path: Path) -> None:
+    copy_docs_inputs(tmp_path)
+    adr = tmp_path / "docs" / "adr" / "0007-key-provider-signing-boundary.md"
+    adr.write_text(
+        adr.read_text(encoding="utf-8").replace("deliberately scoped hybrid", "automatic universal provider", 1),
+        encoding="utf-8",
+    )
+
+    result = run_validator(tmp_path)
+
+    assert result.returncode == 1
+    assert "KeyProvider signing direction docs missing required wording" in result.stderr

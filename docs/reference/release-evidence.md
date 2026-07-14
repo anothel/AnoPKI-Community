@@ -292,3 +292,19 @@ capabilities, ABI version, and build fingerprint. Community/OpenSSL and
 Enterprise/OpenSSL require the complete operation capability set.
 Enterprise/AnoCrypto-C remains pending and reports no operation-level capabilities and
 remains a development/integration profile.
+
+
+## Key Provider Evidence
+
+Each signing-capable release profile records:
+
+- provider ID and class,
+- key-reference class or redacted fingerprint,
+- readiness and actual signing result,
+- algorithm and public-key/certificate binding result,
+- exportability,
+- selected backend/profile compatibility,
+- stable provider error/result code,
+- evidence that no undeclared provider, file-key, or backend fallback occurred.
+
+Current Community/OpenSSL evidence remains `provider=file`, `exportable`, and local/dev only. Production provider readiness is not complete until actual certificate, CRL, and OCSP signing paths use the provider boundary and non-exportable evidence is recorded.

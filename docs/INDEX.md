@@ -46,7 +46,7 @@ This index is the public entry point for repository documentation. Keep it short
 | [Algorithm policy](policy/algorithm-policy.md) | Current algorithm baseline, PQC stance, and algorithm migration expectations. |
 | [Crypto backend strategy](reference/crypto-backend-strategy.md) | Community OpenSSL baseline, external Enterprise AnoCrypto-C adapter, explicit profile selection, and no-fallback gates. |
 | [Crypto backend parity](reference/crypto-backend-parity.md) | Shared fixture format, parity result states, commands, and release evidence. |
-| [Key provider semantics](security/key-provider-semantics.md) | Signing key reference, provider, non-exportability, and audit semantics. |
+| [Key provider semantics](security/key-provider-semantics.md) | Signing key reference, selected hybrid provider boundary, non-exportability, and audit semantics. |
 | [Threat model](security/threat-model.md) | Main assets, threats, current controls, and gaps. |
 | [Access model](security/access-model.md) | Operator and API-key access assumptions. |
 | [Audit log schema](security/audit-log-schema.md) | Audit properties, retention, tamper-evidence, and SIEM export baseline. |
@@ -100,6 +100,7 @@ This index is the public entry point for repository documentation. Keep it short
 | [0004](adr/0004-license-change-to-mpl-2.0.md) | MPL-2.0 license change. |
 | [0005](adr/0005-project-rename-to-anopki.md) | Project rename to AnoPKI. |
 | [0006](adr/0006-crypto-backend-direction-anocrypto.md) | Backend-neutral core with Community OpenSSL and external Enterprise AnoCrypto-C adapters. |
+| [0007](adr/0007-key-provider-signing-boundary.md) | Deliberately scoped hybrid key-provider signing boundary. |
 
 ## Internal Or Archived Material
 

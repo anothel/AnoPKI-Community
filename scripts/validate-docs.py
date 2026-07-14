@@ -107,6 +107,7 @@ REQUIRED = [
     "docs/adr/0004-license-change-to-mpl-2.0.md",
     "docs/adr/0005-project-rename-to-anopki.md",
     "docs/adr/0006-crypto-backend-direction-anocrypto.md",
+    "docs/adr/0007-key-provider-signing-boundary.md",
 ]
 
 
@@ -203,6 +204,20 @@ def check_anocrypto_direction(root: Path) -> None:
         fail("ROADMAP does not mention the external AnoCrypto-C adapter direction")
 
 
+
+def check_key_provider_direction(root: Path) -> None:
+    adr = (root / "docs/adr/0007-key-provider-signing-boundary.md").read_text(encoding="utf-8")
+    semantics = (root / "docs/security/key-provider-semantics.md").read_text(encoding="utf-8")
+    roadmap = (root / "docs/ROADMAP.md").read_text(encoding="utf-8")
+    adr_required = ["deliberately scoped hybrid", "FileKeyProvider", "Remote KMS"]
+    semantics_required = ["deliberately scoped hybrid", "provider.invalid_reference"]
+    missing = [text for text in adr_required if text not in adr]
+    missing += [text for text in semantics_required if text not in semantics]
+    if missing:
+        fail("KeyProvider signing direction docs missing required wording:\n" + "\n".join(missing))
+    if "ADR 0007" not in roadmap or "FileKeyProvider" not in roadmap:
+        fail("ROADMAP does not reflect the selected KeyProvider signing boundary")
+
 def should_scan_legacy_identifiers(path: Path, root: Path) -> bool:
     rel = path.relative_to(root)
     if any(part in SOURCE_HEADER_SKIP_DIRS for part in rel.parts):
@@ -280,6 +295,7 @@ def main() -> None:
     check_license_state(root)
     check_source_file_headers(root)
     check_anocrypto_direction(root)
+    check_key_provider_direction(root)
     check_readme_verify_local_commands(root)
     check_readme_current_execution_state(root)
     check_legacy_identifier_scope(root)

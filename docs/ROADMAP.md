@@ -85,9 +85,12 @@ Community/OpenSSL baseline and keeping key providers separate.
   issuance, CRL, and OCSP parity is complete.
 - Add negative tests proving that unsupported AnoCrypto-C operations never call
   OpenSSL.
-- Move certificate, CRL, and OCSP signing off direct file-key refs to provider
-  interfaces.
-- Add non-exportable provider support after signing-provider contracts exist.
+- Implement ADR 0007 certificate-issuance `FileKeyProvider` vertical slice under the OpenSSL adapter.
+- Preserve the CLI contract and certificate golden behavior while removing direct key-file opening from issuance.
+- Add stable provider errors, actual signing evidence, and no-provider-fallback tests.
+- Extend the proven provider contract to CRL and then OCSP.
+- Add a mock/software-token provider before selecting a real PKCS#11/HSM implementation.
+- Prototype and separately approve remote KMS signing semantics before adding a vendor SDK.
 - Add executable key ceremony evidence and intermediate rollover drills.
 - Add an offline-root operating model if this project owns CA hierarchy operations.
 - Add a PKCS#11 mock or software-token test path.
