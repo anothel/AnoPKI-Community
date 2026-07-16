@@ -33,6 +33,8 @@ The provider:
 - normalizes `file:` and bare paths,
 - reports provider identity/class/readiness/exportability,
 - opens and parses the actual private key,
+- rejects encrypted private-key PEM non-interactively because the current
+  provider contract has no password-input channel,
 - checks requested RSA/ECDSA/Ed25519 compatibility,
 - verifies issuer certificate/key binding,
 - returns an OpenSSL-private signing handle,

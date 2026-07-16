@@ -40,7 +40,8 @@ provider.key_binding_mismatch provider.exportability_violation
 provider.profile_mismatch provider.sign_failed
 fallback_used = false
 X509_check_private_key
-PEM_read_bio_PrivateKey
+int reject_private_key_password(char *, int, int, void *) noexcept
+PEM_read_bio_PrivateKey(bio.get(), nullptr, reject_private_key_password, nullptr)
 """,
     )
     write(
@@ -52,7 +53,15 @@ X509_sign(cert, key.native_handle(), digest);
 throw_provider_sign_failed(key);
 """,
     )
-    write(root, "tests/file_key_provider_test.cpp", "// tests\n")
+    write(
+        root,
+        "tests/file_key_provider_test.cpp",
+        """write_encrypted_private_key
+EVP_aes_256_cbc
+encrypted.pem
+test-only-password
+""",
+    )
     write(
         root,
         "CMakeLists.txt",
@@ -99,6 +108,34 @@ def test_direct_pem_read_fails() -> None:
         expect_failure(root, "directly loads a private key")
 
 
+def test_interactive_password_callback_fails() -> None:
+    with tempfile.TemporaryDirectory() as dirname:
+        root = Path(dirname)
+        clean_fixture(root)
+        provider = root / "src/backends/openssl/key_providers/file_key_provider.cpp"
+        provider.write_text(
+            provider.read_text(encoding="utf-8").replace(
+                "reject_private_key_password, nullptr", "nullptr, nullptr"
+            ),
+            encoding="utf-8",
+        )
+        expect_failure(root, "missing required semantics")
+
+
+def test_missing_encrypted_pem_rejection_test_fails() -> None:
+    with tempfile.TemporaryDirectory() as dirname:
+        root = Path(dirname)
+        clean_fixture(root)
+        provider_test = root / "tests/file_key_provider_test.cpp"
+        provider_test.write_text(
+            provider_test.read_text(encoding="utf-8").replace(
+                "write_encrypted_private_key", "write_private_key"
+            ),
+            encoding="utf-8",
+        )
+        expect_failure(root, "do not cover non-interactive encrypted PEM rejection")
+
+
 def test_missing_resolution_fails() -> None:
     with tempfile.TemporaryDirectory() as dirname:
         root = Path(dirname)
@@ -129,6 +166,8 @@ def main() -> None:
     test_clean_fixture_passes()
     test_direct_bio_open_fails()
     test_direct_pem_read_fails()
+    test_interactive_password_callback_fails()
+    test_missing_encrypted_pem_rejection_test_fails()
     test_missing_resolution_fails()
     test_missing_cmake_source_fails()
     test_openssl_type_escape_fails()

@@ -43,7 +43,15 @@ REQUIRED_PROVIDER_TOKENS = (
     "provider.sign_failed",
     "fallback_used = false",
     "X509_check_private_key",
-    "PEM_read_bio_PrivateKey",
+    "reject_private_key_password",
+    "PEM_read_bio_PrivateKey(bio.get(), nullptr, reject_private_key_password, nullptr)",
+)
+
+REQUIRED_PROVIDER_TEST_TOKENS = (
+    "write_encrypted_private_key",
+    "EVP_aes_256_cbc",
+    "encrypted.pem",
+    "test-only-password",
 )
 
 
@@ -62,7 +70,7 @@ def validate(root: Path) -> None:
     header = read_required(root, PROVIDER_HEADER)
     provider = read_required(root, PROVIDER_SOURCE)
     issue = read_required(root, ISSUE_SOURCE)
-    read_required(root, PROVIDER_TEST)
+    provider_test = read_required(root, PROVIDER_TEST)
     cmake = read_required(root, Path("CMakeLists.txt"))
 
     forbidden_hits = [token for token in FORBIDDEN_ISSUE_TOKENS if token in issue]
@@ -84,6 +92,15 @@ def validate(root: Path) -> None:
         fail(
             "FileKeyProvider implementation is missing required semantics:\n"
             + "\n".join(missing_provider)
+        )
+
+    missing_provider_tests = [
+        token for token in REQUIRED_PROVIDER_TEST_TOKENS if token not in provider_test
+    ]
+    if missing_provider_tests:
+        fail(
+            "FileKeyProvider tests do not cover non-interactive encrypted PEM rejection:\n"
+            + "\n".join(missing_provider_tests)
         )
 
     for marker in (

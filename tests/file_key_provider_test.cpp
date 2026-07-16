@@ -197,6 +197,29 @@ void write_private_key(const std::filesystem::path &path, EVP_PKEY *key)
 	}
 }
 
+void write_encrypted_private_key(const std::filesystem::path &path, EVP_PKEY *key)
+{
+	BIO *bio = BIO_new_file(path.string().c_str(), "wb");
+	if (bio == nullptr)
+	{
+		fail("encrypted private key file open failed");
+	}
+	constexpr unsigned char password[] = "test-only-password";
+	const int result = PEM_write_bio_PrivateKey(
+	    bio,
+	    key,
+	    EVP_aes_256_cbc(),
+	    password,
+	    static_cast<int>(sizeof(password) - 1U),
+	    nullptr,
+	    nullptr);
+	BIO_free(bio);
+	if (result != 1)
+	{
+		fail("encrypted private key write failed");
+	}
+}
+
 void expect_provider_error(
     const std::function<void()> &operation,
     ProviderErrorCode expected_code,
@@ -381,10 +404,12 @@ void test_failures_and_no_fallback(const TempDirectory &temp)
 	const std::filesystem::path other_path = temp.path() / "other.pem";
 	const std::filesystem::path ec_path = temp.path() / "ec.pem";
 	const std::filesystem::path malformed_path = temp.path() / "malformed.pem";
+	const std::filesystem::path encrypted_path = temp.path() / "encrypted.pem";
 	const std::filesystem::path directory_path = temp.path() / "not-a-file";
 	write_private_key(valid_path, issuer_key.get());
 	write_private_key(other_path, other_key.get());
 	write_private_key(ec_path, ec_key.get());
+	write_encrypted_private_key(encrypted_path, issuer_key.get());
 	std::ofstream{malformed_path} << "not a private key\n";
 	std::filesystem::create_directory(directory_path);
 
@@ -424,6 +449,17 @@ void test_failures_and_no_fallback(const TempDirectory &temp)
 	    ProviderErrorCode::key_parse_failed,
 	    "parse",
 	    "malformed.pem");
+
+	// Encrypted PEM is unsupported because this provider deliberately has no
+	// password-input channel. It must fail without prompting on stdin/terminal.
+	expect_provider_error(
+	    [&] {
+		    (void)resolve_certificate_signing_key(
+		        "file:" + encrypted_path.string(), "sha256", issuer.get(), ProviderPolicy{});
+	    },
+	    ProviderErrorCode::key_parse_failed,
+	    "parse",
+	    "test-only-password");
 
 	expect_provider_error(
 	    [&] {

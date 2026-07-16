@@ -30,6 +30,14 @@ struct BioDeleter
 
 using BioPtr = std::unique_ptr<BIO, BioDeleter>;
 
+// The current FileKeyProvider contract has no password-input channel. Returning
+// zero makes encrypted private-key PEM fail closed instead of prompting on the
+// process terminal or reading from standard input.
+int reject_private_key_password(char *, int, int, void *) noexcept
+{
+	return 0;
+}
+
 [[nodiscard]] RedactedProviderDiagnostics diagnostic(std::string stage)
 {
 	return RedactedProviderDiagnostics{"file", std::move(stage)};
@@ -396,7 +404,7 @@ SigningKeyHandle FileKeyProvider::acquire(const SigningKeyRequest &request) cons
 	{
 		fail(ProviderErrorCode::not_ready, "open");
 	}
-	EVP_PKEY *key = PEM_read_bio_PrivateKey(bio.get(), nullptr, nullptr, nullptr);
+	EVP_PKEY *key = PEM_read_bio_PrivateKey(bio.get(), nullptr, reject_private_key_password, nullptr);
 	if (key == nullptr)
 	{
 		fail(ProviderErrorCode::key_parse_failed, "parse");

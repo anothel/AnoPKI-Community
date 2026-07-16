@@ -46,6 +46,9 @@ commands and known gaps before tagging.
 
 ### Changed
 
+- FileKeyProvider rejects encrypted private-key PEM without prompting on stdin
+  or a process terminal; the current provider contract has no password-input
+  channel.
 - `src/backends/openssl/issue.cpp` no longer opens or parses issuer private-key files directly; it resolves one adapter-private provider and signs through the returned handle without changing the Core CLI JSON contract.
 - Go `keyref.Provider.CheckReady` remains readiness preflight and is not described as actual cryptographic signing evidence.
 - Roadmap is future-only; completed work belongs in reference docs, runbooks,
