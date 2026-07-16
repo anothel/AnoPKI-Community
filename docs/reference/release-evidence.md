@@ -296,15 +296,49 @@ remains a development/integration profile.
 
 ## Key Provider Evidence
 
-Each signing-capable release profile records:
+Each signing-capable release candidate records the provider result from the
+actual C++ signing path, not only the Go readiness preflight.
 
-- provider ID and class,
-- key-reference class or redacted fingerprint,
-- readiness and actual signing result,
-- algorithm and public-key/certificate binding result,
-- exportability,
-- selected backend/profile compatibility,
-- stable provider error/result code,
-- evidence that no undeclared provider, file-key, or backend fallback occurred.
+Required fields:
 
-Current Community/OpenSSL evidence remains `provider=file`, `exportable`, and local/dev only. Production provider readiness is not complete until actual certificate, CRL, and OCSP signing paths use the provider boundary and non-exportable evidence is recorded.
+| Field | Required value/evidence for this slice |
+| --- | --- |
+| operation | `certificate_issue` |
+| product profile | `community-openssl` |
+| selected backend | `openssl` |
+| provider ID/class | `file` / `file` |
+| reference class | `file` or bare-path compatibility; raw path omitted |
+| readiness | actual C++ acquire result |
+| exportability | `true` |
+| requested signature algorithm | tested request value |
+| key algorithm compatibility | pass or stable `provider.algorithm_mismatch` |
+| issuer binding | pass or stable `provider.key_binding_mismatch` |
+| signing result | `X509_sign` success or stable `provider.sign_failed` |
+| fallback used | `false` |
+| production policy | exportable file provider rejected |
+| golden result | existing certificate golden fixture unchanged |
+| boundary result | `issue.cpp` contains no direct file open/PEM private-key read |
+
+Evidence must include:
+
+- full Community CTest result from the reviewed repository commit,
+- certificate OpenSSL golden fixture result,
+- `file:` and bare-path success tests,
+- all required negative provider tests,
+- source-boundary validator and validator self-tests,
+- exact OpenSSL/compiler/platform metadata,
+- reviewed Community commit SHA.
+
+`keyref.Provider.CheckReady=ready` is preflight evidence only and cannot replace
+actual provider acquire/binding/signing evidence.
+
+Current scope statement:
+
+```text
+certificate issuance: FileKeyProvider implemented, exportable, local/dev only
+CRL signing: not migrated
+OCSP signing: not migrated
+non-exportable provider: not implemented
+fallback_used: false
+production_ready: false for file-provider signing
+```

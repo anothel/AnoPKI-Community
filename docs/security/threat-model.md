@@ -15,7 +15,7 @@
 | Threat | Control now | Gap |
 | --- | --- | --- |
 | Mis-issuance | Profile policy, identity allow-lists, approval flow, ACME validation, CSR linting, public TLS pre-signing lint hook, and issued DER golden tests. | Expand public TLS lint fixtures when external tool is selected. |
-| Key exposure | `key_ref`, no DB private key material, production docs, provider policy. | C++ file-key loading remains until ADR 0007 vertical slices complete; HSM/KMS evidence pending. |
+| Key exposure | Certificate issuance uses one adapter-private provider, keeps private key bytes inside the OpenSSL adapter, redacts provider errors, and rejects the exportable file provider in production. | CRL/OCSP still use direct file-key paths; no real non-exportable provider. |
 | Privilege abuse | API key scopes, access model, break-glass rules, and audit metadata. | First-class role/ABAC enforcement waits for an operator directory. |
 | Replay/duplicate issuance | Issuance attempts and ACME nonce handling. | More multi-node smoke coverage. |
 | Status outage | CRL/OCSP backed by service state. | HA deployment drills. |

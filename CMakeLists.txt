@@ -58,6 +58,7 @@ add_library(anopki_openssl_adapter
     src/backends/openssl/crl.cpp
     src/backends/openssl/csr.cpp
     src/backends/openssl/issue.cpp
+    src/backends/openssl/key_providers/file_key_provider.cpp
     src/backends/openssl/ocsp.cpp
     src/backends/openssl/openssl_backend.cpp
 )
@@ -184,4 +185,29 @@ if(BUILD_TESTING)
     )
     target_link_libraries(anopki_backend_profile_test PRIVATE anopki::core anopki::openssl_adapter)
     add_test(NAME anopki.backend_profile COMMAND anopki_backend_profile_test)
+
+    add_executable(anopki_file_key_provider_test
+        tests/file_key_provider_test.cpp
+    )
+    target_include_directories(anopki_file_key_provider_test
+        PRIVATE
+            ${CMAKE_CURRENT_SOURCE_DIR}/src/backends/openssl
+    )
+    target_link_libraries(anopki_file_key_provider_test
+        PRIVATE
+            anopki::openssl_adapter
+            OpenSSL::Crypto
+    )
+    add_test(NAME anopki.file_key_provider COMMAND anopki_file_key_provider_test)
+
+    find_package(Python3 REQUIRED COMPONENTS Interpreter)
+    add_test(
+        NAME anopki.key_provider_boundary
+        COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/scripts/validate-key-provider-boundary.py --root ${CMAKE_CURRENT_SOURCE_DIR}
+    )
+    add_test(
+        NAME anopki.key_provider_boundary_validator_tests
+        COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/scripts/test_validate_key_provider_boundary.py
+    )
+
 endif()

@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: MPL-2.0
 #include "anopki/core/issue.hpp"
 #include "openssl_backend.hpp"
+#include "key_providers/file_key_provider.hpp"
 
 #include <openssl/asn1.h>
 #include <openssl/bio.h>
@@ -33,11 +34,8 @@ namespace
 
 constexpr const char *kCsrParseFailed = "issue.csr_parse_failed";
 constexpr const char *kIssuerCertificateParseFailed = "issue.issuer_certificate_parse_failed";
-constexpr const char *kIssuerKeyParseFailed = "issue.issuer_key_parse_failed";
-constexpr const char *kIssuerKeyMismatch = "issue.issuer_key_mismatch";
 constexpr const char *kIssuerNotCA = "issue.issuer_not_ca";
 constexpr const char *kCertificateCreateFailed = "issue.certificate_create_failed";
-constexpr const char *kSignFailed = "issue.sign_failed";
 constexpr const char *kInvalidTime = "issue.invalid_time";
 
 struct BioDeleter
@@ -184,22 +182,6 @@ X509Ptr parse_issuer_certificate(std::string_view issuer_certificate_pem)
 	return certificate;
 }
 
-EvpPkeyPtr parse_issuer_key(const std::string &issuer_key_ref)
-{
-	BioPtr bio{BIO_new_file(issuer_key_ref.c_str(), "r")};
-	if (!bio)
-	{
-		throw_error(kIssuerKeyParseFailed);
-	}
-
-	EvpPkeyPtr key{PEM_read_bio_PrivateKey(bio.get(), nullptr, nullptr, nullptr)};
-	if (!key)
-	{
-		throw_error(kIssuerKeyParseFailed);
-	}
-	return key;
-}
-
 void verify_issuer_ca_capable(X509 *issuer_certificate)
 {
 	if (X509_check_ca(issuer_certificate) <= 0)
@@ -324,25 +306,6 @@ void verify_issuer_name_constraints(X509 *issuer_certificate, const IssueRequest
 		{
 			throw_error(kIssuerNotCA);
 		}
-	}
-}
-
-void verify_issuer_key_matches_certificate(X509 *issuer_certificate, EVP_PKEY *issuer_key)
-{
-	EvpPkeyPtr issuer_public_key{X509_get_pubkey(issuer_certificate)};
-	if (!issuer_public_key)
-	{
-		throw_error(kIssuerCertificateParseFailed);
-	}
-
-#if OPENSSL_VERSION_MAJOR >= 3
-	const int matches = EVP_PKEY_eq(issuer_public_key.get(), issuer_key);
-#else
-	const int matches = EVP_PKEY_cmp(issuer_public_key.get(), issuer_key);
-#endif
-	if (matches != 1)
-	{
-		throw_error(kIssuerKeyMismatch);
 	}
 }
 
@@ -964,9 +927,13 @@ IssueResult OpenSSLBackend::issue_certificate(const IssueRequest &request) const
 	X509ReqPtr csr = parse_csr(request.csr_pem);
 	EvpPkeyPtr public_key = verify_csr_proof_of_possession(csr.get());
 	X509Ptr issuer_certificate = parse_issuer_certificate(request.issuer_certificate_pem);
-	EvpPkeyPtr issuer_key = parse_issuer_key(request.issuer_key_ref);
 	verify_issuer_ca_capable(issuer_certificate.get());
-	verify_issuer_key_matches_certificate(issuer_certificate.get(), issuer_key.get());
+	openssl_key_providers::SigningKeyHandle issuer_key =
+	    openssl_key_providers::resolve_certificate_signing_key(
+	        request.issuer_key_ref,
+	        request.signature_algorithm,
+	        issuer_certificate.get(),
+	        openssl_key_providers::provider_policy_from_environment());
 	verify_issuer_currently_valid(issuer_certificate.get());
 	verify_issuer_name_constraints(issuer_certificate.get(), request);
 
@@ -1018,9 +985,9 @@ IssueResult OpenSSLBackend::issue_certificate(const IssueRequest &request) const
 	add_profile_extensions(certificate.get(), issuer_certificate.get(), request);
 	add_subject_alt_names(certificate.get(), issuer_certificate.get(), request);
 
-	if (X509_sign(certificate.get(), issuer_key.get(), signature_digest(request)) <= 0)
+	if (X509_sign(certificate.get(), issuer_key.native_handle(), signature_digest(request)) <= 0)
 	{
-		throw_error(kSignFailed);
+		openssl_key_providers::throw_provider_sign_failed(issuer_key);
 	}
 
 	IssueResult result;

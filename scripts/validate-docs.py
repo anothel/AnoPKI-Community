@@ -215,8 +215,16 @@ def check_key_provider_direction(root: Path) -> None:
     missing += [text for text in semantics_required if text not in semantics]
     if missing:
         fail("KeyProvider signing direction docs missing required wording:\n" + "\n".join(missing))
-    if "ADR 0007" not in roadmap or "FileKeyProvider" not in roadmap:
-        fail("ROADMAP does not reflect the selected KeyProvider signing boundary")
+    stale_roadmap = [
+        "Implement ADR 0007 certificate-issuance `FileKeyProvider` vertical slice",
+        "Implement one file-provider signing vertical slice",
+        "adapter that still reads file keys directly",
+    ]
+    stale = [text for text in stale_roadmap if text in roadmap]
+    if stale:
+        fail("ROADMAP still lists the completed certificate FileKeyProvider slice:\n" + "\n".join(stale))
+    if "CRL" not in roadmap or "OCSP" not in roadmap or "mock/software-token" not in roadmap:
+        fail("ROADMAP does not contain the remaining KeyProvider work")
 
 def should_scan_legacy_identifiers(path: Path, root: Path) -> bool:
     rel = path.relative_to(root)

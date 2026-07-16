@@ -9,6 +9,8 @@ commands and known gaps before tagging.
 
 ### Added
 
+- ADR 0007 deliberately scoped hybrid signing boundary and the first Community/OpenSSL certificate-issuance `FileKeyProvider` vertical slice.
+- Adapter-private file-provider tests and a source-boundary validator covering direct key loading, production rejection, algorithm/binding failures, and no fallback.
 - ADR 0007 selecting a deliberately scoped hybrid KeyProvider signing boundary and certificate-issuance file-provider first slice.
 - Backend identity, capability, readiness, stable error, and explicit product-profile metadata with `anopki-core backend info`.
 - CI workflow for docs validation, service contract parity, secret baseline
@@ -44,6 +46,8 @@ commands and known gaps before tagging.
 
 ### Changed
 
+- `src/backends/openssl/issue.cpp` no longer opens or parses issuer private-key files directly; it resolves one adapter-private provider and signs through the returned handle without changing the Core CLI JSON contract.
+- Go `keyref.Provider.CheckReady` remains readiness preflight and is not described as actual cryptographic signing evidence.
 - Roadmap is future-only; completed work belongs in reference docs, runbooks,
   or this changelog.
 - Public docs are curated around the AnoPKI name, `ANOPKI_*` environment

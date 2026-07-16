@@ -1,56 +1,69 @@
 # Key Provider Semantics
 
-This document defines provider policy and the selected phased signing boundary.
-ADR 0007 owns the architecture decision. No production HSM, KMS, or PKCS#11
-provider is implemented yet.
+This document defines provider policy and the implemented certificate-issuance
+slice. ADR 0007 owns the deliberately scoped hybrid architecture decision.
 
 ## Selected Boundary
 
-All issuer and OCSP responder signing uses a `key_ref`.
+All signing keys are addressed by `key_ref`.
 
-- `file:` and bare filesystem references are local/dev only.
-- Production providers use non-exportable references.
-- The service and Core must not request, store, log, or return private key bytes.
-- Provider selection is explicit and separate from backend-adapter selection.
-- Provider failure never triggers an implicit file-key, provider, adapter, or
+- `file:` and bare filesystem references are local/development only.
+- Production providers must be non-exportable.
+- Provider selection is separate from backend-adapter selection.
+- Provider failure never triggers an implicit file, provider, adapter, or
   product-profile fallback.
-
-## Selected Architecture
-
-AnoPKI uses a deliberately scoped hybrid.
-
-- Community/OpenSSL first uses an in-process OpenSSL-compatible provider seam.
-- The first provider is a file provider that preserves current synchronous
-  certificate issuance and golden behavior.
-- PKCS#11/local HSM may later use an OpenSSL-compatible non-exportable handle.
-- Remote KMS requires a separate Enterprise prototype and approval; it may use
-  an adapter-compatible implementation or prepare/sign/finalize protocol.
-- OpenSSL native types remain private to the OpenSSL adapter/provider path.
+- Private key bytes must not cross into the Go service, database,
+  backend-neutral Core, public API, logs, or diagnostics.
 
 ## Provider Classes
 
-| Class | Intended use | Exportability | Example reference |
+| Class | Intended use | Exportability | Current implementation |
 | --- | --- | --- | --- |
-| File | Local development and smoke tests only | Exportable | `file:/var/lib/anopki/issuer.key` |
-| PKCS#11/local HSM | Production signing after implementation/evidence | Non-exportable | `pkcs11:token=ca;object=issuer-a` |
-| Cloud KMS | Future Enterprise remote signing | Non-exportable | `kms:provider/key/version` |
+| File | Local development and smoke | Exportable | Certificate issuance only |
+| PKCS#11/local HSM | Future production signing | Non-exportable | Not implemented |
+| Cloud KMS | Future Enterprise remote signing | Non-exportable | Not implemented |
 
-## Common Provider Metadata
+## Implemented Certificate-Issuance Path
 
-Provider policy and evidence record:
+Community/OpenSSL certificate issuance resolves a single adapter-private
+`FileKeyProvider`.
 
-- provider ID and class,
-- normalized key reference or redacted reference fingerprint,
-- readiness and result,
-- algorithm and public-key binding,
-- exportability,
-- selected product profile and backend adapter,
-- operation type and request/trace ID,
-- stable provider error code,
-- whether any compatibility mode was explicitly selected.
+The provider:
 
-Audit metadata must not include private keys, raw credentials, PINs, session
-tokens, or dependency-native errors that may contain secrets.
+- normalizes `file:` and bare paths,
+- reports provider identity/class/readiness/exportability,
+- opens and parses the actual private key,
+- checks requested RSA/ECDSA/Ed25519 compatibility,
+- verifies issuer certificate/key binding,
+- returns an OpenSSL-private signing handle,
+- reports `fallback_used=false`,
+- emits stable, redacted `provider.*` failures.
+
+`src/backends/openssl/issue.cpp` does not open the key file or invoke a PEM
+private-key reader. `X509_sign` remains in the OpenSSL adapter to preserve the
+one-operation CLI contract and existing certificate result.
+
+## Go And C++ Evidence Responsibilities
+
+### Go lifecycle service
+
+- classifies references,
+- applies service policy,
+- performs early `CheckReady` preflight,
+- records expected provider class/exportability metadata,
+- correlates lifecycle and audit requests.
+
+### C++ selected adapter/provider
+
+- resolves the actual provider,
+- reaches and parses the actual key,
+- checks algorithm compatibility and certificate binding,
+- performs signing with the returned handle,
+- produces the actual operation result or stable failure.
+
+The Go `CheckReady` result is not cryptographic signing evidence. A release or
+audit claim about actual signing must be backed by the C++ provider path and its
+positive/negative tests.
 
 ## Stable Errors
 
@@ -65,40 +78,34 @@ tokens, or dependency-native errors that may contain secrets.
 - `provider.profile_mismatch`
 - `provider.sign_failed`
 
-## Go And C++ Responsibilities
+Only stable codes and redacted stages such as `resolve`, `open`, `parse`,
+`algorithm`, `binding`, `policy`, and `sign` may leave the provider boundary.
+Raw paths, PEM data, credentials, PINs, session tokens, and raw provider/OpenSSL
+errors are prohibited.
 
-### Go lifecycle service
+## Production Gates
 
-- classifies references,
-- applies production policy,
-- performs early readiness checks,
-- records expected provider class/exportability metadata,
-- correlates lifecycle, signing, and audit requests.
+Production mode fails closed when:
 
-### C++ selected adapter/provider
+- the selected provider is the exportable file provider,
+- provider availability/readiness fails,
+- the key cannot be found or parsed,
+- the requested algorithm is incompatible,
+- issuer certificate/key binding fails,
+- the selected backend/profile is incompatible,
+- configuration would require fallback.
 
-- resolves the actual signing provider,
-- opens or reaches the actual key,
-- checks cryptographic readiness and key binding,
-- performs or delegates signing,
-- returns stable result/error evidence.
+`ANOPKI_ENV=production` causes certificate issuance through the file provider to
+return `provider.exportability_violation` before the key file is opened.
 
-The Go readiness check is defense in depth, not proof that the cryptographic
-signing operation used the expected provider.
+## Current Scope Limits
 
-## Current Implementation State
+- Certificate issuance: provider-isolated through `FileKeyProvider`.
+- CRL signing: unchanged; direct file-key path remains.
+- OCSP signing: unchanged; direct file-key path remains.
+- Non-exportable provider: not implemented.
+- Remote KMS prepare/sign/finalize: not implemented.
+- Enterprise/AnoCrypto-C provider compatibility: not implemented.
 
-- The Go service has `keyref.Provider.CheckReady`, class/exportability helpers,
-  and audit metadata seams.
-- The C++ OpenSSL adapter still opens file keys directly for certificate, CRL,
-  and OCSP signing.
-- Actual provider isolation and actual-signing evidence are not complete.
-
-## First Implementation Gate
-
-Certificate issuance migrates first to an OpenSSL adapter-private
-`FileKeyProvider` while preserving the current JSON contract and golden
-certificate behavior. CRL and OCSP remain unchanged until that slice is stable.
-
-Production mode continues to reject exportable file providers. No production
-non-exportability claim is allowed until actual signing-provider evidence exists.
+No production HSM/KMS/PKCS#11 or non-exportability claim is allowed from this
+slice.
