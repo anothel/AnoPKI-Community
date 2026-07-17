@@ -385,6 +385,7 @@ GenerateCRLResult OpenSSLBackend::generate_crl(const GenerateCRLRequest &request
 	{
 		openssl_key_providers::throw_provider_sign_failed(issuer_key);
 	}
+	openssl_key_providers::write_signing_evidence_if_requested(issuer_key);
 
 	GenerateCRLResult result;
 	result.crl_pem = crl_to_pem(crl.get());

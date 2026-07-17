@@ -317,6 +317,53 @@ private:
 	std::string value_;
 };
 
+void set_signing_evidence_env(const char *value)
+{
+#if defined(_WIN32)
+	if (_putenv_s("ANOPKI_CORE_SIGNING_EVIDENCE_FILE", value == nullptr ? "" : value) != 0)
+	{
+		fail("signing evidence environment update failed");
+	}
+#else
+	const int result = value == nullptr
+	                       ? unsetenv("ANOPKI_CORE_SIGNING_EVIDENCE_FILE")
+	                       : setenv("ANOPKI_CORE_SIGNING_EVIDENCE_FILE", value, 1);
+	if (result != 0)
+	{
+		fail("signing evidence environment update failed");
+	}
+#endif
+}
+
+class SigningEvidenceEnvironmentGuard
+{
+public:
+	SigningEvidenceEnvironmentGuard()
+	{
+		const char *current = std::getenv("ANOPKI_CORE_SIGNING_EVIDENCE_FILE");
+		if (current != nullptr)
+		{
+			had_value_ = true;
+			value_ = current;
+		}
+	}
+
+	~SigningEvidenceEnvironmentGuard()
+	{
+		try
+		{
+			set_signing_evidence_env(had_value_ ? value_.c_str() : nullptr);
+		}
+		catch (...)
+		{
+		}
+	}
+
+private:
+	bool had_value_{false};
+	std::string value_;
+};
+
 void test_metadata()
 {
 	FileKeyProvider provider;
@@ -338,6 +385,7 @@ void test_metadata()
 	require(to_string(ProviderErrorCode::exportability_violation) == "provider.exportability_violation", "exportability code mismatch");
 	require(to_string(ProviderErrorCode::profile_mismatch) == "provider.profile_mismatch", "profile code mismatch");
 	require(to_string(ProviderErrorCode::sign_failed) == "provider.sign_failed", "sign code mismatch");
+	require(to_string(ProviderErrorCode::evidence_failed) == "provider.evidence_failed", "evidence code mismatch");
 }
 
 
@@ -407,6 +455,57 @@ void test_success_and_golden_equivalence(const TempDirectory &temp)
 	    [&] { throw_provider_sign_failed(file_handle); },
 	    ProviderErrorCode::sign_failed,
 	    "sign");
+}
+
+void test_signing_evidence_sidecar(const TempDirectory &temp)
+{
+	SigningEvidenceEnvironmentGuard guard;
+	EvpPkeyPtr issuer_key = generate_rsa_key();
+	EvpPkeyPtr subject_key = generate_rsa_key();
+	X509Ptr issuer = make_issuer_certificate(issuer_key.get(), "AnoPKI Evidence Test CA");
+	const std::filesystem::path key_path = temp.path() / "evidence-issuer.pem";
+	const std::filesystem::path evidence_path = temp.path() / "signing-evidence.json";
+	write_private_key(key_path, issuer_key.get());
+	std::error_code ignored;
+	std::filesystem::remove(evidence_path, ignored);
+	set_signing_evidence_env(evidence_path.string().c_str());
+
+	SigningKeyHandle handle = resolve_certificate_signing_key(
+	    "file:" + key_path.string(), "rsa_with_sha256", issuer.get(), ProviderPolicy{});
+	require(!std::filesystem::exists(evidence_path), "readiness/acquire wrote signing evidence before signing");
+
+	X509Ptr leaf = make_unsigned_leaf(issuer.get(), subject_key.get());
+	require(X509_sign(leaf.get(), handle.native_handle(), EVP_sha256()) > 0, "evidence test signing failed");
+	write_signing_evidence_if_requested(handle);
+	require(std::filesystem::is_regular_file(evidence_path), "signing evidence sidecar missing");
+
+	std::ifstream input{evidence_path, std::ios::binary};
+	const std::string evidence{std::istreambuf_iterator<char>{input}, std::istreambuf_iterator<char>{}};
+	for (const std::string_view token : {
+	         "\"schema_version\":1",
+	         "\"evidence_source\":\"core_signing\"",
+	         "\"operation\":\"certificate_issue\"",
+	         "\"provider_id\":\"file\"",
+	         "\"provider_class\":\"file\"",
+	         "\"provider_exportability\":\"exportable\"",
+	         "\"issuer_binding_verified\":true",
+	         "\"fallback_used\":false",
+	         "\"result_code\":\"ok\"",
+	     })
+	{
+		require(evidence.find(token) != std::string::npos, "signing evidence field missing");
+	}
+	require(evidence.find(key_path.string()) == std::string::npos, "signing evidence leaked key path");
+	require(evidence.find("PRIVATE KEY") == std::string::npos, "signing evidence leaked private key material");
+
+	set_signing_evidence_env(temp.path().string().c_str());
+	expect_provider_error(
+	    [&] { write_signing_evidence_if_requested(handle); },
+	    ProviderErrorCode::evidence_failed,
+	    "evidence");
+
+	set_signing_evidence_env(nullptr);
+	write_signing_evidence_if_requested(handle);
 }
 
 void test_failures_and_no_fallback(const TempDirectory &temp)
@@ -556,6 +655,7 @@ int main()
 		test_metadata();
 		test_environment_policy();
 		test_success_and_golden_equivalence(temp);
+		test_signing_evidence_sidecar(temp);
 		test_failures_and_no_fallback(temp);
 		std::cout << "file key provider tests passed\n";
 		return 0;

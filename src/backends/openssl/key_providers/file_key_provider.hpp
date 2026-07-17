@@ -35,6 +35,7 @@ enum class ProviderErrorCode
 	exportability_violation,
 	profile_mismatch,
 	sign_failed,
+	evidence_failed,
 };
 
 struct ProviderMetadata
@@ -158,5 +159,11 @@ private:
     ProviderPolicy policy);
 
 [[noreturn]] void throw_provider_sign_failed(const SigningKeyHandle &handle);
+
+// Writes redacted evidence only when the Go core runner requests a private
+// sidecar through ANOPKI_CORE_SIGNING_EVIDENCE_FILE. This is not part of the
+// public CLI JSON wire contract. Failure to write requested evidence fails the
+// operation closed.
+void write_signing_evidence_if_requested(const SigningKeyHandle &handle);
 
 } // namespace anopki::core::openssl_key_providers

@@ -558,6 +558,7 @@ GenerateOCSPResponseResult OpenSSLBackend::generate_ocsp_response(const Generate
 	{
 		openssl_key_providers::throw_provider_sign_failed(signer_key);
 	}
+	openssl_key_providers::write_signing_evidence_if_requested(signer_key);
 	OCSPResponsePtr response{OCSP_response_create(OCSP_RESPONSE_STATUS_SUCCESSFUL, basic.get())};
 	if (!response)
 	{

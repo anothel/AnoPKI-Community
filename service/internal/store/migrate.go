@@ -301,6 +301,7 @@ func applySQLiteCompatibilityMigrations(ctx context.Context, db sqlExecutor) err
 		{table: "enrollments", name: "source_certificate_id", definition: "source_certificate_id TEXT NOT NULL DEFAULT ''"},
 		{table: "certificates", name: "certificate_profile_id", definition: "certificate_profile_id TEXT NOT NULL DEFAULT ''"},
 		{table: "certificates", name: "renewal_notified_at", definition: "renewal_notified_at TEXT"},
+		{table: "certificate_issuance_attempts", name: "signing_evidence_json", definition: "signing_evidence_json TEXT NOT NULL DEFAULT ''"},
 	}
 
 	for _, column := range columns {
@@ -646,6 +647,7 @@ func applyPostgresCompatibilityMigrations(ctx context.Context, db sqlExecutor) e
 		"ALTER TABLE enrollments ADD COLUMN IF NOT EXISTS source_certificate_id TEXT NOT NULL DEFAULT ''",
 		"ALTER TABLE certificates ADD COLUMN IF NOT EXISTS certificate_profile_id TEXT NOT NULL DEFAULT ''",
 		"ALTER TABLE certificates ADD COLUMN IF NOT EXISTS renewal_notified_at TIMESTAMPTZ",
+		"ALTER TABLE certificate_issuance_attempts ADD COLUMN IF NOT EXISTS signing_evidence_json TEXT NOT NULL DEFAULT ''",
 		`CREATE TABLE IF NOT EXISTS outbox_messages (
 			id TEXT PRIMARY KEY,
 			type TEXT NOT NULL,

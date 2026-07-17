@@ -38,7 +38,9 @@ struct RedactedProviderDiagnostics {};
         """provider.invalid_reference provider.unavailable provider.not_ready
 provider.key_not_found provider.key_parse_failed provider.algorithm_mismatch
 provider.key_binding_mismatch provider.exportability_violation
-provider.profile_mismatch provider.sign_failed
+provider.profile_mismatch provider.sign_failed provider.evidence_failed
+ANOPKI_CORE_SIGNING_EVIDENCE_FILE
+evidence_source\\":\\"core_signing result_code\\":\\"ok
 fallback_used = false
 X509_check_private_key
 int reject_private_key_password(char *, int, int, void *) noexcept
@@ -84,6 +86,7 @@ return handle;
         """#include "key_providers/file_key_provider.hpp"
 auto key = resolve_certificate_signing_key(ref, algorithm, cert, provider_policy_from_environment());
 X509_sign(cert, key.native_handle(), digest);
+write_signing_evidence_if_requested(key);
 throw_provider_sign_failed(key);
 """,
     )
@@ -93,6 +96,7 @@ throw_provider_sign_failed(key);
         """#include "key_providers/file_key_provider.hpp"
 auto key = resolve_crl_signing_key(ref, cert, provider_policy_from_environment());
 X509_CRL_sign(crl, key.native_handle(), EVP_sha256());
+write_signing_evidence_if_requested(key);
 throw_provider_sign_failed(key);
 """,
     )
@@ -102,6 +106,7 @@ throw_provider_sign_failed(key);
         """#include "key_providers/file_key_provider.hpp"
 auto key = resolve_ocsp_signing_key(ref, cert, provider_policy_from_environment());
 OCSP_basic_sign(response, cert, key.native_handle(), EVP_sha256(), nullptr, 0);
+write_signing_evidence_if_requested(key);
 throw_provider_sign_failed(key);
 """,
     )
@@ -116,6 +121,10 @@ resolve_crl_signing_key
 crl_generate_sign
 resolve_ocsp_signing_key
 ocsp_response_sign
+test_signing_evidence_sidecar
+ANOPKI_CORE_SIGNING_EVIDENCE_FILE
+core_signing
+provider.evidence_failed
 """,
     )
     write(
@@ -163,6 +172,38 @@ resolve_signing_key_with_provider;
 X509_verify;
 """,
     )
+    write(
+        root,
+        "service/internal/corecli/runner.go",
+        """ANOPKI_CORE_SIGNING_EVIDENCE_FILE
+createSigningEvidenceFile
+withSigningEvidenceEnvironment
+DisallowUnknownFields
+ValidateSigningEvidence
+EvidenceSource != "core_signing"
+IssuerBindingVerified
+FallbackUsed
+ResultCode != "ok"
+SigningEvidence SigningEvidence `json:"-"`
+""",
+    )
+    write(
+        root,
+        "service/internal/lifecycle/service.go",
+        """ValidateSigningEvidence(result.SigningEvidence, "certificate_issue"
+ValidateSigningEvidence(result.SigningEvidence, "crl_generate_sign", "sha256")
+ValidateSigningEvidence(result.SigningEvidence, "ocsp_response_sign", "sha256")
+SigningEvidenceJSON
+coreSigningAuditFields(result.SigningEvidence
+fields["key_provider_evidence_source"] = evidence.EvidenceSource
+fields["key_provider_signing_proven"] = true
+fields["key_provider_evidence_source"] = "legacy_key_ref_classification"
+fields["key_provider_signing_proven"] = false
+""",
+    )
+    write(root, "service/internal/domain/types.go", "SigningEvidenceJSON signing_evidence_json\n")
+    write(root, "service/internal/store/migrate.go", "SigningEvidenceJSON signing_evidence_json\n")
+    write(root, "service/internal/store/sqlstore_certificate.go", "SigningEvidenceJSON signing_evidence_json\n")
     write(
         root,
         "CMakeLists.txt",
@@ -394,6 +435,46 @@ def test_missing_resolver_cmake_source_fails() -> None:
         expect_failure(root, "does not compile the single-provider resolver")
 
 
+def test_evidence_written_before_signing_fails() -> None:
+    with tempfile.TemporaryDirectory() as dirname:
+        root = Path(dirname)
+        clean_fixture(root)
+        issue = root / "src/backends/openssl/issue.cpp"
+        content = issue.read_text(encoding="utf-8")
+        content = content.replace(
+            "X509_sign(cert, key.native_handle(), digest);\nwrite_signing_evidence_if_requested(key);",
+            "write_signing_evidence_if_requested(key);\nX509_sign(cert, key.native_handle(), digest);",
+        )
+        issue.write_text(content, encoding="utf-8")
+        expect_failure(root, "writes provider evidence before cryptographic signing succeeds")
+
+
+def test_missing_runner_sidecar_fails() -> None:
+    with tempfile.TemporaryDirectory() as dirname:
+        root = Path(dirname)
+        clean_fixture(root)
+        runner = root / "service/internal/corecli/runner.go"
+        runner.write_text(
+            runner.read_text(encoding="utf-8").replace("ANOPKI_CORE_SIGNING_EVIDENCE_FILE", "missing"),
+            encoding="utf-8",
+        )
+        expect_failure(root, "does not require actual signing sidecar evidence")
+
+
+def test_lifecycle_readiness_only_claim_fails() -> None:
+    with tempfile.TemporaryDirectory() as dirname:
+        root = Path(dirname)
+        clean_fixture(root)
+        lifecycle = root / "service/internal/lifecycle/service.go"
+        lifecycle.write_text(
+            lifecycle.read_text(encoding="utf-8").replace(
+                "coreSigningAuditFields(result.SigningEvidence", "legacyKeyProviderAuditFields(keyRef"
+            ),
+            encoding="utf-8",
+        )
+        expect_failure(root, "does not correlate actual core signing evidence")
+
+
 def test_openssl_type_escape_fails() -> None:
     with tempfile.TemporaryDirectory() as dirname:
         root = Path(dirname)
@@ -425,6 +506,9 @@ def main() -> None:
     test_missing_software_token_test_fails()
     test_missing_software_token_cmake_test_fails()
     test_missing_resolver_cmake_source_fails()
+    test_evidence_written_before_signing_fails()
+    test_missing_runner_sidecar_fails()
+    test_lifecycle_readiness_only_claim_fails()
     test_openssl_type_escape_fails()
     print("key provider boundary validator tests ok")
 

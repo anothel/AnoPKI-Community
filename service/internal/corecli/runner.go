@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"os/exec"
 	"strings"
@@ -37,12 +38,29 @@ type IssueRequest struct {
 	AuthorityKeyIdentifier     bool      `json:"authority_key_identifier,omitempty"`
 }
 
+type SigningEvidence struct {
+	SchemaVersion               int    `json:"schema_version"`
+	EvidenceSource              string `json:"evidence_source"`
+	Operation                   string `json:"operation"`
+	ProviderID                  string `json:"provider_id"`
+	ProviderClass               string `json:"provider_class"`
+	ProviderReadiness           string `json:"provider_readiness"`
+	ProviderExportability       string `json:"provider_exportability"`
+	ReferenceClass              string `json:"reference_class"`
+	KeyAlgorithm                string `json:"key_algorithm"`
+	RequestedSignatureAlgorithm string `json:"requested_signature_algorithm"`
+	IssuerBindingVerified       bool   `json:"issuer_binding_verified"`
+	FallbackUsed                bool   `json:"fallback_used"`
+	ResultCode                  string `json:"result_code"`
+}
+
 type IssueResult struct {
-	CertificatePEM string    `json:"certificate_pem"`
-	SerialNumber   string    `json:"serial_number"`
-	Subject        string    `json:"subject"`
-	NotBefore      time.Time `json:"not_before"`
-	NotAfter       time.Time `json:"not_after"`
+	CertificatePEM  string          `json:"certificate_pem"`
+	SerialNumber    string          `json:"serial_number"`
+	Subject         string          `json:"subject"`
+	NotBefore       time.Time       `json:"not_before"`
+	NotAfter        time.Time       `json:"not_after"`
+	SigningEvidence SigningEvidence `json:"-"`
 }
 
 type CSRInfo struct {
@@ -71,7 +89,8 @@ type GenerateCRLRequest struct {
 }
 
 type GenerateCRLResult struct {
-	CRLPEM string `json:"crl_pem"`
+	CRLPEM          string          `json:"crl_pem"`
+	SigningEvidence SigningEvidence `json:"-"`
 }
 
 type OCSPCertificateID struct {
@@ -117,7 +136,8 @@ type GenerateOCSPResponseRequest struct {
 }
 
 type GenerateOCSPResponseResult struct {
-	ResponseDER []byte
+	ResponseDER     []byte
+	SigningEvidence SigningEvidence `json:"-"`
 }
 
 type Runner struct {
@@ -178,6 +198,80 @@ func readCoreResult(path string) ([]byte, error) {
 	return os.ReadFile(path) // #nosec G304 -- path comes from os.CreateTemp in the caller.
 }
 
+const signingEvidenceEnvironment = "ANOPKI_CORE_SIGNING_EVIDENCE_FILE"
+
+func createSigningEvidenceFile() (string, error) {
+	file, err := os.CreateTemp("", "anopki-core-signing-evidence-*.json")
+	if err != nil {
+		return "", err
+	}
+	path := file.Name()
+	if err := file.Close(); err != nil {
+		return "", errors.Join(err, os.Remove(path))
+	}
+	return path, nil
+}
+
+func withSigningEvidenceEnvironment(cmd *exec.Cmd, path string) {
+	prefix := signingEvidenceEnvironment + "="
+	environment := make([]string, 0, len(os.Environ())+1)
+	for _, entry := range os.Environ() {
+		name, _, _ := strings.Cut(entry, "=")
+		if strings.EqualFold(name, signingEvidenceEnvironment) {
+			continue
+		}
+		environment = append(environment, entry)
+	}
+	cmd.Env = append(environment, prefix+path)
+}
+
+func readSigningEvidence(path string, expectedOperation string, expectedAlgorithm string) (SigningEvidence, error) {
+	file, err := openCoreResult(path)
+	if err != nil {
+		return SigningEvidence{}, fmt.Errorf("open signing evidence: %w", err)
+	}
+	defer file.Close()
+
+	decoder := json.NewDecoder(file)
+	decoder.DisallowUnknownFields()
+	var evidence SigningEvidence
+	if err := decoder.Decode(&evidence); err != nil {
+		return SigningEvidence{}, fmt.Errorf("decode signing evidence: %w", err)
+	}
+	var trailing any
+	if err := decoder.Decode(&trailing); !errors.Is(err, io.EOF) {
+		if err == nil {
+			return SigningEvidence{}, fmt.Errorf("decode signing evidence: trailing JSON value")
+		}
+		return SigningEvidence{}, fmt.Errorf("decode signing evidence: %w", err)
+	}
+	if err := ValidateSigningEvidence(evidence, expectedOperation, expectedAlgorithm); err != nil {
+		return SigningEvidence{}, err
+	}
+	return evidence, nil
+}
+
+// ValidateSigningEvidence verifies that evidence came from the completed core
+// signing operation rather than from provider readiness or key-ref classification.
+func ValidateSigningEvidence(evidence SigningEvidence, expectedOperation string, expectedAlgorithm string) error {
+	if evidence.SchemaVersion != 1 ||
+		evidence.EvidenceSource != "core_signing" ||
+		evidence.Operation != expectedOperation ||
+		strings.TrimSpace(evidence.ProviderID) == "" ||
+		strings.TrimSpace(evidence.ProviderClass) == "" ||
+		evidence.ProviderReadiness != "ready" ||
+		(evidence.ProviderExportability != "exportable" && evidence.ProviderExportability != "non_exportable") ||
+		strings.TrimSpace(evidence.ReferenceClass) == "" ||
+		strings.TrimSpace(evidence.KeyAlgorithm) == "" ||
+		evidence.RequestedSignatureAlgorithm != expectedAlgorithm ||
+		!evidence.IssuerBindingVerified ||
+		evidence.FallbackUsed ||
+		evidence.ResultCode != "ok" {
+		return fmt.Errorf("validate signing evidence: inconsistent core signing result")
+	}
+	return nil
+}
+
 func (r Runner) InspectCSR(ctx context.Context, csrPEM string) (CSRInfo, error) {
 	csrFile, err := os.CreateTemp("", "anopki-core-csr-*.pem")
 	if err != nil {
@@ -236,8 +330,15 @@ func (r Runner) Issue(ctx context.Context, req IssueRequest) (IssueResult, error
 		return IssueResult{}, fmt.Errorf("close issue result temp file: %w", err)
 	}
 
+	evidencePath, err := createSigningEvidenceFile()
+	if err != nil {
+		return IssueResult{}, fmt.Errorf("create issue signing evidence temp file: %w", err)
+	}
+	defer os.Remove(evidencePath)
+
 	var stderr bytes.Buffer
 	cmd := coreCommand(ctx, r.Bin, "cert", "issue", "--request", requestPath, "--out", resultPath)
+	withSigningEvidenceEnvironment(cmd, evidencePath)
 	cmd.Stderr = &stderr
 
 	if err := cmd.Run(); err != nil {
@@ -254,6 +355,11 @@ func (r Runner) Issue(ctx context.Context, req IssueRequest) (IssueResult, error
 	if err := json.NewDecoder(resultFile).Decode(&result); err != nil {
 		return IssueResult{}, fmt.Errorf("decode issue result: %w", err)
 	}
+	evidence, err := readSigningEvidence(evidencePath, "certificate_issue", req.SignatureAlgorithm)
+	if err != nil {
+		return IssueResult{}, err
+	}
+	result.SigningEvidence = evidence
 	return result, nil
 }
 
@@ -298,8 +404,15 @@ func (r Runner) GenerateCRL(ctx context.Context, req GenerateCRLRequest) (Genera
 		return GenerateCRLResult{}, fmt.Errorf("close crl result temp file: %w", err)
 	}
 
+	evidencePath, err := createSigningEvidenceFile()
+	if err != nil {
+		return GenerateCRLResult{}, fmt.Errorf("create crl signing evidence temp file: %w", err)
+	}
+	defer os.Remove(evidencePath)
+
 	var stderr bytes.Buffer
 	cmd := coreCommand(ctx, r.Bin, "crl", "generate", "--request", requestPath, "--out", resultPath)
+	withSigningEvidenceEnvironment(cmd, evidencePath)
 	cmd.Stderr = &stderr
 
 	if err := cmd.Run(); err != nil {
@@ -316,6 +429,11 @@ func (r Runner) GenerateCRL(ctx context.Context, req GenerateCRLRequest) (Genera
 	if err := json.NewDecoder(resultFile).Decode(&result); err != nil {
 		return GenerateCRLResult{}, fmt.Errorf("decode crl result: %w", err)
 	}
+	evidence, err := readSigningEvidence(evidencePath, "crl_generate_sign", "sha256")
+	if err != nil {
+		return GenerateCRLResult{}, err
+	}
+	result.SigningEvidence = evidence
 	return result, nil
 }
 
@@ -529,8 +647,15 @@ func (r Runner) GenerateOCSPResponse(ctx context.Context, req GenerateOCSPRespon
 		return GenerateOCSPResponseResult{}, fmt.Errorf("close ocsp response temp file: %w", err)
 	}
 
+	evidencePath, err := createSigningEvidenceFile()
+	if err != nil {
+		return GenerateOCSPResponseResult{}, fmt.Errorf("create ocsp signing evidence temp file: %w", err)
+	}
+	defer os.Remove(evidencePath)
+
 	var stderr bytes.Buffer
 	cmd := coreCommand(ctx, r.Bin, "ocsp", "respond", "--in", requestDERPath, "--request", requestPath, "--out", responsePath)
+	withSigningEvidenceEnvironment(cmd, evidencePath)
 	cmd.Stderr = &stderr
 	if err := cmd.Run(); err != nil {
 		return GenerateOCSPResponseResult{}, commandError(err, stderr.String())
@@ -540,7 +665,11 @@ func (r Runner) GenerateOCSPResponse(ctx context.Context, req GenerateOCSPRespon
 	if err != nil {
 		return GenerateOCSPResponseResult{}, fmt.Errorf("read ocsp response: %w", err)
 	}
-	return GenerateOCSPResponseResult{ResponseDER: responseDER}, nil
+	evidence, err := readSigningEvidence(evidencePath, "ocsp_response_sign", "sha256")
+	if err != nil {
+		return GenerateOCSPResponseResult{}, err
+	}
+	return GenerateOCSPResponseResult{ResponseDER: responseDER, SigningEvidence: evidence}, nil
 }
 
 type crlFileRequest struct {

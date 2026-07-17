@@ -12,6 +12,9 @@ commands and known gaps before tagging.
 - ADR 0007 deliberately scoped hybrid signing boundary and Community/OpenSSL certificate-issuance, CRL-signing, and OCSP-response-signing `FileKeyProvider` vertical slices.
 - Adapter-private file-provider tests and a source-boundary validator covering certificate/CRL/OCSP direct key loading, production rejection, algorithm/binding failures, and no fallback.
 - A generic single-provider resolver plus a test-only software-token provider contract covering one-time acquisition, non-exportable policy shape, provider failure propagation, evidence mismatch rejection, and `fallback_used=false`.
+- Private redacted C++ signing-result sidecar correlation for certificate, CRL,
+  and OCSP operations, including durable certificate issuance-attempt evidence
+  and explicit legacy-unproven audit semantics.
 - Backend identity, capability, readiness, stable error, and explicit product-profile metadata with `anopki-core backend info`.
 - CI workflow for docs validation, service contract parity, secret baseline
   scan, Go service tests/build, PostgreSQL migration integration, and C++
@@ -49,6 +52,8 @@ commands and known gaps before tagging.
 - `src/backends/openssl/issue.cpp`, `src/backends/openssl/crl.cpp`, and `src/backends/openssl/ocsp.cpp` no longer open or parse signing private-key files directly; each resolves one adapter-private provider and signs through the returned handle without changing the Core CLI JSON contract.
 - Go `keyref.Provider.CheckReady` remains readiness preflight and is not described as actual cryptographic signing evidence.
 - Runtime FileKeyProvider operation wrappers now pass through one provider-neutral resolver that rejects provider/operation evidence drift and any fallback claim.
+- Lifecycle signing audits now use completed C++ `core_signing` evidence rather
+  than presenting `CheckReady` or key-reference classification as signing proof.
 - Roadmap is future-only; completed work belongs in reference docs, runbooks,
   or this changelog.
 - Public docs are curated around the AnoPKI name, `ANOPKI_*` environment

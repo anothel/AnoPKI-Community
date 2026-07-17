@@ -65,6 +65,9 @@ If a secret is committed or exposed, assume compromise. Remove it from active us
 The following areas are not complete yet:
 
 - No production non-exportable HSM or PKCS#11 provider; current file-provider signing is local/development only.
+- Signing-result audit correlation uses a redacted private C++ sidecar. It is not
+  a public API/CLI payload and must never contain raw key references, paths,
+  credentials, PINs, PEM data, or private-key material.
 - Certbot live coverage still has a known local Windows non-admin gap.
 - DNS-01 and External Account Binding are planned later.
 

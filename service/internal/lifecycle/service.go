@@ -1087,7 +1087,7 @@ func (s *Service) CreateIssuer(ctx context.Context, actor string, req CreateIssu
 		if err := repo.CreateIssuer(ctx, issuer); err != nil {
 			return err
 		}
-		fields := keyProviderAuditFields(req.KeyRef, auditFields(
+		fields := legacyKeyProviderAuditFields(req.KeyRef, auditFields(
 			"issuer_id", issuer.ID,
 			"parent_issuer_id", issuer.ParentIssuerID,
 		))
@@ -1144,7 +1144,7 @@ func (s *Service) CreateOCSPResponder(ctx context.Context, actor string, req Cre
 		if err := repo.CreateOCSPResponder(ctx, responder); err != nil {
 			return err
 		}
-		fields := keyProviderAuditFields(req.KeyRef, auditFields(
+		fields := legacyKeyProviderAuditFields(req.KeyRef, auditFields(
 			"issuer_id", responder.IssuerID,
 			"ocsp_responder_id", responder.ID,
 		))
@@ -2433,6 +2433,7 @@ func (s *Service) IssueCertificate(ctx context.Context, actor string, enrollment
 		if _, err := s.keyProvider.CheckReady(ctx, issuer.KeyRef); err != nil {
 			return domain.Certificate{}, err
 		}
+		signatureAlgorithm := profileSignatureAlgorithm(profile)
 		result, err := observeSigner("issue", func() (corecli.IssueResult, error) {
 			return s.issuer.Issue(ctx, corecli.IssueRequest{
 				CSRPEM:                     enrollment.CSRPEM,
@@ -2445,7 +2446,7 @@ func (s *Service) IssueCertificate(ctx context.Context, actor string, enrollment
 				IPAddresses:                append([]string(nil), enrollment.RequestedIPAddresses...),
 				NotBefore:                  now,
 				NotAfter:                   enrollment.RequestedNotAfter,
-				SignatureAlgorithm:         profileSignatureAlgorithm(profile),
+				SignatureAlgorithm:         signatureAlgorithm,
 				ProfileID:                  profile.ID,
 				BasicConstraintsCritical:   profile.BasicConstraints.Critical,
 				BasicConstraintsCA:         profile.BasicConstraints.CA,
@@ -2459,6 +2460,9 @@ func (s *Service) IssueCertificate(ctx context.Context, actor string, enrollment
 			})
 		})
 		if err != nil {
+			return domain.Certificate{}, mapIssueError(err)
+		}
+		if err := corecli.ValidateSigningEvidence(result.SigningEvidence, "certificate_issue", signatureAlgorithm); err != nil {
 			return domain.Certificate{}, mapIssueError(err)
 		}
 		attempt, err = s.persistSignedIssuanceAttempt(ctx, attempt, result, now)
@@ -2543,6 +2547,11 @@ func (s *Service) persistSignedIssuanceAttempt(ctx context.Context, current doma
 	signed.NotAfter = result.NotAfter
 	signed.SignedAt = now
 	signed.LastError = ""
+	evidenceJSON, err := json.Marshal(result.SigningEvidence)
+	if err != nil {
+		return domain.IssuanceAttempt{}, fmt.Errorf("encode signing evidence: %w", err)
+	}
+	signed.SigningEvidenceJSON = string(evidenceJSON)
 	signed.UpdatedAt = now
 	if err := s.repo.WithinTx(ctx, func(repo store.Repository) error {
 		return repo.UpdateIssuanceAttemptIfCurrent(ctx, signed, current)
@@ -2663,11 +2672,25 @@ func (s *Service) ensureCertificateIssuedAuditEvent(ctx context.Context, actor s
 		if err := addReplacementCertificateLinkage(ctx, repo, certificate, fields); err != nil {
 			return err
 		}
-		issuer, err := repo.GetIssuer(ctx, certificate.IssuerID)
-		if err == nil {
-			fields = keyProviderAuditFields(issuer.KeyRef, fields)
-		} else if !errors.Is(err, domain.ErrIssuerNotFound) {
+		attempt, err := repo.GetIssuanceAttempt(ctx, certificate.EnrollmentID)
+		if err == nil && strings.TrimSpace(attempt.SigningEvidenceJSON) != "" {
+			var evidence corecli.SigningEvidence
+			if err := json.Unmarshal([]byte(attempt.SigningEvidenceJSON), &evidence); err != nil {
+				return fmt.Errorf("decode persisted signing evidence: %w", err)
+			}
+			if err := corecli.ValidateSigningEvidence(evidence, "certificate_issue", evidence.RequestedSignatureAlgorithm); err != nil {
+				return fmt.Errorf("validate persisted signing evidence: %w", err)
+			}
+			fields = coreSigningAuditFields(evidence, fields)
+		} else if err != nil && !errors.Is(err, domain.ErrIssuanceAttemptNotFound) {
 			return err
+		} else {
+			issuer, issuerErr := repo.GetIssuer(ctx, certificate.IssuerID)
+			if issuerErr == nil {
+				fields = legacyKeyProviderAuditFields(issuer.KeyRef, fields)
+			} else if !errors.Is(issuerErr, domain.ErrIssuerNotFound) {
+				return issuerErr
+			}
 		}
 		if err := addIdentityDeploymentTarget(ctx, repo, certificate.IdentityID, fields); err != nil {
 			return err
@@ -2908,6 +2931,9 @@ func (s *Service) PublishCRL(ctx context.Context, actor string, req PublishCRLRe
 	if err != nil {
 		return domain.CRLPublication{}, mapCRLError(err)
 	}
+	if err := corecli.ValidateSigningEvidence(result.SigningEvidence, "crl_generate_sign", "sha256"); err != nil {
+		return domain.CRLPublication{}, mapCRLError(err)
+	}
 
 	publication := domain.CRLPublication{
 		ID:                s.idgen.NewID(),
@@ -2929,7 +2955,7 @@ func (s *Service) PublishCRL(ctx context.Context, actor string, req PublishCRLRe
 		if err := repo.CreateCRLPublication(ctx, publication); err != nil {
 			return err
 		}
-		fields := keyProviderAuditFields(issuer.KeyRef, map[string]any{
+		fields := coreSigningAuditFields(result.SigningEvidence, map[string]any{
 			"issuer_id":          publication.IssuerID,
 			"crl_publication_id": publication.ID,
 			"distribution_point": publication.DistributionPoint,
@@ -2989,6 +3015,9 @@ func (s *Service) RespondOCSP(ctx context.Context, actor string, requestDER []by
 	if err != nil {
 		return OCSPResponse{}, mapOCSPResponseError(err)
 	}
+	if err := corecli.ValidateSigningEvidence(result.SigningEvidence, "ocsp_response_sign", "sha256"); err != nil {
+		return OCSPResponse{}, mapOCSPResponseError(err)
+	}
 
 	if err := s.repo.WithinTx(ctx, func(repo store.Repository) error {
 		fields := map[string]any{
@@ -3002,7 +3031,7 @@ func (s *Service) RespondOCSP(ctx context.Context, actor string, requestDER []by
 			"certificates":             ocspAuditCertificates(info.Certificates, statuses),
 			"responder_mode":           signer.ResponderMode,
 		}
-		keyProviderAuditFields(signer.KeyRef, fields)
+		coreSigningAuditFields(result.SigningEvidence, fields)
 		if signer.ResponderID != "" {
 			fields["responder_id"] = signer.ResponderID
 		}
@@ -3798,10 +3827,28 @@ func apiKeyAuditFields(key domain.APIKey) map[string]any {
 	return fields
 }
 
-func keyProviderAuditFields(keyRef string, fields map[string]any) map[string]any {
+func coreSigningAuditFields(evidence corecli.SigningEvidence, fields map[string]any) map[string]any {
+	fields["key_provider_id"] = evidence.ProviderID
+	fields["key_provider_class"] = evidence.ProviderClass
+	fields["key_provider_readiness"] = evidence.ProviderReadiness
+	fields["key_provider_exportability"] = evidence.ProviderExportability
+	fields["key_provider_reference_class"] = evidence.ReferenceClass
+	fields["key_provider_operation"] = evidence.Operation
+	fields["key_provider_key_algorithm"] = evidence.KeyAlgorithm
+	fields["key_provider_signature_algorithm"] = evidence.RequestedSignatureAlgorithm
+	fields["key_provider_binding_verified"] = evidence.IssuerBindingVerified
+	fields["key_provider_fallback_used"] = evidence.FallbackUsed
+	fields["key_provider_result_code"] = evidence.ResultCode
+	fields["key_provider_evidence_source"] = evidence.EvidenceSource
+	fields["key_provider_signing_proven"] = true
+	return fields
+}
+
+func legacyKeyProviderAuditFields(keyRef string, fields map[string]any) map[string]any {
 	fields["key_provider_class"] = keyref.Class(keyRef)
 	fields["key_provider_exportability"] = keyref.Exportability(keyRef)
-	fields["key_provider_result_code"] = "ok"
+	fields["key_provider_evidence_source"] = "legacy_key_ref_classification"
+	fields["key_provider_signing_proven"] = false
 	return fields
 }
 

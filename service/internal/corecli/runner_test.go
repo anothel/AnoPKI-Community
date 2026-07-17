@@ -5,6 +5,7 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -46,6 +47,7 @@ func TestRunnerMapsIssueResultJSON(t *testing.T) {
 	if !result.NotAfter.Equal(time.Date(2026, time.January, 3, 4, 5, 6, 0, time.UTC)) {
 		t.Fatalf("NotAfter = %s", result.NotAfter.Format(time.RFC3339))
 	}
+	assertSigningEvidence(t, result.SigningEvidence, "certificate_issue", "ECDSA-SHA256")
 }
 
 func TestRunnerIssueWritesIssuerDistributionMetadata(t *testing.T) {
@@ -92,6 +94,34 @@ func TestRunnerMapsCommandFailure(t *testing.T) {
 		if !strings.Contains(err.Error(), want) {
 			t.Fatalf("error = %q, want it to contain %q", err.Error(), want)
 		}
+	}
+}
+
+func TestRunnerRejectsMissingSigningEvidence(t *testing.T) {
+	bin := writeFakeIssueEvidenceCommand(t, "")
+	_, err := (Runner{Bin: bin}).Issue(context.Background(), IssueRequest{
+		CSRPEM:               "csr-pem",
+		IssuerCertificatePEM: "issuer-pem",
+		IssuerKeyRef:         "issuer-key-ref",
+		SignatureAlgorithm:   "ECDSA-SHA256",
+	})
+	if err == nil || !strings.Contains(err.Error(), "decode signing evidence") {
+		t.Fatalf("Issue error = %v, want missing signing evidence failure", err)
+	}
+}
+
+func TestRunnerRejectsInconsistentSigningEvidence(t *testing.T) {
+	payload := signingEvidenceJSON("certificate_issue", "ECDSA-SHA256")
+	payload = strings.Replace(payload, `"fallback_used":false`, `"fallback_used":true`, 1)
+	bin := writeFakeIssueEvidenceCommand(t, payload)
+	_, err := (Runner{Bin: bin}).Issue(context.Background(), IssueRequest{
+		CSRPEM:               "csr-pem",
+		IssuerCertificatePEM: "issuer-pem",
+		IssuerKeyRef:         "issuer-key-ref",
+		SignatureAlgorithm:   "ECDSA-SHA256",
+	})
+	if err == nil || !strings.Contains(err.Error(), "validate signing evidence") {
+		t.Fatalf("Issue error = %v, want inconsistent signing evidence failure", err)
 	}
 }
 
@@ -180,6 +210,7 @@ func TestRunnerGenerateCRLNormalizesTimes(t *testing.T) {
 	if result.CRLPEM != "crl-pem" {
 		t.Fatalf("CRLPEM = %q, want crl-pem", result.CRLPEM)
 	}
+	assertSigningEvidence(t, result.SigningEvidence, "crl_generate_sign", "sha256")
 
 	payload, err := os.ReadFile(capturePath)
 	if err != nil {
@@ -358,6 +389,7 @@ func TestRunnerGenerateOCSPResponseWritesHashAwareStatusRequest(t *testing.T) {
 	if string(result.ResponseDER) != "ocsp-response-der" {
 		t.Fatalf("ResponseDER = %q, want ocsp-response-der", string(result.ResponseDER))
 	}
+	assertSigningEvidence(t, result.SigningEvidence, "ocsp_response_sign", "sha256")
 
 	payload, err := os.ReadFile(capturePath)
 	if err != nil {
@@ -442,6 +474,77 @@ func writeFakeMalformedInspectCommand(t *testing.T) string {
 
 	path := filepath.Join(dir, "anopki-core")
 	if err := os.WriteFile(path, []byte(unixMalformedInspectScript()), 0755); err != nil {
+		t.Fatalf("write fake command: %v", err)
+	}
+	return path
+}
+
+func signingEvidenceJSON(operation string, algorithm string) string {
+	return fmt.Sprintf(`{"schema_version":1,"evidence_source":"core_signing","operation":%q,"provider_id":"openssl.file","provider_class":"file","provider_readiness":"ready","provider_exportability":"exportable","reference_class":"file","key_algorithm":"rsa","requested_signature_algorithm":%q,"issuer_binding_verified":true,"fallback_used":false,"result_code":"ok"}`, operation, algorithm)
+}
+
+func assertSigningEvidence(t *testing.T, evidence SigningEvidence, operation string, algorithm string) {
+	t.Helper()
+	if err := ValidateSigningEvidence(evidence, operation, algorithm); err != nil {
+		t.Fatalf("SigningEvidence = %#v: %v", evidence, err)
+	}
+}
+
+func windowsSigningEvidenceLine(operation string, algorithm string) string {
+	payload := strings.ReplaceAll(signingEvidenceJSON(operation, algorithm), `"`, `^"`)
+	return `> "%ANOPKI_CORE_SIGNING_EVIDENCE_FILE%" echo ` + payload
+}
+
+func unixSigningEvidenceBlock(operation string, algorithm string) string {
+	return `if [ -z "$ANOPKI_CORE_SIGNING_EVIDENCE_FILE" ]; then
+	exit 4
+fi
+cat > "$ANOPKI_CORE_SIGNING_EVIDENCE_FILE" <<'JSON'
+` + signingEvidenceJSON(operation, algorithm) + `
+JSON
+`
+}
+
+func writeFakeIssueEvidenceCommand(t *testing.T, evidencePayload string) string {
+	t.Helper()
+	dir := t.TempDir()
+	if runtime.GOOS == "windows" {
+		lines := []string{
+			"@echo off", "setlocal", `set "OUT="`, ":loop",
+			`if "%~1"=="" goto done`, `if "%~1"=="--out" (`, `  set "OUT=%~2"`,
+			"  shift", "  shift", "  goto loop", ")", "shift", "goto loop", ":done",
+			`if "%OUT%"=="" exit /b 2`,
+			`> "%OUT%" echo {^"certificate_pem^":^"cert-pem^",^"serial_number^":^"12345^",^"subject^":^"CN=leaf^",^"not_before^":^"2026-01-02T03:04:05Z^",^"not_after^":^"2026-01-03T04:05:06Z^"}`,
+		}
+		if evidencePayload != "" {
+			lines = append(lines, `> "%ANOPKI_CORE_SIGNING_EVIDENCE_FILE%" echo `+strings.ReplaceAll(evidencePayload, `"`, `^"`))
+		}
+		lines = append(lines, "exit /b 0", "")
+		path := filepath.Join(dir, "anopki-core.bat")
+		if err := os.WriteFile(path, []byte(strings.Join(lines, "\r\n")), 0644); err != nil {
+			t.Fatalf("write fake command: %v", err)
+		}
+		return path
+	}
+	writeEvidence := ""
+	if evidencePayload != "" {
+		writeEvidence = `cat > "$ANOPKI_CORE_SIGNING_EVIDENCE_FILE" <<'JSON'
+` + evidencePayload + `
+JSON
+`
+	}
+	script := `#!/bin/sh
+out=""
+while [ "$#" -gt 0 ]; do
+	if [ "$1" = "--out" ]; then out="$2"; shift 2; else shift; fi
+done
+cat > "$out" <<'JSON'
+{"certificate_pem":"cert-pem","serial_number":"12345","subject":"CN=leaf","not_before":"2026-01-02T03:04:05Z","not_after":"2026-01-03T04:05:06Z"}
+JSON
+` + writeEvidence + `exit 0
+`
+	path := filepath.Join(dir, "anopki-core")
+	if err := os.WriteFile(path, []byte(script), 0755); err != nil {
 		t.Fatalf("write fake command: %v", err)
 	}
 	return path
@@ -613,6 +716,7 @@ func windowsIssueScript(success bool) string {
 		":done",
 		"if \"%OUT%\"==\"\" exit /b 2",
 		"> \"%OUT%\" echo {^\"certificate_pem^\":^\"cert-pem^\",^\"serial_number^\":^\"12345^\",^\"subject^\":^\"CN=leaf^\",^\"not_before^\":^\"2026-01-02T03:04:05Z^\",^\"not_after^\":^\"2026-01-03T04:05:06Z^\"}",
+		windowsSigningEvidenceLine("certificate_issue", "ECDSA-SHA256"),
 		"exit /b 0",
 		"",
 	}, "\r\n")
@@ -645,6 +749,7 @@ func windowsIssueCaptureScript(capturePath string) string {
 		"if \"%OUT%\"==\"\" exit /b 2",
 		"copy /Y \"%REQ%\" \"" + capturePath + "\" >NUL",
 		"> \"%OUT%\" echo {^\"certificate_pem^\":^\"cert-pem^\",^\"serial_number^\":^\"12345^\",^\"subject^\":^\"CN=leaf^\",^\"not_before^\":^\"2026-01-02T03:04:05Z^\",^\"not_after^\":^\"2026-01-03T04:05:06Z^\"}",
+		windowsSigningEvidenceLine("certificate_issue", ""),
 		"exit /b 0",
 		"",
 	}, "\r\n")
@@ -686,6 +791,7 @@ func windowsCRLScript(success bool, capturePath string) string {
 		"if \"%OUT%\"==\"\" exit /b 2",
 		"copy /Y \"%REQ%\" \"" + capturePath + "\" >NUL",
 		"> \"%OUT%\" echo {^\"crl_pem^\":^\"crl-pem^\"}",
+		windowsSigningEvidenceLine("crl_generate_sign", "sha256"),
 		"exit /b 0",
 		"",
 	}, "\r\n")
@@ -806,6 +912,7 @@ func windowsOCSPResponseScript(success bool, capturePath string) string {
 		"if \"%OUT%\"==\"\" exit /b 2",
 		"copy /Y \"%REQ%\" \"" + capturePath + "\" >NUL",
 		"<nul set /p \"=ocsp-response-der\" > \"%OUT%\"",
+		windowsSigningEvidenceLine("ocsp_response_sign", "sha256"),
 		"exit /b 0",
 		"",
 	}, "\r\n")
@@ -918,7 +1025,7 @@ fi
 cat > "$out" <<'JSON'
 {"certificate_pem":"cert-pem","serial_number":"12345","subject":"CN=leaf","not_before":"2026-01-02T03:04:05Z","not_after":"2026-01-03T04:05:06Z"}
 JSON
-exit 0
+` + unixSigningEvidenceBlock("certificate_issue", "ECDSA-SHA256") + `exit 0
 `
 }
 
@@ -945,7 +1052,7 @@ cp "$req" '` + escapedCapturePath + `'
 cat > "$out" <<'JSON'
 {"certificate_pem":"cert-pem","serial_number":"12345","subject":"CN=leaf","not_before":"2026-01-02T03:04:05Z","not_after":"2026-01-03T04:05:06Z"}
 JSON
-exit 0
+` + unixSigningEvidenceBlock("certificate_issue", "") + `exit 0
 `
 }
 
@@ -979,7 +1086,7 @@ cp "$req" '` + escapedCapturePath + `'
 cat > "$out" <<'JSON'
 {"crl_pem":"crl-pem"}
 JSON
-exit 0
+` + unixSigningEvidenceBlock("crl_generate_sign", "sha256") + `exit 0
 `
 }
 
@@ -1079,7 +1186,7 @@ if [ -z "$request" ] || [ -z "$out" ]; then
 fi
 cp "$request" '` + escapedCapturePath + `'
 printf '%s' 'ocsp-response-der' > "$out"
-exit 0
+` + unixSigningEvidenceBlock("ocsp_response_sign", "sha256") + `exit 0
 `
 }
 

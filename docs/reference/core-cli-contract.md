@@ -165,6 +165,22 @@ redacted operator diagnostics; it must not populate `openssl_errors` or retry
 the operation through OpenSSL. A future backend-neutral diagnostic extension is
 a compatibility change and must update both sides and validator tests.
 
+## Private Signing Evidence Sidecar
+
+Certificate issuance, CRL generation, and OCSP response generation keep their
+existing public request/result JSON fields unchanged. When invoked by the Go
+runner, the process receives `ANOPKI_CORE_SIGNING_EVIDENCE_FILE` as an internal
+child-process environment variable. After successful cryptographic signing, the
+OpenSSL adapter writes one redacted JSON object to that file.
+
+This sidecar is not stdout, stderr, a public CLI option, or part of the Core CLI
+wire contract. It contains provider/result metadata only and omits raw
+`key_ref`, filesystem paths, PEM data, credentials, and dependency error text.
+The runner rejects missing, malformed, unknown-field, operation/algorithm
+mismatch, unverified binding, fallback, or non-`ok` evidence. If the adapter
+cannot write a requested sidecar, it returns `provider.evidence_failed` and the
+operation fails closed.
+
 ## Stable Backend Errors
 
 Product-profile and adapter control failures use these stable codes:

@@ -1026,6 +1026,7 @@ func testIssuanceAttempts(t *testing.T, repo Repository) {
 	signed.NotBefore = now
 	signed.NotAfter = now.Add(time.Hour)
 	signed.SignedAt = now.Add(time.Second)
+	signed.SigningEvidenceJSON = `{"schema_version":1,"evidence_source":"core_signing"}`
 	signed.UpdatedAt = signed.SignedAt
 	if err := repo.UpdateIssuanceAttemptIfCurrent(ctx, signed, stored); err != nil {
 		t.Fatalf("UpdateIssuanceAttemptIfCurrent returned error: %v", err)
@@ -1040,6 +1041,7 @@ func testIssuanceAttempts(t *testing.T, repo Repository) {
 	if got.Status != domain.IssuanceAttemptSigned ||
 		got.CertificateID != signed.CertificateID ||
 		got.CertificatePEM != signed.CertificatePEM ||
+		got.SigningEvidenceJSON != signed.SigningEvidenceJSON ||
 		!got.SignedAt.Equal(signed.SignedAt) {
 		t.Fatalf("signed attempt = %#v, want %#v", got, signed)
 	}

@@ -1347,6 +1347,7 @@ func scanIssuanceAttempt(scanner sqlScanner) (domain.IssuanceAttempt, error) {
 		&signedAt,
 		&finalizedAt,
 		&attempt.LastError,
+		&attempt.SigningEvidenceJSON,
 		&createdAt,
 		&updatedAt,
 	); err != nil {

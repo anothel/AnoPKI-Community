@@ -844,9 +844,9 @@ func (r sqlRepository) CreateIssuanceAttempt(ctx context.Context, attempt domain
 	_, err := r.exec.ExecContext(ctx, `
 INSERT INTO certificate_issuance_attempts (
 	enrollment_id, status, lease_expires_at, certificate_id, certificate_pem, serial_number, subject,
-	not_before, not_after, signing_started_at, signed_at, finalized_at, last_error, created_at, updated_at
+	not_before, not_after, signing_started_at, signed_at, finalized_at, last_error, signing_evidence_json, created_at, updated_at
 ) VALUES (
-	$1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15
+	$1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16
 )`,
 		attempt.EnrollmentID,
 		string(attempt.Status),
@@ -861,6 +861,7 @@ INSERT INTO certificate_issuance_attempts (
 		formatNullableSQLTime(attempt.SignedAt),
 		formatNullableSQLTime(attempt.FinalizedAt),
 		attempt.LastError,
+		attempt.SigningEvidenceJSON,
 		formatSQLTime(attempt.CreatedAt),
 		formatSQLTime(attempt.UpdatedAt),
 	)
@@ -873,7 +874,7 @@ INSERT INTO certificate_issuance_attempts (
 func (r sqlRepository) GetIssuanceAttempt(ctx context.Context, enrollmentID string) (domain.IssuanceAttempt, error) {
 	attempt, err := scanIssuanceAttempt(r.exec.QueryRowContext(ctx, `
 SELECT enrollment_id, status, lease_expires_at, certificate_id, certificate_pem, serial_number, subject,
-	not_before, not_after, signing_started_at, signed_at, finalized_at, last_error, created_at, updated_at
+	not_before, not_after, signing_started_at, signed_at, finalized_at, last_error, signing_evidence_json, created_at, updated_at
 FROM certificate_issuance_attempts
 WHERE enrollment_id = $1`, enrollmentID))
 	if errors.Is(err, sql.ErrNoRows) {
@@ -901,12 +902,13 @@ SET status = $1,
 	signed_at = $10,
 	finalized_at = $11,
 	last_error = $12,
-	created_at = $13,
-	updated_at = $14
-WHERE enrollment_id = $15
-	AND status = $16
-	AND updated_at = $17
-	AND lease_expires_at IS NOT DISTINCT FROM $18`,
+	signing_evidence_json = $13,
+	created_at = $14,
+	updated_at = $15
+WHERE enrollment_id = $16
+	AND status = $17
+	AND updated_at = $18
+	AND lease_expires_at IS NOT DISTINCT FROM $19`,
 		string(attempt.Status),
 		formatNullableSQLTime(attempt.LeaseExpiresAt),
 		attempt.CertificateID,
@@ -919,6 +921,7 @@ WHERE enrollment_id = $15
 		formatNullableSQLTime(attempt.SignedAt),
 		formatNullableSQLTime(attempt.FinalizedAt),
 		attempt.LastError,
+		attempt.SigningEvidenceJSON,
 		formatSQLTime(attempt.CreatedAt),
 		formatSQLTime(attempt.UpdatedAt),
 		attempt.EnrollmentID,

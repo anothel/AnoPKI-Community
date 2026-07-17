@@ -328,6 +328,7 @@ CREATE TABLE acme_accounts (
 		{table: "outbox_messages", name: "last_error"},
 		{table: "outbox_messages", name: "processing_deadline_at"},
 		{table: "notification_endpoints", name: "secret"},
+		{table: "certificate_issuance_attempts", name: "signing_evidence_json"},
 		{table: "acme_accounts", name: "key_thumbprint"},
 		{table: "acme_accounts", name: "key_jwk_json"},
 		{table: "acme_authorizations", name: "validation_reuse_expires_at"},

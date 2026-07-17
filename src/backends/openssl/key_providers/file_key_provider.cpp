@@ -10,6 +10,7 @@
 #include <cctype>
 #include <cstdlib>
 #include <filesystem>
+#include <fstream>
 #include <memory>
 #include <string>
 #include <string_view>
@@ -42,6 +43,56 @@ int reject_private_key_password(char *, int, int, void *) noexcept
 [[nodiscard]] RedactedProviderDiagnostics diagnostic(std::string stage)
 {
 	return RedactedProviderDiagnostics{"file", std::move(stage)};
+}
+
+[[nodiscard]] std::string json_escape(std::string_view value)
+{
+	std::string escaped;
+	escaped.reserve(value.size());
+	for (const unsigned char ch : value)
+	{
+		switch (ch)
+		{
+		case '\\': escaped += "\\\\"; break;
+		case '"': escaped += "\\\""; break;
+		case '\b': escaped += "\\b"; break;
+		case '\f': escaped += "\\f"; break;
+		case '\n': escaped += "\\n"; break;
+		case '\r': escaped += "\\r"; break;
+		case '\t': escaped += "\\t"; break;
+		default:
+			if (ch < 0x20)
+			{
+				constexpr char digits[] = "0123456789abcdef";
+				escaped += "\\u00";
+				escaped.push_back(digits[(ch >> 4) & 0x0f]);
+				escaped.push_back(digits[ch & 0x0f]);
+			}
+			else
+			{
+				escaped.push_back(static_cast<char>(ch));
+			}
+		}
+	}
+	return escaped;
+}
+
+[[nodiscard]] std::string signing_evidence_json(const SigningKeyEvidence &evidence)
+{
+	const ProviderMetadata &provider = evidence.provider;
+	return "{\"schema_version\":1"
+	       ",\"evidence_source\":\"core_signing\""
+	       ",\"operation\":\"" + json_escape(evidence.operation) + "\""
+	       ",\"provider_id\":\"" + json_escape(provider.id) + "\""
+	       ",\"provider_class\":\"" + std::string{to_string(provider.provider_class)} + "\""
+	       ",\"provider_readiness\":\"" + std::string{to_string(provider.readiness)} + "\""
+	       ",\"provider_exportability\":\"" + std::string{provider.exportable ? "exportable" : "non_exportable"} + "\""
+	       ",\"reference_class\":\"" + json_escape(provider.reference_class) + "\""
+	       ",\"key_algorithm\":\"" + json_escape(evidence.key_algorithm) + "\""
+	       ",\"requested_signature_algorithm\":\"" + json_escape(evidence.requested_signature_algorithm) + "\""
+	       ",\"issuer_binding_verified\":" + std::string{evidence.issuer_binding_verified ? "true" : "false"}
+	       + ",\"fallback_used\":" + std::string{evidence.fallback_used ? "true" : "false"}
+	       + ",\"result_code\":\"ok\"}\n";
 }
 
 [[noreturn]] void fail(ProviderErrorCode code, std::string stage)
@@ -291,6 +342,8 @@ std::string_view to_string(ProviderErrorCode value) noexcept
 		return "provider.profile_mismatch";
 	case ProviderErrorCode::sign_failed:
 		return "provider.sign_failed";
+	case ProviderErrorCode::evidence_failed:
+		return "provider.evidence_failed";
 	}
 	return "provider.sign_failed";
 }
@@ -506,6 +559,36 @@ void throw_provider_sign_failed(const SigningKeyHandle &handle)
 	    ProviderErrorCode::sign_failed,
 	    RedactedProviderDiagnostics{handle.evidence().provider.id, "sign"},
 	};
+}
+
+void write_signing_evidence_if_requested(const SigningKeyHandle &handle)
+{
+	const char *path_value = std::getenv("ANOPKI_CORE_SIGNING_EVIDENCE_FILE");
+	if (path_value == nullptr || path_value[0] == '\0')
+	{
+		return;
+	}
+
+	const std::filesystem::path path{path_value};
+	std::ofstream output{path, std::ios::binary | std::ios::trunc};
+	if (!output.good())
+	{
+		throw ProviderError{
+		    ProviderErrorCode::evidence_failed,
+		    RedactedProviderDiagnostics{handle.evidence().provider.id, "evidence"},
+		};
+	}
+	output << signing_evidence_json(handle.evidence());
+	output.close();
+	if (!output)
+	{
+		std::error_code ignored;
+		std::filesystem::remove(path, ignored);
+		throw ProviderError{
+		    ProviderErrorCode::evidence_failed,
+		    RedactedProviderDiagnostics{handle.evidence().provider.id, "evidence"},
+		};
+	}
 }
 
 } // namespace anopki::core::openssl_key_providers

@@ -306,15 +306,17 @@ Required fields:
 | operation | `certificate_issue`, `crl_generate_sign`, or `ocsp_response_sign` |
 | product profile | `community-openssl` |
 | selected backend | `openssl` |
+| evidence source | `core_signing`; never readiness-only classification |
 | provider ID/class | `file` / `file` |
 | reference class | `file` or bare-path compatibility; raw path omitted |
 | readiness | actual C++ acquire result |
-| exportability | `true` |
+| exportability | `exportable` |
 | requested signature algorithm | tested request value |
 | key algorithm compatibility | pass or stable `provider.algorithm_mismatch` |
 | signer certificate binding | pass or stable `provider.key_binding_mismatch` |
 | signing result | `X509_sign`/`X509_CRL_sign`/`OCSP_basic_sign` success or stable `provider.sign_failed` |
 | fallback used | `false` |
+| result code | `ok`, emitted only after cryptographic signing succeeds |
 | production policy | exportable file provider rejected |
 | golden result | existing certificate, CRL, and OCSP golden fixtures unchanged |
 | boundary result | `issue.cpp`, `crl.cpp`, and `ocsp.cpp` contain no direct signing-key file open/PEM private-key read |
@@ -328,11 +330,18 @@ Evidence must include:
 - source-boundary validator and validator self-tests,
 - single-provider resolver and test-only software-token contract test,
 - evidence-mismatch and provider-failure no-fallback tests,
+- missing/malformed sidecar and `fallback_used=true` rejection tests,
+- `provider.evidence_failed` fail-closed test,
+- certificate issuance-attempt persistence and legacy-unproven audit tests,
 - exact OpenSSL/compiler/platform metadata,
 - reviewed Community commit SHA.
 
 `keyref.Provider.CheckReady=ready` is preflight evidence only and cannot replace
-actual provider acquire/binding/signing evidence.
+actual provider acquire/binding/signing evidence. The private sidecar must report
+`evidence_source=core_signing`, the exact operation, verified binding,
+`fallback_used=false`, and `result_code=ok`. Raw key references and paths are
+prohibited. Certificate evidence is tied to the durable issuance attempt; CRL
+and OCSP evidence is tied directly to their successful operation result.
 
 Current scope statement:
 

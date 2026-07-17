@@ -164,6 +164,34 @@ def test_missing_software_token_contract_wording_fails(tmp_path: Path) -> None:
     assert "KeyProvider signing direction docs missing required wording" in result.stderr
 
 
+
+def test_missing_remaining_key_provider_work_fails(tmp_path: Path) -> None:
+    copy_docs_inputs(tmp_path)
+    roadmap = tmp_path / "docs" / "ROADMAP.md"
+    roadmap.write_text(
+        roadmap.read_text(encoding="utf-8").replace("real local PKCS#11/HSM target", "future provider target", 1),
+        encoding="utf-8",
+    )
+
+    result = run_validator(tmp_path)
+
+    assert result.returncode == 1
+    assert "ROADMAP does not contain the remaining KeyProvider work" in result.stderr
+
+
+def test_completed_provider_result_correlation_roadmap_item_fails(tmp_path: Path) -> None:
+    copy_docs_inputs(tmp_path)
+    roadmap = tmp_path / "docs" / "ROADMAP.md"
+    roadmap.write_text(
+        roadmap.read_text(encoding="utf-8") + "\n- Complete provider-result audit correlation.\n",
+        encoding="utf-8",
+    )
+
+    result = run_validator(tmp_path)
+
+    assert result.returncode == 1
+    assert "completed provider-result audit correlation" in result.stderr
+
 def test_missing_wsl_certbot_compatibility_row_fails(tmp_path: Path) -> None:
     copy_docs_inputs(tmp_path)
     compatibility = tmp_path / "docs" / "acme-client-compatibility.md"
@@ -325,6 +353,10 @@ def main() -> None:
         test_stale_software_token_roadmap_item_fails(Path(dirname))
     with tempfile.TemporaryDirectory() as dirname:
         test_missing_software_token_contract_wording_fails(Path(dirname))
+    with tempfile.TemporaryDirectory() as dirname:
+        test_missing_remaining_key_provider_work_fails(Path(dirname))
+    with tempfile.TemporaryDirectory() as dirname:
+        test_completed_provider_result_correlation_roadmap_item_fails(Path(dirname))
     print("docs validator tests ok")
 
 

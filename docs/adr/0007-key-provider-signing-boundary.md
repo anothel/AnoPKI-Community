@@ -4,9 +4,9 @@
 
 Accepted. The Community/OpenSSL certificate-issuance, CRL-signing, and
 OCSP-response-signing `FileKeyProvider` vertical slices are implemented. A
-single-provider resolver and test-only software-token contract now pin provider
-selection, evidence consistency, production exportability checks, and no-fallback
-semantics. Real non-exportable providers and remote KMS remain pending and are
+single-provider resolver, test-only software-token contract, and private
+provider-result sidecar now pin provider selection, actual signing correlation,
+production exportability checks, and no-fallback semantics. Real non-exportable providers and remote KMS remain pending and are
 not implied by this status.
 
 ## Context
@@ -68,7 +68,9 @@ The adapter-private provider contract supplies:
 - issuer-certificate/private-key binding checks,
 - an OpenSSL-private signing-key handle for `X509_sign`, `X509_CRL_sign`, or
   `OCSP_basic_sign`,
-- evidence that fallback was not used.
+- evidence that fallback was not used,
+- a redacted private sidecar written only after successful signing when requested
+  by the Go core runner.
 
 `src/backends/openssl/issue.cpp`, `src/backends/openssl/crl.cpp`, and
 `src/backends/openssl/ocsp.cpp` no longer open signing-key files or call PEM
@@ -118,6 +120,7 @@ non-exportability or PKCS#11/HSM support.
 - `provider.exportability_violation`
 - `provider.profile_mismatch`
 - `provider.sign_failed`
+- `provider.evidence_failed`
 
 The stable code is the exception message consumed by the existing CLI error
 mapping. Raw OpenSSL errors and raw paths are cleared or omitted from provider
@@ -138,8 +141,27 @@ Certificate, CRL, and OCSP signing evidence requires the selected C++ provider p
    returned handle,
 7. preserve the certificate, CRL, and OCSP golden results.
 
-A release candidate records those test and validator results. A successful Go
+The Go runner requests the sidecar with
+`ANOPKI_CORE_SIGNING_EVIDENCE_FILE`, parses it with unknown-field rejection, and
+validates provider identity/class/readiness/exportability, operation, algorithm,
+binding, `fallback_used=false`, and `result_code=ok`. Certificate evidence is
+stored with the durable issuance attempt so retry/finalization and audit repair
+reuse the same completed signing result. CRL and OCSP audit events use the
+operation result directly. Legacy issuance attempts without evidence are marked
+classification-only and unproven.
+
+This sidecar is adapter-private process coordination, not a public Core CLI JSON
+wire field. Failure to write requested evidence returns
+`provider.evidence_failed` and fails the operation closed. A successful Go
 readiness check alone cannot mark cryptographic signing evidence as passed.
+
+Because evidence is written after the cryptographic primitive succeeds, an
+`provider.evidence_failed` result can leave an unreturned local signature that
+is not accepted or persisted by the lifecycle service. This local file-provider
+slice deliberately prefers fail-closed evidence over presenting an unproven
+success. A remote or billed/non-idempotent signer must not reuse this assumption;
+its retry and duplicate-signing semantics require separate prepare/sign/finalize
+approval before implementation.
 
 ## Non-goals Of This Slice
 

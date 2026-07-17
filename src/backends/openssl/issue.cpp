@@ -989,6 +989,7 @@ IssueResult OpenSSLBackend::issue_certificate(const IssueRequest &request) const
 	{
 		openssl_key_providers::throw_provider_sign_failed(issuer_key);
 	}
+	openssl_key_providers::write_signing_evidence_if_requested(issuer_key);
 
 	IssueResult result;
 	result.certificate_pem = certificate_to_pem(certificate.get());

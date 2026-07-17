@@ -227,7 +227,9 @@ def check_key_provider_direction(root: Path) -> None:
     completed = [text for text in completed_roadmap if text in roadmap]
     if completed:
         fail("ROADMAP still lists completed software-token contract work:\n" + "\n".join(completed))
-    if "provider-result audit correlation" not in roadmap or "real local PKCS#11/HSM target" not in roadmap:
+    if "provider-result audit correlation" in roadmap:
+        fail("ROADMAP still lists completed provider-result audit correlation work")
+    if "real local PKCS#11/HSM target" not in roadmap:
         fail("ROADMAP does not contain the remaining KeyProvider work")
 
 def should_scan_legacy_identifiers(path: Path, root: Path) -> bool:

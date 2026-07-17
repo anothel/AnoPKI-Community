@@ -201,6 +201,11 @@ func TestManualEnrollmentLifecycle(t *testing.T) {
 		certificateMetadata["serial_number"] != certificate.SerialNumber ||
 		certificateMetadata["key_provider_class"] != "file" ||
 		certificateMetadata["key_provider_exportability"] != "exportable" ||
+		certificateMetadata["key_provider_operation"] != "certificate_issue" ||
+		certificateMetadata["key_provider_evidence_source"] != "core_signing" ||
+		certificateMetadata["key_provider_signing_proven"] != true ||
+		certificateMetadata["key_provider_binding_verified"] != true ||
+		certificateMetadata["key_provider_fallback_used"] != false ||
 		certificateMetadata["key_provider_result_code"] != "ok" {
 		t.Fatalf("certificate audit metadata = %#v", certificateMetadata)
 	}
@@ -615,8 +620,12 @@ func TestIssueCertificateUsesEnrollmentProfile(t *testing.T) {
 		t.Fatalf("ListAuditEvents returned error: %v", err)
 	}
 	metadata := auditMetadata(t, findAuditEvent(t, events, "certificate.issued"))
-	if metadata["key_provider_result_code"] != "ok" {
-		t.Fatalf("key_provider_result_code = %#v, want ok; metadata=%#v", metadata["key_provider_result_code"], metadata)
+	if metadata["key_provider_result_code"] != "ok" ||
+		metadata["key_provider_operation"] != "certificate_issue" ||
+		metadata["key_provider_signature_algorithm"] != "sha384" ||
+		metadata["key_provider_evidence_source"] != "core_signing" ||
+		metadata["key_provider_signing_proven"] != true {
+		t.Fatalf("certificate provider evidence metadata = %#v", metadata)
 	}
 }
 
@@ -967,6 +976,11 @@ func TestPublishCRLSelectsRevokedCertificatesAndPersistsArtifact(t *testing.T) {
 		metadata["distribution_point"] != publication.DistributionPoint ||
 		metadata["key_provider_class"] != "file" ||
 		metadata["key_provider_exportability"] != "exportable" ||
+		metadata["key_provider_operation"] != "crl_generate_sign" ||
+		metadata["key_provider_evidence_source"] != "core_signing" ||
+		metadata["key_provider_signing_proven"] != true ||
+		metadata["key_provider_binding_verified"] != true ||
+		metadata["key_provider_fallback_used"] != false ||
 		metadata["crl_number"].(float64) != float64(publication.CRLNumber) {
 		t.Fatalf("CRL audit metadata = %#v", metadata)
 	}
@@ -1006,6 +1020,36 @@ func TestPublishCRLMapsCoreFailure(t *testing.T) {
 	}
 	if len(publications) != 0 {
 		t.Fatalf("CRL publications = %#v, want none after failed generation", publications)
+	}
+}
+
+func TestPublishCRLRejectsReadinessWithoutCoreSigningEvidence(t *testing.T) {
+	ctx := context.Background()
+	repo := store.NewMemoryStore()
+	missingEvidence := corecli.SigningEvidence{}
+	coreClient := &fakeIssuer{
+		crlResult:          corecli.GenerateCRLResult{CRLPEM: "crl-pem"},
+		crlSigningEvidence: &missingEvidence,
+	}
+	clock := fixedClock{now: time.Date(2026, time.January, 2, 3, 4, 5, 0, time.UTC)}
+	service := New(repo, coreClient, clock, &fakeIDGenerator{})
+	issuer, err := service.CreateIssuer(ctx, "admin", CreateIssuerRequest{
+		Name: "issuer", Kind: domain.IssuerIntermediateCA,
+		CertificatePEM: "issuer-cert", KeyRef: "issuer-key",
+	})
+	if err != nil {
+		t.Fatalf("CreateIssuer returned error: %v", err)
+	}
+
+	_, err = service.PublishCRL(ctx, "operator", PublishCRLRequest{
+		IssuerID: issuer.ID, DistributionPoint: "https://pki.example.test/issuer.crl",
+		NextUpdate: clock.now.Add(24 * time.Hour),
+	})
+	if !errors.Is(err, domain.ErrCRLGenerationFailed) {
+		t.Fatalf("PublishCRL error = %v, want ErrCRLGenerationFailed", err)
+	}
+	if publications, listErr := repo.ListCRLPublicationsByIssuer(ctx, issuer.ID); listErr != nil || len(publications) != 0 {
+		t.Fatalf("CRL publications after missing evidence = %#v, err=%v", publications, listErr)
 	}
 }
 
@@ -1149,6 +1193,11 @@ func TestRespondOCSPMapsCertificateStatesAndAudits(t *testing.T) {
 		metadata["requested_cert_count"].(float64) != 3 ||
 		metadata["key_provider_class"] != "file" ||
 		metadata["key_provider_exportability"] != "exportable" ||
+		metadata["key_provider_operation"] != "ocsp_response_sign" ||
+		metadata["key_provider_evidence_source"] != "core_signing" ||
+		metadata["key_provider_signing_proven"] != true ||
+		metadata["key_provider_binding_verified"] != true ||
+		metadata["key_provider_fallback_used"] != false ||
 		metadata["response_status"] != "successful" {
 		t.Fatalf("OCSP audit metadata = %#v", metadata)
 	}
@@ -1212,6 +1261,42 @@ func TestRespondOCSPMapsResponseFailure(t *testing.T) {
 	}
 	if len(coreClient.ocspResponses) != 1 {
 		t.Fatalf("OCSP response request count = %d, want 1", len(coreClient.ocspResponses))
+	}
+}
+
+func TestRespondOCSPRejectsReadinessWithoutCoreSigningEvidence(t *testing.T) {
+	ctx := context.Background()
+	repo := store.NewMemoryStore()
+	missingEvidence := corecli.SigningEvidence{}
+	coreClient := &fakeIssuer{
+		issuerOCSPInfo: corecli.OCSPIssuerInfo{IssuerNameHash: "name-hash", IssuerKeyHash: "key-hash"},
+		ocspInfo: corecli.OCSPRequestInfo{Certificates: []corecli.OCSPCertificateID{{
+			SerialNumber: "4040", IssuerNameHash: "name-hash", IssuerKeyHash: "key-hash",
+		}}},
+		ocspResponseDER:     []byte("ocsp-response-der"),
+		ocspSigningEvidence: &missingEvidence,
+	}
+	clock := fixedClock{now: time.Date(2026, time.January, 2, 3, 4, 5, 0, time.UTC)}
+	service := New(repo, coreClient, clock, &fakeIDGenerator{})
+	if _, err := service.CreateIssuer(ctx, "admin", CreateIssuerRequest{
+		Name: "issuer", Kind: domain.IssuerIntermediateCA,
+		CertificatePEM: "issuer-cert", KeyRef: "issuer-key",
+	}); err != nil {
+		t.Fatalf("CreateIssuer returned error: %v", err)
+	}
+
+	_, err := service.RespondOCSP(ctx, "ocsp-client", []byte("ocsp-request"))
+	if !errors.Is(err, domain.ErrOCSPResponseFailed) {
+		t.Fatalf("RespondOCSP error = %v, want ErrOCSPResponseFailed", err)
+	}
+	events, listErr := service.ListAuditEvents(ctx)
+	if listErr != nil {
+		t.Fatalf("ListAuditEvents returned error: %v", listErr)
+	}
+	for _, event := range events {
+		if event.Action == "ocsp.requested" {
+			t.Fatalf("OCSP success audit written without signing evidence: %#v", event)
+		}
 	}
 }
 
@@ -3389,6 +3474,34 @@ func TestIssueCertificateMapsCSRParseFailure(t *testing.T) {
 	}
 	if errors.Is(err, domain.ErrCertificateIssuanceFailed) {
 		t.Fatalf("IssueCertificate error = %v, did not want ErrCertificateIssuanceFailed", err)
+	}
+}
+
+func TestIssueCertificateRejectsReadinessWithoutCoreSigningEvidence(t *testing.T) {
+	ctx := context.Background()
+	repo := store.NewMemoryStore()
+	missingEvidence := corecli.SigningEvidence{}
+	issuerClient := &fakeIssuer{issueSigningEvidence: &missingEvidence}
+	service := New(
+		repo,
+		issuerClient,
+		fixedClock{now: time.Date(2026, time.January, 2, 3, 4, 5, 0, time.UTC)},
+		&fakeIDGenerator{},
+	)
+	enrollment := createPendingEnrollment(t, ctx, service)
+	if _, err := service.ApproveEnrollment(ctx, "approver", enrollment.ID); err != nil {
+		t.Fatalf("ApproveEnrollment returned error: %v", err)
+	}
+
+	_, err := service.IssueCertificate(ctx, "issuer", enrollment.ID)
+	if !errors.Is(err, domain.ErrCertificateIssuanceFailed) {
+		t.Fatalf("IssueCertificate error = %v, want ErrCertificateIssuanceFailed", err)
+	}
+	if len(issuerClient.requests) != 1 {
+		t.Fatalf("issuer request count = %d, want 1", len(issuerClient.requests))
+	}
+	if certificates, listErr := repo.ListCertificates(ctx); listErr != nil || len(certificates) != 0 {
+		t.Fatalf("certificates after missing evidence = %#v, err=%v", certificates, listErr)
 	}
 }
 
@@ -5745,7 +5858,44 @@ type fakeIssuer struct {
 	ocspResponseDER                 []byte
 	ocspResponseErr                 error
 	ocspResponderValidationResult   corecli.ValidateOCSPResponderResult
+	issueSigningEvidence            *corecli.SigningEvidence
+	crlSigningEvidence              *corecli.SigningEvidence
+	ocspSigningEvidence             *corecli.SigningEvidence
 	err                             error
+}
+
+func testSigningEvidence(operation string, algorithm string) corecli.SigningEvidence {
+	return corecli.SigningEvidence{
+		SchemaVersion:               1,
+		EvidenceSource:              "core_signing",
+		Operation:                   operation,
+		ProviderID:                  "openssl.file",
+		ProviderClass:               "file",
+		ProviderReadiness:           "ready",
+		ProviderExportability:       "exportable",
+		ReferenceClass:              "file",
+		KeyAlgorithm:                "rsa",
+		RequestedSignatureAlgorithm: algorithm,
+		IssuerBindingVerified:       true,
+		FallbackUsed:                false,
+		ResultCode:                  "ok",
+	}
+}
+
+func (f *fakeIssuer) signingEvidence(operation string, algorithm string) corecli.SigningEvidence {
+	var override *corecli.SigningEvidence
+	switch operation {
+	case "certificate_issue":
+		override = f.issueSigningEvidence
+	case "crl_generate_sign":
+		override = f.crlSigningEvidence
+	case "ocsp_response_sign":
+		override = f.ocspSigningEvidence
+	}
+	if override != nil {
+		return *override
+	}
+	return testSigningEvidence(operation, algorithm)
 }
 
 type fakePublicTLSLintHook struct {
@@ -5791,11 +5941,12 @@ func (f *sequencedSerialIssuer) Issue(ctx context.Context, req corecli.IssueRequ
 	}
 	f.next++
 	return corecli.IssueResult{
-		CertificatePEM: "issued:" + req.CSRPEM,
-		SerialNumber:   fmt.Sprintf("serial-%d:%s", f.next, req.Subject),
-		Subject:        req.Subject,
-		NotBefore:      req.NotBefore,
-		NotAfter:       req.NotAfter,
+		CertificatePEM:  "issued:" + req.CSRPEM,
+		SerialNumber:    fmt.Sprintf("serial-%d:%s", f.next, req.Subject),
+		Subject:         req.Subject,
+		NotBefore:       req.NotBefore,
+		NotAfter:        req.NotAfter,
+		SigningEvidence: f.fakeIssuer.signingEvidence("certificate_issue", req.SignatureAlgorithm),
 	}, nil
 }
 
@@ -5838,11 +5989,12 @@ func (f *blockingIssueIssuer) Issue(ctx context.Context, req corecli.IssueReques
 		return corecli.IssueResult{}, err
 	}
 	return corecli.IssueResult{
-		CertificatePEM: "issued:" + req.CSRPEM,
-		SerialNumber:   "serial:" + req.Subject,
-		Subject:        req.Subject,
-		NotBefore:      req.NotBefore,
-		NotAfter:       req.NotAfter,
+		CertificatePEM:  "issued:" + req.CSRPEM,
+		SerialNumber:    "serial:" + req.Subject,
+		Subject:         req.Subject,
+		NotBefore:       req.NotBefore,
+		NotAfter:        req.NotAfter,
+		SigningEvidence: f.fakeIssuer.signingEvidence("certificate_issue", req.SignatureAlgorithm),
 	}, nil
 }
 
@@ -5875,11 +6027,12 @@ func (f *fakeIssuer) Issue(ctx context.Context, req corecli.IssueRequest) (corec
 		return corecli.IssueResult{}, f.err
 	}
 	return corecli.IssueResult{
-		CertificatePEM: "issued:" + req.CSRPEM,
-		SerialNumber:   "serial:" + req.Subject,
-		Subject:        req.Subject,
-		NotBefore:      req.NotBefore,
-		NotAfter:       req.NotAfter,
+		CertificatePEM:  "issued:" + req.CSRPEM,
+		SerialNumber:    "serial:" + req.Subject,
+		Subject:         req.Subject,
+		NotBefore:       req.NotBefore,
+		NotAfter:        req.NotAfter,
+		SigningEvidence: f.signingEvidence("certificate_issue", req.SignatureAlgorithm),
 	}, nil
 }
 
@@ -5891,7 +6044,11 @@ func (f *fakeIssuer) GenerateCRL(ctx context.Context, req corecli.GenerateCRLReq
 	if f.err != nil {
 		return corecli.GenerateCRLResult{}, f.err
 	}
-	return f.crlResult, nil
+	result := f.crlResult
+	if result.SigningEvidence.SchemaVersion == 0 || f.crlSigningEvidence != nil {
+		result.SigningEvidence = f.signingEvidence("crl_generate_sign", "sha256")
+	}
+	return result, nil
 }
 
 func (f *fakeIssuer) InspectOCSPIssuer(ctx context.Context, issuerCertificatePEM string, hashAlgorithm string) (corecli.OCSPIssuerInfo, error) {
@@ -5941,7 +6098,10 @@ func (f *fakeIssuer) GenerateOCSPResponse(ctx context.Context, req corecli.Gener
 	if f.err != nil {
 		return corecli.GenerateOCSPResponseResult{}, f.err
 	}
-	return corecli.GenerateOCSPResponseResult{ResponseDER: f.ocspResponseDER}, nil
+	return corecli.GenerateOCSPResponseResult{
+		ResponseDER:     f.ocspResponseDER,
+		SigningEvidence: f.signingEvidence("ocsp_response_sign", "sha256"),
+	}, nil
 }
 
 type ocspResponderValidationRequest struct {

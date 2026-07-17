@@ -18,6 +18,11 @@ PROVIDER_TEST = Path("tests/file_key_provider_test.cpp")
 CRL_PROVIDER_TEST = Path("tests/crl_file_key_provider_test.cpp")
 OCSP_PROVIDER_TEST = Path("tests/ocsp_file_key_provider_test.cpp")
 SOFTWARE_TOKEN_PROVIDER_TEST = Path("tests/software_token_key_provider_test.cpp")
+CORE_RUNNER_SOURCE = Path("service/internal/corecli/runner.go")
+LIFECYCLE_SOURCE = Path("service/internal/lifecycle/service.go")
+DOMAIN_TYPES_SOURCE = Path("service/internal/domain/types.go")
+STORE_MIGRATION_SOURCE = Path("service/internal/store/migrate.go")
+STORE_CERTIFICATE_SOURCE = Path("service/internal/store/sqlstore_certificate.go")
 
 FORBIDDEN_SIGNING_PATH_TOKENS = (
     "BIO_new_file",
@@ -34,7 +39,7 @@ REQUIRED_ISSUE_TOKENS = (
     "resolve_certificate_signing_key",
     "provider_policy_from_environment",
     ".native_handle()",
-    "throw_provider_sign_failed",
+    "throw_provider_sign_failed",    "write_signing_evidence_if_requested",
 )
 
 REQUIRED_CRL_TOKENS = (
@@ -42,7 +47,7 @@ REQUIRED_CRL_TOKENS = (
     "resolve_crl_signing_key",
     "provider_policy_from_environment",
     ".native_handle()",
-    "throw_provider_sign_failed",
+    "throw_provider_sign_failed",    "write_signing_evidence_if_requested",
 )
 
 REQUIRED_OCSP_TOKENS = (
@@ -50,7 +55,7 @@ REQUIRED_OCSP_TOKENS = (
     "resolve_ocsp_signing_key",
     "provider_policy_from_environment",
     ".native_handle()",
-    "throw_provider_sign_failed",
+    "throw_provider_sign_failed",    "write_signing_evidence_if_requested",
 )
 
 REQUIRED_PROVIDER_TOKENS = (
@@ -64,6 +69,10 @@ REQUIRED_PROVIDER_TOKENS = (
     "provider.exportability_violation",
     "provider.profile_mismatch",
     "provider.sign_failed",
+    "provider.evidence_failed",
+    "ANOPKI_CORE_SIGNING_EVIDENCE_FILE",
+    r'evidence_source\":\"core_signing',
+    r'result_code\":\"ok',
     "fallback_used = false",
     "X509_check_private_key",
     "reject_private_key_password",
@@ -80,7 +89,7 @@ REQUIRED_PROVIDER_TEST_TOKENS = (
     "resolve_crl_signing_key",
     "crl_generate_sign",
     "resolve_ocsp_signing_key",
-    "ocsp_response_sign",
+    "ocsp_response_sign",    "test_signing_evidence_sidecar",    "ANOPKI_CORE_SIGNING_EVIDENCE_FILE",    "core_signing",    "provider.evidence_failed",
 )
 
 REQUIRED_CRL_PROVIDER_TEST_TOKENS = (
@@ -145,6 +154,37 @@ REQUIRED_SOFTWARE_TOKEN_TEST_TOKENS = (
 
 
 
+REQUIRED_RUNNER_TOKENS = (
+    "ANOPKI_CORE_SIGNING_EVIDENCE_FILE",
+    "createSigningEvidenceFile",
+    "withSigningEvidenceEnvironment",
+    "DisallowUnknownFields",
+    "ValidateSigningEvidence",
+    'EvidenceSource != "core_signing"',
+    "IssuerBindingVerified",
+    "FallbackUsed",
+    'ResultCode != "ok"',
+    'SigningEvidence SigningEvidence `json:"-"`',
+)
+
+REQUIRED_LIFECYCLE_TOKENS = (
+    'ValidateSigningEvidence(result.SigningEvidence, "certificate_issue"',
+    'ValidateSigningEvidence(result.SigningEvidence, "crl_generate_sign", "sha256")',
+    'ValidateSigningEvidence(result.SigningEvidence, "ocsp_response_sign", "sha256")',
+    "SigningEvidenceJSON",
+    "coreSigningAuditFields(result.SigningEvidence",
+    'fields["key_provider_evidence_source"] = evidence.EvidenceSource',
+    'fields["key_provider_signing_proven"] = true',
+    'fields["key_provider_evidence_source"] = "legacy_key_ref_classification"',
+    'fields["key_provider_signing_proven"] = false',
+)
+
+REQUIRED_STORE_TOKENS = (
+    "signing_evidence_json",
+    "SigningEvidenceJSON",
+)
+
+
 def fail(message: str) -> None:
     raise RuntimeError(message)
 
@@ -168,6 +208,11 @@ def validate(root: Path) -> None:
     crl_provider_test = read_required(root, CRL_PROVIDER_TEST)
     ocsp_provider_test = read_required(root, OCSP_PROVIDER_TEST)
     software_token_provider_test = read_required(root, SOFTWARE_TOKEN_PROVIDER_TEST)
+    core_runner = read_required(root, CORE_RUNNER_SOURCE)
+    lifecycle = read_required(root, LIFECYCLE_SOURCE)
+    domain_types = read_required(root, DOMAIN_TYPES_SOURCE)
+    store_migration = read_required(root, STORE_MIGRATION_SOURCE)
+    store_certificate = read_required(root, STORE_CERTIFICATE_SOURCE)
     cmake = read_required(root, Path("CMakeLists.txt"))
 
     for operation, content in (
@@ -183,6 +228,14 @@ def validate(root: Path) -> None:
                 f"{operation} directly loads a private key:\n"
                 + "\n".join(forbidden_hits)
             )
+
+    for operation, content, sign_token in (
+        ("certificate issuance", issue, "X509_sign("),
+        ("CRL signing", crl, "X509_CRL_sign("),
+        ("OCSP signing", ocsp, "OCSP_basic_sign("),
+    ):
+        if content.find("write_signing_evidence_if_requested") < content.find(sign_token):
+            fail(f"{operation} writes provider evidence before cryptographic signing succeeds")
 
     missing_issue = [token for token in REQUIRED_ISSUE_TOKENS if token not in issue]
     if missing_issue:
@@ -266,6 +319,32 @@ def validate(root: Path) -> None:
             "OCSP FileKeyProvider tests are missing required coverage:\n"
             + "\n".join(missing_ocsp_provider_tests)
         )
+
+    missing_runner = [token for token in REQUIRED_RUNNER_TOKENS if token not in core_runner]
+    if missing_runner:
+        fail(
+            "Go core runner does not require actual signing sidecar evidence:\n"
+            + "\n".join(missing_runner)
+        )
+
+    missing_lifecycle = [token for token in REQUIRED_LIFECYCLE_TOKENS if token not in lifecycle]
+    if missing_lifecycle:
+        fail(
+            "lifecycle audit does not correlate actual core signing evidence:\n"
+            + "\n".join(missing_lifecycle)
+        )
+
+    for relative, content, required_tokens in (
+        (DOMAIN_TYPES_SOURCE, domain_types, ("SigningEvidenceJSON",)),
+        (STORE_MIGRATION_SOURCE, store_migration, ("signing_evidence_json",)),
+        (STORE_CERTIFICATE_SOURCE, store_certificate, REQUIRED_STORE_TOKENS),
+    ):
+        missing_store = [token for token in required_tokens if token not in content]
+        if missing_store:
+            fail(
+                f"signing evidence persistence is incomplete in {relative.as_posix()}:\n"
+                + "\n".join(missing_store)
+            )
 
     for marker in (
         "class SigningKeyProvider",

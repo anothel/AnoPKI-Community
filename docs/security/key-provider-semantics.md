@@ -73,8 +73,12 @@ AnoPKI currently controls a real non-exportable device or token.
 - classifies references,
 - applies service policy,
 - performs early `CheckReady` preflight,
-- records expected provider class/exportability metadata,
-- correlates lifecycle and audit requests.
+- requests one private redacted signing-evidence sidecar from `anopki-core`,
+- rejects missing, malformed, mismatched, or fallback-claiming sidecar evidence,
+- persists certificate-issuance evidence with the durable issuance attempt,
+- records CRL and OCSP audit metadata from the returned signing evidence,
+- marks legacy rows without sidecar evidence as classification-only and
+  `key_provider_signing_proven=false`.
 
 ### C++ selected adapter/provider
 
@@ -84,9 +88,18 @@ AnoPKI currently controls a real non-exportable device or token.
 - performs signing with the returned handle,
 - produces the actual operation result or stable failure.
 
-The Go `CheckReady` result is not cryptographic signing evidence. A release or
-audit claim about actual signing must be backed by the C++ provider path and its
-positive/negative tests.
+The Go `CheckReady` result is not cryptographic signing evidence. After a
+successful `X509_sign`, `X509_CRL_sign`, or `OCSP_basic_sign`, the selected C++
+provider writes a redacted internal sidecar only when the runner supplies
+`ANOPKI_CORE_SIGNING_EVIDENCE_FILE`. The sidecar is not a public CLI JSON field.
+If the requested sidecar cannot be written, the signing operation fails closed.
+A release or audit claim about actual signing must come from this completed
+C++ path, not from readiness or key-reference classification.
+The file-provider slice may therefore perform a local cryptographic primitive
+whose result is not returned when post-sign evidence writing fails. The service
+must not treat that failed command as issued material or successful audit
+evidence. Remote or non-idempotent providers require a separately approved
+retry/duplicate-signing protocol before integration.
 
 ## Stable Errors
 
@@ -100,9 +113,10 @@ positive/negative tests.
 - `provider.exportability_violation`
 - `provider.profile_mismatch`
 - `provider.sign_failed`
+- `provider.evidence_failed`
 
 Only stable codes and redacted stages such as `resolve`, `open`, `parse`,
-`algorithm`, `binding`, `policy`, and `sign` may leave the provider boundary.
+`algorithm`, `binding`, `policy`, `sign`, and `evidence` may leave the provider boundary.
 Raw paths, PEM data, credentials, PINs, session tokens, and raw provider/OpenSSL
 errors are prohibited.
 
@@ -128,6 +142,10 @@ is opened.
 - CRL signing: provider-isolated through `FileKeyProvider`.
 - OCSP response signing: provider-isolated through `FileKeyProvider`.
 - Test-only software-token resolver contract: implemented; not shipped.
+- Actual signing-result correlation: implemented through an internal redacted
+  sidecar for certificate issuance, CRL signing, and OCSP response signing.
+- Certificate evidence persistence: implemented on the durable issuance attempt.
+- Legacy issuance rows without evidence remain explicitly unproven.
 - Real non-exportable provider: not implemented.
 - Remote KMS prepare/sign/finalize: not implemented.
 - Enterprise/AnoCrypto-C provider compatibility: not implemented.

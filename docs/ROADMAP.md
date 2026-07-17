@@ -85,7 +85,6 @@ Community/OpenSSL baseline and keeping key providers separate.
   issuance, CRL, and OCSP parity is complete.
 - Add negative tests proving that unsupported AnoCrypto-C operations never call
   OpenSSL.
-- Define actual C++ provider-result audit correlation without treating Go `CheckReady` as cryptographic proof.
 - Select one real local PKCS#11/HSM target only after deployment and key-ceremony requirements are known; the test-only software-token path is contract evidence, not production non-exportability.
 - Prototype and separately approve remote KMS retry/idempotency and signing semantics before adding a vendor SDK.
 - Add executable key ceremony evidence and intermediate rollover drills.
