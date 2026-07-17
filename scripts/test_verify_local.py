@@ -41,29 +41,28 @@ def main() -> None:
     if result.returncode != 0:
         raise SystemExit(result.stderr or result.stdout)
     expected_commands = [
-        "python scripts\\validate-docs.py",
-        "python scripts\\test_validate_docs.py",
-        "python scripts\\test_webhook_receiver_verification.py",
-        "python scripts\\test_verify_local.py",
-        "python scripts\\test_validate_version_metadata.py",
-        "python scripts\\validate-version-metadata.py",
-        "python scripts\\test_generate_release_metadata.py",
-        "python scripts\\test_validate_release_artifacts.py",
-        "python scripts\\test_validate_service_contracts.py",
-        "python scripts\\validate-service-contracts.py",
-        "python scripts\\test_validate_core_cli_contracts.py",
-        "python scripts\\validate-core-cli-contracts.py",
-        "python scripts\\test_validate_release_evidence.py",
-        "python scripts\\validate-release-evidence.py",
-        "python scripts\\test_security_baseline_scan.py",
-        "python scripts\\security-baseline-scan.py",
-        "powershell -NoProfile -ExecutionPolicy Bypass -File .\\scripts\\acme-smoke\\test-run-certbot-smoke.ps1",
-        "cmake -S . -B build",
-        "cmake --build build --config Debug",
-        "ctest --test-dir build -C Debug --output-on-failure",
-        "go test ./...",
-        "go vet ./...",
-        "go build -o .tmp\\verify-local\\anopki-service.exe ./cmd/anopki-service",
+        'python scripts\\validate-docs.py',
+        'python scripts\\test_validate_docs.py',
+        'python scripts\\test_webhook_receiver_verification.py',
+        'python scripts\\test_verify_local.py',
+        'python scripts\\test_validate_version_metadata.py',
+        'python scripts\\validate-version-metadata.py',
+        'python scripts\\test_generate_release_metadata.py',
+        'python scripts\\test_verify_go_release.py',
+        'python scripts\\test_validate_release_artifacts.py',
+        'python scripts\\test_validate_service_contracts.py',
+        'python scripts\\validate-service-contracts.py',
+        'python scripts\\test_validate_core_cli_contracts.py',
+        'python scripts\\validate-core-cli-contracts.py',
+        'python scripts\\test_validate_release_evidence.py',
+        'python scripts\\validate-release-evidence.py',
+        'python scripts\\test_security_baseline_scan.py',
+        'python scripts\\security-baseline-scan.py',
+        'powershell -NoProfile -ExecutionPolicy Bypass -File .\\scripts\\acme-smoke\\test-run-certbot-smoke.ps1',
+        'cmake -S . -B build',
+        'cmake --build build --config Debug',
+        'ctest --test-dir build -C Debug --output-on-failure',
+        'python scripts\\verify-go-release.py --profile baseline --out-dir .tmp\\go-evidence\\verify-local',
     ]
     commands = [line.strip() for line in result.stdout.splitlines() if line.strip()]
     if commands != expected_commands:
@@ -78,8 +77,8 @@ def main() -> None:
         raise SystemExit("verify-local must keep Go build cache inside the workspace")
     if 'Command = @("powershell",' in script_text:
         raise SystemExit("verify-local must not hard-code nested PowerShell executable")
-    if '"go", "build", "-o",' not in script_text or ".tmp" not in script_text:
-        raise SystemExit("verify-local must write Go build output under .tmp")
+    if "verify-go-release.py" not in script_text or ".tmp\\go-evidence" not in script_text:
+        raise SystemExit("verify-local must run the supported-Go evidence wrapper under .tmp")
     if "Resolve-OpenSSLRuntime" not in script_text or "libcrypto*.dll" not in script_text:
         raise SystemExit("verify-local must validate Windows OpenSSL runtime DLLs")
     if "$env:PATH = $previousPath" not in script_text:

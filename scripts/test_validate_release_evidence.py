@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: MPL-2.0
-"""Tests for release evidence validation."""
+"""Tests for Community release evidence validation."""
 
 from __future__ import annotations
 
@@ -21,32 +21,20 @@ def require_release_workflow() -> None:
         raise SystemExit("missing release workflow: .github/workflows/release.yml")
     text = RELEASE_WORKFLOW.read_text(encoding="utf-8")
     required = [
-        "on:",
-        "workflow_dispatch:",
-        "tags:",
-        "contents: read",
-        "contents: write",
-        "id-token: write",
-        'go-version: "1.25.11"',
-        "cmake --build build-release --config Release",
-        'VERSION="$(cat VERSION)"',
-        "go build -ldflags",
-        "anopki-service-v${VERSION}-linux-amd64.tar.gz",
+        "on:", "workflow_dispatch:", "tags:", "contents: read", "contents: write",
+        "id-token: write", 'go-version: "1.25.12"',
+        "python scripts/verify-go-release.py", "--profile full",
+        "anopki-go-verification.tar.gz",
+        "cmake --build build-release --config Release", 'VERSION="$(cat VERSION)"',
+        "go build -ldflags", "anopki-service-v${VERSION}-linux-amd64.tar.gz",
         "anopki-core-v${VERSION}-linux-amd64.tar.gz",
-        "python scripts/validate-release-artifacts.py dist",
-        "syft scan dir:dist",
-        "cosign sign-blob",
-        "actions/upload-artifact",
-        "actions/download-artifact",
-        "SIGNING-STATUS.txt",
-        "Signing skipped: manual dry-run",
+        "python scripts/validate-release-artifacts.py dist", "syft scan dir:dist",
+        "cosign sign-blob", "actions/upload-artifact", "actions/download-artifact",
+        "SIGNING-STATUS.txt", "Signing skipped: manual dry-run",
         "publish-tagged-release:",
         "if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')",
-        "environment: release",
-        "Require a signed annotated tag",
-        "GH_TOKEN: ${{ github.token }}",
-        "gh release create",
-        "gh release upload",
+        "environment: release", "Require a signed annotated tag",
+        "GH_TOKEN: ${{ github.token }}", "gh release create", "gh release upload",
     ]
     missing = [value for value in required if value not in text]
     if missing:
@@ -57,6 +45,7 @@ def copy_release_evidence_inputs(dst: Path) -> None:
     files = [
         "docs/reference/release-evidence.md",
         "scripts/verify-local.ps1",
+        "scripts/verify-go-release.py",
         ".github/workflows/ci.yml",
         ".github/workflows/release.yml",
     ]
@@ -69,197 +58,134 @@ def copy_release_evidence_inputs(dst: Path) -> None:
 def run_validator(root: Path) -> subprocess.CompletedProcess[str]:
     return subprocess.run(
         [sys.executable, str(SCRIPT), "--root", str(root)],
-        cwd=ROOT,
-        text=True,
-        capture_output=True,
-        check=False,
+        cwd=ROOT, text=True, capture_output=True, check=False,
     )
+
+
+def mutate(path: Path, old: str, new: str = "") -> None:
+    text = path.read_text(encoding="utf-8")
+    if old not in text:
+        raise AssertionError(f"missing fixture text: {old}")
+    path.write_text(text.replace(old, new, 1), encoding="utf-8")
 
 
 def test_missing_compatibility_matrix_row_fails(tmp_path: Path) -> None:
     copy_release_evidence_inputs(tmp_path)
-    evidence = tmp_path / "docs" / "reference" / "release-evidence.md"
-    evidence.write_text(
-        evidence.read_text(encoding="utf-8").replace("| certbot |", "| certbot-drift |", 1),
-        encoding="utf-8",
-    )
-
+    mutate(tmp_path / "docs/reference/release-evidence.md", "| certbot |", "| certbot-drift |")
     result = run_validator(tmp_path)
-
     assert result.returncode == 1
     assert "release evidence compatibility matrix missing" in result.stderr
 
 
 def test_compatibility_matrix_row_detail_drift_fails(tmp_path: Path) -> None:
     copy_release_evidence_inputs(tmp_path)
-    evidence = tmp_path / "docs" / "reference" / "release-evidence.md"
-    evidence.write_text(
-        evidence.read_text(encoding="utf-8").replace(
-            "CI pins at least Go 1.25.11",
-            "CI pins at least Go 1.25",
-            1,
-        ),
-        encoding="utf-8",
-    )
-
+    mutate(tmp_path / "docs/reference/release-evidence.md", "The maintained floor is Go 1.25.11", "The maintained floor is Go 1.25")
     result = run_validator(tmp_path)
-
     assert result.returncode == 1
     assert "release evidence compatibility matrix row detail drift" in result.stderr
 
 
 def test_certbot_wsl_evidence_link_drift_fails(tmp_path: Path) -> None:
     copy_release_evidence_inputs(tmp_path)
-    evidence = tmp_path / "docs" / "reference" / "release-evidence.md"
-    evidence.write_text(
-        evidence.read_text(encoding="utf-8").replace("WSL certbot evidence", "certbot evidence", 1),
-        encoding="utf-8",
-    )
-
+    mutate(tmp_path / "docs/reference/release-evidence.md", "WSL certbot evidence", "certbot evidence")
     result = run_validator(tmp_path)
-
     assert result.returncode == 1
     assert "release evidence compatibility matrix row detail drift" in result.stderr
 
 
 def test_missing_ci_version_metadata_validation_fails(tmp_path: Path) -> None:
     copy_release_evidence_inputs(tmp_path)
-    ci = tmp_path / ".github" / "workflows" / "ci.yml"
-    ci.write_text(
-        ci.read_text(encoding="utf-8").replace("python scripts/validate-version-metadata.py", "", 1),
-        encoding="utf-8",
-    )
-
+    mutate(tmp_path / ".github/workflows/ci.yml", "python scripts/validate-version-metadata.py")
     result = run_validator(tmp_path)
-
     assert result.returncode == 1
     assert "validate-version-metadata.py" in result.stderr
 
 
-def test_missing_ci_staticcheck_fails(tmp_path: Path) -> None:
+def test_missing_go_runner_staticcheck_fails(tmp_path: Path) -> None:
     copy_release_evidence_inputs(tmp_path)
-    ci = tmp_path / ".github" / "workflows" / "ci.yml"
-    ci.write_text(
-        ci.read_text(encoding="utf-8").replace(
-            "go run honnef.co/go/tools/cmd/staticcheck@latest ./...",
-            "",
-            1,
-        ),
-        encoding="utf-8",
-    )
-
+    mutate(tmp_path / "scripts/verify-go-release.py", 'STATICCHECK_VERSION = "2026.1"')
     result = run_validator(tmp_path)
-
     assert result.returncode == 1
-    assert "staticcheck@latest" in result.stderr
+    assert "STATICCHECK_VERSION" in result.stderr
 
 
-def test_missing_ci_gosec_fails(tmp_path: Path) -> None:
+def test_missing_go_runner_gosec_fails(tmp_path: Path) -> None:
     copy_release_evidence_inputs(tmp_path)
-    ci = tmp_path / ".github" / "workflows" / "ci.yml"
-    ci.write_text(
-        ci.read_text(encoding="utf-8").replace(
-            "go run github.com/securego/gosec/v2/cmd/gosec@latest ./...",
-            "",
-            1,
-        ),
-        encoding="utf-8",
-    )
-
+    mutate(tmp_path / "scripts/verify-go-release.py", 'GOSEC_VERSION = "v2.25.0"')
     result = run_validator(tmp_path)
-
     assert result.returncode == 1
-    assert "gosec@latest" in result.stderr
+    assert "GOSEC_VERSION" in result.stderr
+
+
+def test_missing_ci_go_evidence_upload_fails(tmp_path: Path) -> None:
+    copy_release_evidence_inputs(tmp_path)
+    mutate(tmp_path / ".github/workflows/ci.yml", "anopki-go-analysis-1.26.5")
+    result = run_validator(tmp_path)
+    assert result.returncode == 1
+    assert "anopki-go-analysis-1.26.5" in result.stderr
 
 
 def test_missing_ci_fuzz_smoke_fails(tmp_path: Path) -> None:
     copy_release_evidence_inputs(tmp_path)
-    ci = tmp_path / ".github" / "workflows" / "ci.yml"
-    ci.write_text(
-        ci.read_text(encoding="utf-8").replace("ANOPKI_ENABLE_FUZZING=ON", "", 1),
-        encoding="utf-8",
-    )
-
+    mutate(tmp_path / ".github/workflows/ci.yml", "ANOPKI_ENABLE_FUZZING=ON")
     result = run_validator(tmp_path)
-
     assert result.returncode == 1
     assert "ANOPKI_ENABLE_FUZZING=ON" in result.stderr
 
 
+def test_missing_release_go_evidence_fails(tmp_path: Path) -> None:
+    copy_release_evidence_inputs(tmp_path)
+    mutate(tmp_path / ".github/workflows/release.yml", "anopki-go-verification.tar.gz")
+    result = run_validator(tmp_path)
+    assert result.returncode == 1
+    assert "anopki-go-verification.tar.gz" in result.stderr
+
+
 def test_missing_release_signing_evidence_fails(tmp_path: Path) -> None:
     copy_release_evidence_inputs(tmp_path)
-    release = tmp_path / ".github" / "workflows" / "release.yml"
-    release.write_text(
-        release.read_text(encoding="utf-8").replace("cosign sign-blob", "", 1),
-        encoding="utf-8",
-    )
-
+    mutate(tmp_path / ".github/workflows/release.yml", "cosign sign-blob")
     result = run_validator(tmp_path)
-
     assert result.returncode == 1
     assert "cosign sign-blob" in result.stderr
 
 
 def test_missing_release_dry_run_gate_fails(tmp_path: Path) -> None:
     copy_release_evidence_inputs(tmp_path)
-    release = tmp_path / ".github" / "workflows" / "release.yml"
-    release.write_text(
-        release.read_text(encoding="utf-8").replace(
-            "if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')",
-            "if: always()",
-            1,
-        ),
-        encoding="utf-8",
+    mutate(
+        tmp_path / ".github/workflows/release.yml",
+        "if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')",
+        "if: always()",
     )
-
     result = run_validator(tmp_path)
-
     assert result.returncode == 1
     assert "github.event_name == 'push'" in result.stderr
 
 
 def test_release_evidence_placeholder_fails(tmp_path: Path) -> None:
     copy_release_evidence_inputs(tmp_path)
-    evidence = tmp_path / "docs" / "reference" / "release-evidence.md"
-    evidence.write_text(
-        evidence.read_text(encoding="utf-8") + "\nTODO\n",
-        encoding="utf-8",
-    )
-
+    evidence = tmp_path / "docs/reference/release-evidence.md"
+    evidence.write_text(evidence.read_text(encoding="utf-8") + "\nTODO\n", encoding="utf-8")
     result = run_validator(tmp_path)
-
     assert result.returncode == 1
     assert "contains placeholder text" in result.stderr
 
 
 def test_missing_local_verification_evidence_fails(tmp_path: Path) -> None:
     copy_release_evidence_inputs(tmp_path)
-    evidence = tmp_path / "docs" / "reference" / "release-evidence.md"
-    evidence.write_text(
-        evidence.read_text(encoding="utf-8").replace("- `python scripts/validate-docs.py`", "", 1),
-        encoding="utf-8",
-    )
-
+    mutate(tmp_path / "docs/reference/release-evidence.md", "- `python scripts/validate-docs.py`")
     result = run_validator(tmp_path)
-
     assert result.returncode == 1
     assert "release evidence missing local verification commands" in result.stderr
 
 
 def test_missing_compatibility_evidence_template_fails(tmp_path: Path) -> None:
     copy_release_evidence_inputs(tmp_path)
-    evidence = tmp_path / "docs" / "reference" / "release-evidence.md"
-    evidence.write_text(
-        evidence.read_text(encoding="utf-8").replace(
-            "## Release Candidate Compatibility Evidence Template",
-            "## Release Candidate Compatibility Drift",
-            1,
-        ),
-        encoding="utf-8",
+    mutate(
+        tmp_path / "docs/reference/release-evidence.md",
+        "## Release Candidate Compatibility Evidence Template",
+        "## Release Candidate Compatibility Drift",
     )
-
     result = run_validator(tmp_path)
-
     assert result.returncode == 1
     assert "release evidence compatibility template missing" in result.stderr
 
@@ -272,30 +198,25 @@ def main() -> None:
         raise SystemExit(result.returncode)
     if "release evidence ok" not in result.stdout:
         raise SystemExit(f"unexpected validator output: {result.stdout!r}")
-    with tempfile.TemporaryDirectory() as dirname:
-        test_missing_compatibility_matrix_row_fails(Path(dirname))
-    with tempfile.TemporaryDirectory() as dirname:
-        test_compatibility_matrix_row_detail_drift_fails(Path(dirname))
-    with tempfile.TemporaryDirectory() as dirname:
-        test_certbot_wsl_evidence_link_drift_fails(Path(dirname))
-    with tempfile.TemporaryDirectory() as dirname:
-        test_missing_ci_version_metadata_validation_fails(Path(dirname))
-    with tempfile.TemporaryDirectory() as dirname:
-        test_missing_ci_staticcheck_fails(Path(dirname))
-    with tempfile.TemporaryDirectory() as dirname:
-        test_missing_ci_gosec_fails(Path(dirname))
-    with tempfile.TemporaryDirectory() as dirname:
-        test_missing_ci_fuzz_smoke_fails(Path(dirname))
-    with tempfile.TemporaryDirectory() as dirname:
-        test_missing_release_signing_evidence_fails(Path(dirname))
-    with tempfile.TemporaryDirectory() as dirname:
-        test_missing_release_dry_run_gate_fails(Path(dirname))
-    with tempfile.TemporaryDirectory() as dirname:
-        test_release_evidence_placeholder_fails(Path(dirname))
-    with tempfile.TemporaryDirectory() as dirname:
-        test_missing_local_verification_evidence_fails(Path(dirname))
-    with tempfile.TemporaryDirectory() as dirname:
-        test_missing_compatibility_evidence_template_fails(Path(dirname))
+    tests = [
+        test_missing_compatibility_matrix_row_fails,
+        test_compatibility_matrix_row_detail_drift_fails,
+        test_certbot_wsl_evidence_link_drift_fails,
+        test_missing_ci_version_metadata_validation_fails,
+        test_missing_go_runner_staticcheck_fails,
+        test_missing_go_runner_gosec_fails,
+        test_missing_ci_go_evidence_upload_fails,
+        test_missing_ci_fuzz_smoke_fails,
+        test_missing_release_go_evidence_fails,
+        test_missing_release_signing_evidence_fails,
+        test_missing_release_dry_run_gate_fails,
+        test_release_evidence_placeholder_fails,
+        test_missing_local_verification_evidence_fails,
+        test_missing_compatibility_evidence_template_fails,
+    ]
+    for test in tests:
+        with tempfile.TemporaryDirectory() as dirname:
+            test(Path(dirname))
     require_release_workflow()
     print("release evidence validator tests ok")
 

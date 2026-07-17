@@ -14,9 +14,9 @@ Completed backend and FileKeyProvider work is intentionally omitted.
 
 ## P1 — Release operations
 
-- Run the complete local verification suite with a supported Go toolchain.
+- Run and review `verify-go-release.py --profile full` with a supported Go toolchain on the exact Community commit.
 - Review remote CI for the exact cumulative Community commit.
-- Generate and review service/core archives, backend metadata, release metadata, checksums, SBOM and signing status.
+- Generate and review service/core archives, `anopki-go-verification.tar.gz`, backend metadata, release metadata, checksums, SBOM and signing status.
 - Keep compatibility evidence current for OS, Go, OpenSSL, SQLite, PostgreSQL, lego and certbot.
 
 ## P1 — KeyProvider boundary maintenance

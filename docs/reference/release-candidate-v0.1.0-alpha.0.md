@@ -71,7 +71,7 @@ workflow. A local pass does not populate GitHub Actions evidence.
 | Candidate commit SHA | Pending - candidate commit required | Pending |
 | GitHub Actions run | Pending - `.github/workflows/ci.yml` run required | Pending run URL |
 | Docs and contracts | Pending - validator jobs must complete | Pending job URL |
-| Go test matrix | Pending - Go 1.25.11 and current CI Go must complete | Pending job URLs |
+| Go test matrix | Pending - Go 1.25.12 and Go 1.26.5 runner lanes must complete | Pending job URLs |
 | Go race, static analysis, and security | Pending - `go-analysis` must complete | Pending job URL |
 | PostgreSQL | Pending - PostgreSQL 16 integration must complete | Pending job URL and recorded server version |
 | C++ build and CTest | Pending - `cpp-core` must complete | Pending job URL, compiler, CMake, and OpenSSL versions |
@@ -115,6 +115,7 @@ toolchain evidence.
   Clang/libFuzzer/AddressSanitizer build; use the CI fuzz job.
 - `staticcheck`, `gosec`, and `govulncheck` were not rerun locally because they
   require separately acquired tools; candidate CI remains the evidence source.
+- The Community Go evidence runner was exercised in the sandbox and correctly failed closed on host Go 1.23.2 because the maintained minimum is Go 1.25.11; this is environment-blocker evidence, not supported-Go execution evidence.
 - The candidate artifact dry-run has not executed in GitHub Actions. Release
   archives, `SHA256SUMS`, SBOM, and explicit signing-skip evidence remain
   pending; tagging and publishing are outside this milestone.

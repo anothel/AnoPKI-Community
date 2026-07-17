@@ -119,6 +119,12 @@ python scripts\validate-version-metadata.py
 python scripts\test_generate_release_metadata.py
 # release metadata generator tests ok
 
+python scripts\test_verify_go_release.py
+# Go release verification runner tests ok
+
+python scripts\verify-go-release.py --profile baseline --out-dir .tmp\go-evidence\verify-local
+# requires Go 1.25.11+ and writes redacted JSON/Markdown/log evidence
+
 python scripts\test_validate_release_artifacts.py
 # release artifact tests ok
 

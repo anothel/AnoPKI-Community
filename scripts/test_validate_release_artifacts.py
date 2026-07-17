@@ -6,6 +6,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import shutil
 import subprocess
 import sys
 import tarfile
@@ -23,6 +24,92 @@ def write_archive(path: Path, member_name: str) -> None:
     with tarfile.open(path, "w:gz") as archive:
         archive.add(payload, arcname=member_name)
 
+
+
+def write_go_evidence_archive(
+    path: Path,
+    *,
+    result: str = "passed",
+    missing_log: str = "",
+    commit: str = "0123456789abcdef0123456789abcdef01234567",
+    extra_field: bool = False,
+    extra_member: bool = False,
+) -> None:
+    root = path.parent / "go-evidence"
+    if root.exists():
+        shutil.rmtree(root)
+    logs = root / "logs"
+    logs.mkdir(parents=True, exist_ok=True)
+    step_names = [
+        "go-test",
+        "go-vet",
+        "go-build",
+        "go-race",
+        "staticcheck",
+        "gosec",
+        "govulncheck",
+    ]
+    commands = [
+        ["go", "test", "./..."],
+        ["go", "vet", "./..."],
+        ["go", "build", "-trimpath", "-o", "<evidence-dir>/anopki-service", "./cmd/anopki-service"],
+        ["go", "test", "-race", "./..."],
+        ["go", "run", "honnef.co/go/tools/cmd/staticcheck@2026.1", "./..."],
+        ["go", "run", "github.com/securego/gosec/v2/cmd/gosec@v2.25.0", "./..."],
+        ["go", "run", "golang.org/x/vuln/cmd/govulncheck@v1.1.4", "./..."],
+    ]
+    evidence = {
+        "schema_version": 1,
+        "product": "AnoPKI",
+        "edition": "community",
+        "product_profile": "community-openssl",
+        "profile": "full",
+        "commit": commit,
+        "minimum_go_version": "1.25.11",
+        "platform": "linux/amd64",
+        "started_at": "2026-07-17T01:00:00Z",
+        "completed_at": "2026-07-17T01:01:00Z",
+        "result": result,
+        "go_version": "go version go1.25.12 linux/amd64",
+        "go_environment": {
+            "GOOS": "linux",
+            "GOARCH": "amd64",
+            "GOVERSION": "go1.25.12",
+            "CGO_ENABLED": "1",
+        },
+        "tool_versions": {
+            "staticcheck": "2026.1",
+            "gosec": "v2.25.0",
+            "govulncheck": "v1.1.4",
+        },
+        "steps": [
+            {
+                "name": name,
+                "command": command,
+                "status": "passed",
+                "exit_code": 0,
+                "duration_seconds": 1.0,
+                "log_file": f"logs/{index:02d}-{name}.log",
+            }
+            for index, (name, command) in enumerate(zip(step_names, commands), start=1)
+        ],
+    }
+    if extra_field:
+        evidence["unexpected"] = "drift"
+    (root / "go-verification.json").write_text(json.dumps(evidence), encoding="utf-8")
+    (root / "go-verification.md").write_text("# Go evidence\n", encoding="utf-8")
+    for index, name in enumerate(step_names, start=1):
+        log_name = f"{index:02d}-{name}.log"
+        if log_name != missing_log:
+            (logs / log_name).write_text("pass\n", encoding="utf-8")
+    if extra_member:
+        (root / "unexpected.txt").write_text("unexpected\n", encoding="utf-8")
+    with tarfile.open(path, "w:gz") as archive:
+        archive.add(root / "go-verification.json", arcname="go-verification.json")
+        archive.add(root / "go-verification.md", arcname="go-verification.md")
+        archive.add(logs, arcname="logs")
+        if extra_member:
+            archive.add(root / "unexpected.txt", arcname="unexpected.txt")
 
 def backend_info() -> dict[str, object]:
     return {
@@ -100,6 +187,7 @@ def write_valid_dist(dist: Path) -> tuple[Path, Path]:
     core = dist / f"anopki-core-v{VERSION}-linux-amd64.tar.gz"
     write_archive(service, "anopki-service")
     write_archive(core, "anopki-core")
+    write_go_evidence_archive(dist / "anopki-go-verification.tar.gz")
     backend = backend_info()
     (dist / "anopki-backend-info.json").write_text(json.dumps(backend), encoding="utf-8")
     (dist / "anopki-release-metadata.json").write_text(json.dumps(release_metadata(backend)), encoding="utf-8")
@@ -298,6 +386,76 @@ def test_release_metadata_sensitive_field_fails() -> None:
     assert "unknown fields" in result.stderr
 
 
+
+def test_missing_go_evidence_fails() -> None:
+    with tempfile.TemporaryDirectory() as tmp:
+        dist = Path(tmp)
+        write_valid_dist(dist)
+        (dist / "anopki-go-verification.tar.gz").unlink()
+        rewrite_checksums(dist)
+        result = run_validator(dist)
+    assert result.returncode == 1
+    assert "missing Go verification evidence" in result.stderr
+
+
+def test_failed_go_evidence_fails() -> None:
+    with tempfile.TemporaryDirectory() as tmp:
+        dist = Path(tmp)
+        write_valid_dist(dist)
+        write_go_evidence_archive(dist / "anopki-go-verification.tar.gz", result="failed")
+        rewrite_checksums(dist)
+        result = run_validator(dist)
+    assert result.returncode == 1
+    assert "full profile did not pass" in result.stderr
+
+
+def test_incomplete_go_evidence_fails() -> None:
+    with tempfile.TemporaryDirectory() as tmp:
+        dist = Path(tmp)
+        write_valid_dist(dist)
+        write_go_evidence_archive(dist / "anopki-go-verification.tar.gz", missing_log="03-go-build.log")
+        rewrite_checksums(dist)
+        result = run_validator(dist)
+    assert result.returncode == 1
+    assert "missing Go evidence members" in result.stderr
+
+
+def test_go_evidence_commit_mismatch_fails() -> None:
+    with tempfile.TemporaryDirectory() as tmp:
+        dist = Path(tmp)
+        write_valid_dist(dist)
+        write_go_evidence_archive(
+            dist / "anopki-go-verification.tar.gz",
+            commit="f" * 40,
+        )
+        rewrite_checksums(dist)
+        result = run_validator(dist)
+    assert result.returncode == 1
+    assert "commit does not match" in result.stderr
+
+
+
+def test_unexpected_go_evidence_member_fails() -> None:
+    with tempfile.TemporaryDirectory() as tmp:
+        dist = Path(tmp)
+        write_valid_dist(dist)
+        write_go_evidence_archive(dist / "anopki-go-verification.tar.gz", extra_member=True)
+        rewrite_checksums(dist)
+        result = run_validator(dist)
+    assert result.returncode == 1
+    assert "unexpected Go evidence members" in result.stderr
+
+
+def test_unknown_go_evidence_field_fails() -> None:
+    with tempfile.TemporaryDirectory() as tmp:
+        dist = Path(tmp)
+        write_valid_dist(dist)
+        write_go_evidence_archive(dist / "anopki-go-verification.tar.gz", extra_field=True)
+        rewrite_checksums(dist)
+        result = run_validator(dist)
+    assert result.returncode == 1
+    assert "unknown fields" in result.stderr
+
 def main() -> None:
     test_valid_release_artifacts_pass()
     test_missing_release_archive_fails()
@@ -313,6 +471,12 @@ def main() -> None:
     test_backend_profile_mismatch_fails()
     test_release_metadata_backend_mismatch_fails()
     test_release_metadata_sensitive_field_fails()
+    test_missing_go_evidence_fails()
+    test_failed_go_evidence_fails()
+    test_incomplete_go_evidence_fails()
+    test_go_evidence_commit_mismatch_fails()
+    test_unexpected_go_evidence_member_fails()
+    test_unknown_go_evidence_field_fails()
     print("release artifact tests ok")
 
 

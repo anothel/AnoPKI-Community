@@ -9,6 +9,7 @@ commands and known gaps before tagging.
 
 ### Added
 
+- A fail-closed Community Go release verification runner that requires Go 1.25.11 or newer, pins race/static-analysis/security tool versions, emits redacted JSON/Markdown/log evidence, and is consumed by local verification, CI, and release artifacts.
 - Strict Go parsing of `anopki-core backend info`, additive `/version` backend
   and KeyProvider policy metadata, and release artifacts that bind the exact
   Community/OpenSSL profile to backend capabilities without exposing key refs.

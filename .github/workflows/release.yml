@@ -17,10 +17,13 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-go@v5
         with:
-          go-version: "1.25.11"
+          go-version: "1.25.12"
           cache-dependency-path: |
             service/go.mod
             service/go.sum
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.x"
       - run: sudo apt-get update && sudo apt-get install -y cmake g++ libssl-dev pkg-config
       - uses: anchore/sbom-action/download-syft@v0.17.9
       - name: Record stable toolchain
@@ -30,6 +33,15 @@ jobs:
           c++ --version
           pkg-config --modversion openssl
       - run: mkdir -p dist
+      - name: Run supported-Go full verification
+        run: >-
+          python scripts/verify-go-release.py
+          --profile full
+          --out-dir .tmp/release-go-evidence
+          --commit "${GITHUB_SHA}"
+      - name: Package Go verification evidence
+        run: |
+          tar -czf dist/anopki-go-verification.tar.gz -C .tmp/release-go-evidence go-verification.json go-verification.md logs
       - name: Read release version
         run: |
           VERSION="$(cat VERSION)"

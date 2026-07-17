@@ -9,11 +9,11 @@ Current draft: [v0.1.0-alpha.0 candidate evidence](release-candidate-v0.1.0-alph
 
 | Area | Selected tool | Evidence hook |
 | --- | --- | --- |
-| Go test, vet, and build | Go 1.25.11 minimum plus current CI Go | CI `go-baseline` matrix. |
-| Go staticcheck | `staticcheck` | CI `go-analysis` job via `go run honnef.co/go/tools/cmd/staticcheck@latest ./...`. |
-| Go security scan | `gosec` | CI `go-analysis` job via `go run github.com/securego/gosec/v2/cmd/gosec@latest ./...`. |
-| Go race detector | `go test -race ./...` | CI `go-analysis` job with `CGO_ENABLED=1`. |
-| Go dependency vulnerability scan | `govulncheck` | CI `go-analysis` job via `go run golang.org/x/vuln/cmd/govulncheck@latest ./...`. |
+| Go baseline | Maintained floor Go 1.25.11; CI lanes Go 1.25.12 and Go 1.26.5 | `verify-go-release.py --profile baseline` in the CI matrix. |
+| Go staticcheck | `staticcheck` 2026.1 | `verify-go-release.py --profile analysis` in CI. |
+| Go security scan | `gosec` v2.25.0 | `verify-go-release.py --profile analysis` in CI. |
+| Go race detector | `go test -race ./...` | `verify-go-release.py --profile analysis` in CI. |
+| Go dependency vulnerability scan | `govulncheck` v1.1.4 | `verify-go-release.py --profile analysis` in CI. |
 | PostgreSQL | PostgreSQL 16 service integration | CI `postgres-integration` job records client/server versions. |
 | C++ parser fuzz/sanitizer smoke | Clang/libFuzzer with AddressSanitizer | CI `cpp-fuzz-smoke` job builds CSR, OCSP, and CRL parser targets and runs each for at most 20 seconds. |
 | Community boundary | `scripts/validate-community-boundary.py` | CI `community-boundary` job. |
@@ -28,6 +28,7 @@ Pre-1.0 releases distribute archives, not installers or container images:
 - source archive from the signed tag,
 - `anopki-service` binary archive,
 - `anopki-core` CLI binary archive,
+- `anopki-go-verification.tar.gz` containing full-profile JSON, Markdown and redacted logs,
 - `anopki-backend-info.json` from the built Core artifact,
 - `anopki-release-metadata.json` binding version/commit, product profile,
   backend evidence, and Community KeyProvider policy,
@@ -38,7 +39,7 @@ Pre-1.0 releases distribute archives, not installers or container images:
 
 The manually dispatched release workflow runs with read-only repository
 permissions. It builds Linux amd64 service/core archives with the repository
-version in their filenames, records `anopki-core backend info`, generates
+version in their filenames, runs the supported-Go full evidence wrapper, records `anopki-core backend info`, generates
 `anopki-release-metadata.json`, writes checksums for archives and both profile
 metadata files, validates their exact schema and cross-file consistency,
 generates a CycloneDX SBOM with `syft`, records signing as skipped, and uploads
@@ -59,7 +60,7 @@ Each release candidate records this matrix in release notes:
 | Area | Required evidence |
 | --- | --- |
 | OS | GitHub Actions Ubuntu result plus any Windows local verification used for release. |
-| Go | `go version` from CI and release host; CI pins at least Go 1.25.11 for standard-library vulnerability fixes. |
+| Go | `go version` from CI and release host; The maintained floor is Go 1.25.11; CI pins Go 1.25.12 and Go 1.26.5 and uploads runner evidence. |
 | OpenSSL | CMake configure output or package version used by C++ build. |
 | SQLite | Go test result for memory/SQLite stores. |
 | PostgreSQL | PostgreSQL integration job result and DSN major version. |
@@ -82,6 +83,30 @@ Copy this table into release notes for each release candidate and replace
 | certbot | WSL/Linux/elevated Windows smoke command/output when ACME behavior changed | pending | pending |
 
 
+
+## Supported-Go Evidence Runner
+
+`scripts/verify-go-release.py` is the maintained Community entry point for Go
+release evidence. It sets `GOTOOLCHAIN=local`, requires Go 1.25.11 or newer,
+keeps build and module caches under `.tmp`, stops at the first failed command,
+binds the evidence to the exact 40-character Community commit when available,
+and writes `go-verification.json`, `go-verification.md`, and redacted command
+logs. Only Go version, OS, architecture and CGO state are retained from `go env`;
+proxy configuration, credentials and secret-valued environment variables are not evidence fields.
+
+Profiles are explicit:
+
+- `baseline`: `go test ./...`, `go vet ./...`, and a trimmed service build.
+- `analysis`: `go test -race ./...`, Staticcheck 2026.1, gosec v2.25.0,
+  and govulncheck v1.1.4.
+- `full`: baseline followed by analysis.
+
+CI currently supplies exact Go 1.25.12 and Go 1.26.5 toolchains. The release
+workflow packages passing full-profile output as `anopki-go-verification.tar.gz`;
+the artifact validator rejects missing, failed, incomplete, or unchecksummed Go
+evidence. A local unsupported toolchain is an environment blocker, not passing
+evidence and not a waiver.
+
 ## Local ZIP Baseline Evidence - 2026-07-06
 
 This evidence was gathered from the uploaded `AnoPKI.zip` source tree in a Linux sandbox. The ZIP did not include `.git`, so `git status --short` and `git diff --check` could not prove repository baseline cleanliness. Re-run those commands in the real repository before tagging.
@@ -91,7 +116,7 @@ Environment observed locally:
 | Tool | Observed value | Release impact |
 | --- | --- | --- |
 | Python | 3.13.5 | Docs and script validators ran locally. |
-| Go | 1.23.2 | Too old for this repository; `go.mod` requires Go 1.25.0 or newer and CI is pinned to Go 1.25.11. |
+| Go | 1.23.2 | Too old for this repository; `go.mod` requires Go 1.25.0 or newer and CI is pinned to Go 1.25.12. |
 | CMake | 3.31.6 | Core configure/build ran locally. |
 | C++ compiler | G++ 14.2.0 | Debug core build and CTest ran locally. |
 | Fuzz compiler | Clang++ 17.0.0 from the local Swift toolchain | Fuzz build ran; default sanitizer execution needs CI confirmation. |
@@ -128,7 +153,7 @@ Local command results:
 | `ASAN_OPTIONS=detect_leaks=0:abort_on_error=1 ./build-fuzz/anopki_core_ocsp_fuzz -runs=1` | Pass locally | 2 runs completed. |
 | `ASAN_OPTIONS=detect_leaks=0:abort_on_error=1 ./build-fuzz/anopki_core_crl_fuzz -runs=1` | Pass locally | 2 runs completed. |
 
-This local ZIP baseline is not enough to tag a release candidate. Release-closing evidence still needs a real Git working tree, Go 1.25.11 service test/build/lint/security jobs, GitHub Actions CI URL, ACME smoke evidence where applicable, and release workflow artifacts containing archives, `SHA256SUMS`, CycloneDX SBOM, cosign signatures, and cosign certificates.
+This local ZIP baseline is not enough to tag a release candidate. Release-closing evidence still needs a real Git working tree, Go 1.25.11+ service test/build/lint/security jobs, GitHub Actions CI URL, ACME smoke evidence where applicable, and release workflow artifacts containing archives, `SHA256SUMS`, CycloneDX SBOM, cosign signatures, and cosign certificates.
 
 ## Local Repository Baseline Evidence - 2026-07-07
 
@@ -190,6 +215,7 @@ evidence still needs release workflow artifacts containing archives,
 - `python scripts/test_validate_version_metadata.py`
 - `python scripts/validate-version-metadata.py`
 - `python scripts/test_generate_release_metadata.py`
+- `python scripts/test_verify_go_release.py`
 - `python scripts/test_validate_release_artifacts.py`
 - `python scripts/test_validate_service_contracts.py`
 - `python scripts/validate-service-contracts.py`
@@ -200,12 +226,14 @@ evidence still needs release workflow artifacts containing archives,
 - `python scripts/test_security_baseline_scan.py`
 - `python scripts/security-baseline-scan.py`
 - `powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\acme-smoke\test-run-certbot-smoke.ps1`
+- `python scripts/verify-go-release.py --profile baseline --out-dir .tmp/go-evidence/verify-local`
+- `python scripts/verify-go-release.py --profile full --out-dir .tmp/go-evidence/full`
 - `go test ./...`
 - `go test -race ./...`
 - `go vet ./...`
-- `go run honnef.co/go/tools/cmd/staticcheck@latest ./...`
-- `go run github.com/securego/gosec/v2/cmd/gosec@latest ./...`
-- `go run golang.org/x/vuln/cmd/govulncheck@latest ./...`
+- `go run honnef.co/go/tools/cmd/staticcheck@2026.1 ./...`
+- `go run github.com/securego/gosec/v2/cmd/gosec@v2.25.0 ./...`
+- `go run golang.org/x/vuln/cmd/govulncheck@v1.1.4 ./...`
 - `go build -o .tmp\verify-local\anopki-service.exe ./cmd/anopki-service`
 - `cmake -S . -B build`
 - `cmake --build build --config Debug`
@@ -215,6 +243,7 @@ evidence still needs release workflow artifacts containing archives,
 - `./build-fuzz/anopki_core_csr_fuzz -runs=1`
 - `./build-fuzz/anopki_core_ocsp_fuzz -runs=1`
 - `./build-fuzz/anopki_core_crl_fuzz -runs=1`
+- release workflow artifact `anopki-go-verification.tar.gz` with passing baseline evidence
 - release workflow artifact containing SBOM output from `syft`
 - release workflow artifact containing signature output from `cosign`
 - compatibility matrix row evidence

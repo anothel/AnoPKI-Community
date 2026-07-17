@@ -101,6 +101,12 @@ $steps = @(
         Command = @("python", "scripts\test_generate_release_metadata.py")
     },
     @{
+        Name = "Go release verification runner tests"
+        Dir = $RepoRoot
+        Display = "python scripts\test_verify_go_release.py"
+        Command = @("python", "scripts\test_verify_go_release.py")
+    },
+    @{
         Name = "release artifact validator tests"
         Dir = $RepoRoot
         Display = "python scripts\test_validate_release_artifacts.py"
@@ -179,22 +185,10 @@ $steps = @(
         Command = @("ctest", "--test-dir", "build", "-C", "Debug", "--output-on-failure")
     },
     @{
-        Name = "Go tests"
-        Dir = Join-Path $RepoRoot "service"
-        Display = "go test ./..."
-        Command = @("go", "test", "./...")
-    },
-    @{
-        Name = "Go vet"
-        Dir = Join-Path $RepoRoot "service"
-        Display = "go vet ./..."
-        Command = @("go", "vet", "./...")
-    },
-    @{
-        Name = "Go build"
-        Dir = Join-Path $RepoRoot "service"
-        Display = "go build -o .tmp\verify-local\anopki-service.exe ./cmd/anopki-service"
-        Command = @("go", "build", "-o", (Join-Path $VerifyTmp "anopki-service.exe"), "./cmd/anopki-service")
+        Name = "Go baseline release verification"
+        Dir = $RepoRoot
+        Display = "python scripts\verify-go-release.py --profile baseline --out-dir .tmp\go-evidence\verify-local"
+        Command = @("python", "scripts\verify-go-release.py", "--profile", "baseline", "--out-dir", ".tmp\go-evidence\verify-local")
     }
 )
 

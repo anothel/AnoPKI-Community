@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: MPL-2.0
-"""Validate release evidence decisions and CI hooks."""
+"""Validate Community release evidence decisions and CI hooks."""
 
 from __future__ import annotations
 
@@ -17,7 +17,10 @@ REQUIRED_DOC_TEXT = [
     "## Tool Decisions",
     "## Release Artifacts",
     "## Compatibility Matrix",
+    "## Supported-Go Evidence Runner",
     "## Required Evidence Per Release Candidate",
+    "verify-go-release.py",
+    "anopki-go-verification.tar.gz",
     "syft",
     "cosign",
     "govulncheck",
@@ -31,13 +34,7 @@ REQUIRED_DOC_TEXT = [
 ]
 
 REQUIRED_COMPATIBILITY_ROWS = [
-    "OS",
-    "Go",
-    "OpenSSL",
-    "SQLite",
-    "PostgreSQL",
-    "lego",
-    "certbot",
+    "OS", "Go", "OpenSSL", "SQLite", "PostgreSQL", "lego", "certbot",
 ]
 
 REQUIRED_COMPATIBILITY_ROW_TEXT = {
@@ -66,17 +63,19 @@ REQUIRED_CI_TEXT = [
     "python scripts/test_validate_version_metadata.py",
     "python scripts/validate-version-metadata.py",
     "python scripts/test_generate_release_metadata.py",
+    "python scripts/test_verify_go_release.py",
     "python scripts/test_validate_release_artifacts.py",
     "python scripts/test_validate_release_evidence.py",
     "python scripts/validate-release-evidence.py",
-    'go-version: "1.25.11"',
-    'go: ["1.25.11", "1.26.x"]',
-    'go-version: "1.26.x"',
-    "go test -race ./...",
-    "go vet ./...",
-    "staticcheck@latest",
-    "gosec@latest",
-    "govulncheck@latest",
+    'go: ["1.25.12", "1.26.5"]',
+    'go-version: "1.26.5"',
+    'go-version: "1.25.12"',
+    "python ../scripts/verify-go-release.py",
+    "--profile baseline",
+    "--profile analysis",
+    "anopki-go-baseline-${{ matrix.go }}",
+    '--commit "${GITHUB_SHA}"',
+    "anopki-go-analysis-1.26.5",
     "ANOPKI_ENABLE_FUZZING=ON",
     "anopki_core_csr_fuzz",
     "anopki_core_ocsp_fuzz",
@@ -91,13 +90,41 @@ REQUIRED_CI_TEXT = [
     "no live lego or certbot compatibility claim",
 ]
 
+REQUIRED_GO_RUNNER_TEXT = [
+    "MINIMUM_GO_VERSION = (1, 25, 11)",
+    '"baseline"',
+    '"analysis"',
+    '"full"',
+    'StepDefinition("go-test"',
+    '(go_command, "test", "./...")',
+    'StepDefinition("go-vet"',
+    '(go_command, "vet", "./...")',
+    'StepDefinition("go-race"',
+    '(go_command, "test", "-race", "./...")',
+    'STATICCHECK_VERSION = "2026.1"',
+    'GOSEC_VERSION = "v2.25.0"',
+    'GOVULNCHECK_VERSION = "v1.1.4"',
+    "honnef.co/go/tools/cmd/staticcheck@",
+    "github.com/securego/gosec/v2/cmd/gosec@",
+    "golang.org/x/vuln/cmd/govulncheck@",
+    "GOTOOLCHAIN",
+    "go-verification.json",
+    "go-verification.md",
+    "resolve_commit",
+    "GITHUB_SHA",
+]
+
 REQUIRED_RELEASE_TEXT = [
     "workflow_dispatch:",
     "tags:",
     "contents: read",
     "contents: write",
     "id-token: write",
-    'go-version: "1.25.11"',
+    'go-version: "1.25.12"',
+    "python scripts/verify-go-release.py",
+    "--profile full",
+    "anopki-go-verification.tar.gz",
+    '--commit "${GITHUB_SHA}"',
     'VERSION="$(cat VERSION)"',
     "go build -ldflags",
     "cmake --build build-release --config Release",
@@ -154,17 +181,13 @@ def markdown_section(text: str, heading: str) -> str:
 
 
 def check_compatibility_matrix(text: str) -> None:
-    text = markdown_section(text, "## Compatibility Matrix")
-    missing = [
-        area
-        for area in REQUIRED_COMPATIBILITY_ROWS
-        if f"| {area} |" not in text
-    ]
+    section = markdown_section(text, "## Compatibility Matrix")
+    missing = [area for area in REQUIRED_COMPATIBILITY_ROWS if f"| {area} |" not in section]
     if missing:
         fail("release evidence compatibility matrix missing:\n" + "\n".join(missing))
     drift = []
     for area, snippets in REQUIRED_COMPATIBILITY_ROW_TEXT.items():
-        match = re.search(rf"^\|\s*{re.escape(area)}\s*\|(?P<body>.*)\|$", text, flags=re.MULTILINE)
+        match = re.search(rf"^\|\s*{re.escape(area)}\s*\|(?P<body>.*)\|$", section, flags=re.MULTILINE)
         if not match:
             continue
         row = match.group("body")
@@ -200,6 +223,7 @@ def main() -> None:
     check_compatibility_matrix(doc)
     check_compatibility_evidence_template(doc)
     check_local_verification_evidence(root, doc)
+    require_text(root / "scripts/verify-go-release.py", REQUIRED_GO_RUNNER_TEXT)
     require_text(root / ".github/workflows/ci.yml", REQUIRED_CI_TEXT)
     require_text(root / ".github/workflows/release.yml", REQUIRED_RELEASE_TEXT)
     print("release evidence ok")
