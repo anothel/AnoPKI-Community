@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: MPL-2.0
 #include "anopki/core/ocsp.hpp"
 #include "openssl_backend.hpp"
+#include "key_providers/file_key_provider.hpp"
 
 #include <openssl/asn1.h>
 #include <openssl/bio.h>
@@ -12,7 +13,6 @@
 #include <openssl/x509v3.h>
 
 #include <cctype>
-#include <fstream>
 #include <iomanip>
 #include <map>
 #include <memory>
@@ -28,9 +28,7 @@ namespace
 
 constexpr const char *kOCSPParseFailed = "ocsp.parse_failed";
 constexpr const char *kOCSPCreateFailed = "ocsp.create_failed";
-constexpr const char *kOCSPSignFailed = "ocsp.sign_failed";
 constexpr const char *kOCSPIssuerParseFailed = "ocsp.issuer_parse_failed";
-constexpr const char *kOCSPKeyReadFailed = "ocsp.key_read_failed";
 constexpr const char *kOCSPInvalidTime = "ocsp.invalid_time";
 constexpr const char *kOCSPResponderInvalid = "ocsp.responder_invalid";
 
@@ -67,21 +65,6 @@ using X509Ptr = std::unique_ptr<X509, OpenSslDeleter<X509, X509_free>>;
 	throw std::runtime_error{code};
 }
 
-std::string read_file(const std::string &path)
-{
-	std::ifstream input{path, std::ios::binary};
-	if (!input)
-	{
-		throw_error(kOCSPKeyReadFailed);
-	}
-	std::string contents{std::istreambuf_iterator<char>{input}, std::istreambuf_iterator<char>{}};
-	if (input.bad())
-	{
-		throw_error(kOCSPKeyReadFailed);
-	}
-	return contents;
-}
-
 X509Ptr parse_certificate(std::string_view pem)
 {
 	BioPtr bio{BIO_new_mem_buf(pem.data(), static_cast<int>(pem.size()))};
@@ -95,21 +78,6 @@ X509Ptr parse_certificate(std::string_view pem)
 		throw_error(kOCSPIssuerParseFailed);
 	}
 	return certificate;
-}
-
-EvpPkeyPtr parse_private_key(std::string_view pem)
-{
-	BioPtr bio{BIO_new_mem_buf(pem.data(), static_cast<int>(pem.size()))};
-	if (!bio)
-	{
-		throw_error(kOCSPKeyReadFailed);
-	}
-	EvpPkeyPtr key{PEM_read_bio_PrivateKey(bio.get(), nullptr, nullptr, nullptr)};
-	if (!key)
-	{
-		throw_error(kOCSPKeyReadFailed);
-	}
-	return key;
 }
 
 OCSPRequestPtr parse_request_der(const std::string &der)
@@ -507,9 +475,13 @@ ValidateOCSPResponderResult OpenSSLBackend::validate_ocsp_responder(
 GenerateOCSPResponseResult OpenSSLBackend::generate_ocsp_response(const GenerateOCSPResponseRequest &request) const
 {
 	const OCSPRequestPtr ocsp_request = parse_request_der(request.request_der);
-	const X509Ptr issuer = parse_certificate(request.issuer_certificate_pem);
-	const EvpPkeyPtr issuer_key = parse_private_key(read_file(request.issuer_key_ref));
-	validate_ocsp_signer(issuer.get());
+	const X509Ptr signer_certificate = parse_certificate(request.issuer_certificate_pem);
+	validate_ocsp_signer(signer_certificate.get());
+	const openssl_key_providers::SigningKeyHandle signer_key =
+	    openssl_key_providers::resolve_ocsp_signing_key(
+	        request.issuer_key_ref,
+	        signer_certificate.get(),
+	        openssl_key_providers::provider_policy_from_environment());
 	const Asn1TimePtr this_update = make_time(request.this_update);
 	const Asn1TimePtr next_update = make_time(request.next_update);
 	const std::map<std::string, OCSPCertificateStatus> statuses = statuses_by_id(request.certificates);
@@ -539,8 +511,16 @@ GenerateOCSPResponseResult OpenSSLBackend::generate_ocsp_response(const Generate
 		{
 			found = statuses.find(parsed_id.serial_number);
 		}
-		const OCSPCertificateStatus status =
-		    found == statuses.end() ? OCSPCertificateStatus{parsed_id.serial_number, "unknown", {}, {}} : found->second;
+		const OCSPCertificateStatus status = found == statuses.end()
+		    ? OCSPCertificateStatus{
+		          parsed_id.serial_number,
+		          "unknown",
+		          {},
+		          {},
+		          parsed_id.hash_algorithm,
+		          parsed_id.issuer_name_hash,
+		          parsed_id.issuer_key_hash}
+		    : found->second;
 		Asn1TimePtr revoked_at;
 		ASN1_TIME *revoked_at_raw = nullptr;
 		int reason = OCSP_REVOKED_STATUS_NOSTATUS;
@@ -568,9 +548,15 @@ GenerateOCSPResponseResult OpenSSLBackend::generate_ocsp_response(const Generate
 		throw_error(kOCSPCreateFailed);
 	}
 
-	if (OCSP_basic_sign(basic.get(), issuer.get(), issuer_key.get(), EVP_sha256(), nullptr, 0) != 1)
+	if (OCSP_basic_sign(
+	        basic.get(),
+	        signer_certificate.get(),
+	        signer_key.native_handle(),
+	        EVP_sha256(),
+	        nullptr,
+	        0) != 1)
 	{
-		throw_error(kOCSPSignFailed);
+		openssl_key_providers::throw_provider_sign_failed(signer_key);
 	}
 	OCSPResponsePtr response{OCSP_response_create(OCSP_RESPONSE_STATUS_SUCCESSFUL, basic.get())};
 	if (!response)

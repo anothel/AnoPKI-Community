@@ -1,7 +1,8 @@
 # Key Provider Semantics
 
-This document defines provider policy and the implemented certificate-issuance
-slice. ADR 0007 owns the deliberately scoped hybrid architecture decision.
+This document defines provider policy and the implemented Community/OpenSSL
+local signing slices. ADR 0007 owns the deliberately scoped hybrid architecture
+decision.
 
 ## Selected Boundary
 
@@ -19,14 +20,14 @@ All signing keys are addressed by `key_ref`.
 
 | Class | Intended use | Exportability | Current implementation |
 | --- | --- | --- | --- |
-| File | Local development and smoke | Exportable | Certificate issuance and CRL generation |
+| File | Local development and smoke | Exportable | Certificate issuance, CRL generation, and OCSP response signing |
 | PKCS#11/local HSM | Future production signing | Non-exportable | Not implemented |
 | Cloud KMS | Future Enterprise remote signing | Non-exportable | Not implemented |
 
-## Implemented Certificate And CRL Paths
+## Implemented Certificate, CRL, And OCSP Paths
 
-Community/OpenSSL certificate issuance and CRL generation each resolve a
-single adapter-private `FileKeyProvider`.
+Community/OpenSSL certificate issuance, CRL generation, and OCSP response
+signing each resolve a single adapter-private `FileKeyProvider`.
 
 The provider:
 
@@ -36,18 +37,20 @@ The provider:
 - rejects encrypted private-key PEM non-interactively because the current
   provider contract has no password-input channel,
 - checks requested RSA/ECDSA/Ed25519 compatibility,
-- verifies issuer certificate/key binding,
+- verifies the exact issuer or responder signing certificate/key binding,
 - returns an OpenSSL-private signing handle,
 - reports `fallback_used=false`,
 - emits stable, redacted `provider.*` failures.
 
-`src/backends/openssl/issue.cpp` and `src/backends/openssl/crl.cpp` do not open
-issuer key files or invoke PEM private-key readers. `X509_sign` and
-`X509_CRL_sign` remain in the OpenSSL adapter to preserve the one-operation CLI
-contract and existing certificate/CRL results.
+`src/backends/openssl/issue.cpp`, `src/backends/openssl/crl.cpp`, and
+`src/backends/openssl/ocsp.cpp` do not open signing-key files or invoke PEM
+private-key readers. `X509_sign`, `X509_CRL_sign`, and `OCSP_basic_sign` remain
+in the OpenSSL adapter to preserve the one-operation CLI contract and existing
+certificate, CRL, and OCSP results.
 
-The provider evidence identifies `certificate_issue` and `crl_generate_sign`
-separately. A successful result for one operation is not evidence for another.
+The provider evidence identifies `certificate_issue`, `crl_generate_sign`, and
+`ocsp_response_sign` separately. A successful result for one operation is not
+evidence for another.
 
 ## Go And C++ Evidence Responsibilities
 
@@ -101,14 +104,15 @@ Production mode fails closed when:
 - the selected backend/profile is incompatible,
 - configuration would require fallback.
 
-`ANOPKI_ENV=production` causes certificate issuance through the file provider to
-return `provider.exportability_violation` before the key file is opened.
+`ANOPKI_ENV=production` causes certificate, CRL, and OCSP signing through the
+file provider to return `provider.exportability_violation` before the key file
+is opened.
 
 ## Current Scope Limits
 
 - Certificate issuance: provider-isolated through `FileKeyProvider`.
 - CRL signing: provider-isolated through `FileKeyProvider`.
-- OCSP signing: unchanged; direct file-key path remains.
+- OCSP response signing: provider-isolated through `FileKeyProvider`.
 - Non-exportable provider: not implemented.
 - Remote KMS prepare/sign/finalize: not implemented.
 - Enterprise/AnoCrypto-C provider compatibility: not implemented.

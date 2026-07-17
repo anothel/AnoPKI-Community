@@ -200,6 +200,20 @@ if(BUILD_TESTING)
         COMMAND anopki_crl_file_key_provider_test ${CMAKE_CURRENT_BINARY_DIR}
     )
 
+    add_executable(anopki_ocsp_file_key_provider_test
+        tests/ocsp_file_key_provider_test.cpp
+    )
+    target_link_libraries(anopki_ocsp_file_key_provider_test
+        PRIVATE
+            anopki::core
+            anopki::openssl_adapter
+            OpenSSL::Crypto
+    )
+    add_test(
+        NAME anopki.ocsp_file_key_provider
+        COMMAND anopki_ocsp_file_key_provider_test ${CMAKE_CURRENT_BINARY_DIR}
+    )
+
     add_executable(anopki_file_key_provider_test
         tests/file_key_provider_test.cpp
     )

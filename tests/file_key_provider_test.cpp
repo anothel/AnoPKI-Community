@@ -383,6 +383,14 @@ void test_success_and_golden_equivalence(const TempDirectory &temp)
 	require(crl_handle.evidence().issuer_binding_verified, "CRL issuer binding evidence missing");
 	require(!crl_handle.evidence().fallback_used, "CRL resolver must not use fallback");
 
+	SigningKeyHandle ocsp_handle = resolve_ocsp_signing_key(
+	    "file:" + key_path.string(), issuer.get(), ProviderPolicy{});
+	require(ocsp_handle.native_handle() != nullptr, "OCSP resolver did not return a key handle");
+	require(ocsp_handle.evidence().operation == "ocsp_response_sign", "OCSP operation evidence mismatch");
+	require(ocsp_handle.evidence().requested_signature_algorithm == "sha256", "OCSP signature algorithm evidence mismatch");
+	require(ocsp_handle.evidence().issuer_binding_verified, "OCSP signer binding evidence missing");
+	require(!ocsp_handle.evidence().fallback_used, "OCSP resolver must not use fallback");
+
 	X509Ptr direct = make_unsigned_leaf(issuer.get(), subject_key.get());
 	X509Ptr through_provider = make_unsigned_leaf(issuer.get(), subject_key.get());
 	if (X509_sign(direct.get(), issuer_key.get(), EVP_sha256()) <= 0 ||

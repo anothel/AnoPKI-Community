@@ -18,4 +18,4 @@ From Linux or a single-config build, point `ANOPKI_CORE_BIN` at the built
 
 ## Key Provider Boundary
 
-ADR 0007 keeps the current one-operation CLI contract for the first certificate-issuance file-provider slice. Go performs policy/readiness preflight, while the selected C++ adapter/provider performs the actual key open, binding check, and signing. A future remote KMS prepare/sign/finalize protocol would be a versioned contract change with separate operation-state evidence.
+ADR 0007 keeps the current one-operation CLI contract for the implemented certificate, CRL, and OCSP file-provider slices. Go performs policy/readiness preflight, while the selected C++ adapter/provider performs the actual key open, binding check, and signing. A future remote KMS prepare/sign/finalize protocol would be a versioned contract change with separate operation-state evidence.

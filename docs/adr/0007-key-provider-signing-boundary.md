@@ -2,9 +2,10 @@
 
 ## Status
 
-Accepted. The Community/OpenSSL certificate-issuance and CRL-signing
-`FileKeyProvider` vertical slices are implemented. OCSP, non-exportable
-providers, and remote KMS remain pending and are not implied by this status.
+Accepted. The Community/OpenSSL certificate-issuance, CRL-signing, and
+OCSP-response-signing `FileKeyProvider` vertical slices are implemented.
+Non-exportable providers and remote KMS remain pending and are not implied by
+this status.
 
 ## Context
 
@@ -12,8 +13,8 @@ AnoPKI separates backend-neutral Core operations from selected backend adapters.
 Key-provider selection is a separate axis. Before this slice, the Go service
 classified `key_ref`, performed policy/readiness preflight through
 `keyref.Provider.CheckReady`, and passed the reference to `anopki-core`, while
-the C++ OpenSSL certificate-issuance adapter opened and parsed the issuer key
-file directly.
+the C++ OpenSSL signing paths opened and parsed issuer or responder key files
+directly.
 
 The Go readiness seam is useful defense in depth, but it is not cryptographic
 proof that the expected provider key performed the signature. The signing
@@ -42,7 +43,8 @@ AnoPKI uses a **deliberately scoped hybrid**.
 
 ## Implemented Community/OpenSSL Slices
 
-The implemented local file-provider slices cover certificate issuance and CRL signing.
+The implemented local file-provider slices cover certificate issuance, CRL signing,
+and OCSP response signing.
 
 ```text
 src/backends/openssl/key_providers/
@@ -60,17 +62,20 @@ The adapter-private provider contract supplies:
 - private-key parsing,
 - requested signature-algorithm compatibility checks,
 - issuer-certificate/private-key binding checks,
-- an OpenSSL-private signing-key handle for `X509_sign`,
+- an OpenSSL-private signing-key handle for `X509_sign`, `X509_CRL_sign`, or
+  `OCSP_basic_sign`,
 - evidence that fallback was not used.
 
-`src/backends/openssl/issue.cpp` and `src/backends/openssl/crl.cpp` no longer
-open issuer key files or call PEM private-key readers. Each operation resolves
-one provider once and signs with the returned private adapter handle. OpenSSL
-types remain below `src/backends/openssl`.
+`src/backends/openssl/issue.cpp`, `src/backends/openssl/crl.cpp`, and
+`src/backends/openssl/ocsp.cpp` no longer open signing-key files or call PEM
+private-key readers. Each operation resolves one provider once and signs with
+the returned private adapter handle. OpenSSL types remain below
+`src/backends/openssl`.
 
-Provider evidence records the exact operation as `certificate_issue` or
-`crl_generate_sign`. Both paths preserve the existing Core CLI JSON contract
-and fail without provider, file, backend, or product-profile fallback.
+Provider evidence records the exact operation as `certificate_issue`,
+`crl_generate_sign`, or `ocsp_response_sign`. All three paths preserve the
+existing Core CLI JSON contract and fail without provider, file, backend, or
+product-profile fallback.
 
 The file provider is explicitly:
 
@@ -100,21 +105,21 @@ diagnostics.
 ## Evidence Semantics
 
 `keyref.Provider.CheckReady` remains a policy and preflight signal only.
-Certificate and CRL signing evidence requires the selected C++ provider path to:
+Certificate, CRL, and OCSP signing evidence requires the selected C++ provider path to:
 
 1. resolve the requested reference without fallback,
 2. acquire and parse the actual key,
 3. verify requested algorithm compatibility,
 4. verify issuer certificate/key binding,
-5. complete `X509_sign` or `X509_CRL_sign` with the returned handle,
-6. preserve the certificate and CRL golden results.
+5. complete `X509_sign`, `X509_CRL_sign`, or `OCSP_basic_sign` with the
+   returned handle,
+6. preserve the certificate, CRL, and OCSP golden results.
 
 A release candidate records those test and validator results. A successful Go
 readiness check alone cannot mark cryptographic signing evidence as passed.
 
 ## Non-goals Of This Slice
 
-- OCSP signing migration,
 - real PKCS#11/HSM implementation,
 - real cloud KMS implementation,
 - prepare/sign/finalize protocol,
@@ -123,13 +128,11 @@ readiness check alone cannot mark cryptographic signing evidence as passed.
 
 ## Consequences
 
-- Community/OpenSSL certificate issuance and CRL generation have one explicit
-  key-provider path per operation.
+- Community/OpenSSL certificate issuance, CRL generation, and OCSP response
+  signing have one explicit key-provider path per operation.
 - Existing public lifecycle and Core CLI JSON contracts remain unchanged.
-- Existing RSA certificate DER behavior remains pinned by golden-equivalence
-  testing.
+- Existing certificate, CRL, and OCSP behavior remains pinned by the Community
+  golden and integration tests.
 - Production still rejects the exportable file provider.
-- OCSP still has its previous direct file-key behavior and must not be
-  represented as migrated.
 - Enterprise synchronizes this reviewed Community change only after the
   Community commit SHA is known.

@@ -11,8 +11,10 @@ PROVIDER_HEADER = Path("src/backends/openssl/key_providers/file_key_provider.hpp
 PROVIDER_SOURCE = Path("src/backends/openssl/key_providers/file_key_provider.cpp")
 ISSUE_SOURCE = Path("src/backends/openssl/issue.cpp")
 CRL_SOURCE = Path("src/backends/openssl/crl.cpp")
+OCSP_SOURCE = Path("src/backends/openssl/ocsp.cpp")
 PROVIDER_TEST = Path("tests/file_key_provider_test.cpp")
 CRL_PROVIDER_TEST = Path("tests/crl_file_key_provider_test.cpp")
+OCSP_PROVIDER_TEST = Path("tests/ocsp_file_key_provider_test.cpp")
 
 FORBIDDEN_SIGNING_PATH_TOKENS = (
     "BIO_new_file",
@@ -40,6 +42,14 @@ REQUIRED_CRL_TOKENS = (
     "throw_provider_sign_failed",
 )
 
+REQUIRED_OCSP_TOKENS = (
+    '#include "key_providers/file_key_provider.hpp"',
+    "resolve_ocsp_signing_key",
+    "provider_policy_from_environment",
+    ".native_handle()",
+    "throw_provider_sign_failed",
+)
+
 REQUIRED_PROVIDER_TOKENS = (
     "provider.invalid_reference",
     "provider.unavailable",
@@ -56,6 +66,7 @@ REQUIRED_PROVIDER_TOKENS = (
     "reject_private_key_password",
     "PEM_read_bio_PrivateKey(bio.get(), nullptr, reject_private_key_password, nullptr)",
     "crl_generate_sign",
+    "ocsp_response_sign",
 )
 
 REQUIRED_PROVIDER_TEST_TOKENS = (
@@ -65,6 +76,8 @@ REQUIRED_PROVIDER_TEST_TOKENS = (
     "test-only-password",
     "resolve_crl_signing_key",
     "crl_generate_sign",
+    "resolve_ocsp_signing_key",
+    "ocsp_response_sign",
 )
 
 REQUIRED_CRL_PROVIDER_TEST_TOKENS = (
@@ -76,6 +89,19 @@ REQUIRED_CRL_PROVIDER_TEST_TOKENS = (
     "provider.exportability_violation",
     "X509_CRL_verify",
     "deterministic CRL DER",
+)
+
+REQUIRED_OCSP_PROVIDER_TEST_TOKENS = (
+    "file:",
+    "kms:",
+    "provider.invalid_reference",
+    "provider.key_not_found",
+    "provider.key_parse_failed",
+    "provider.algorithm_mismatch",
+    "provider.key_binding_mismatch",
+    "provider.exportability_violation",
+    "OCSP_basic_verify",
+    "provider-signed OCSP response verification failed",
 )
 
 
@@ -95,11 +121,17 @@ def validate(root: Path) -> None:
     provider = read_required(root, PROVIDER_SOURCE)
     issue = read_required(root, ISSUE_SOURCE)
     crl = read_required(root, CRL_SOURCE)
+    ocsp = read_required(root, OCSP_SOURCE)
     provider_test = read_required(root, PROVIDER_TEST)
     crl_provider_test = read_required(root, CRL_PROVIDER_TEST)
+    ocsp_provider_test = read_required(root, OCSP_PROVIDER_TEST)
     cmake = read_required(root, Path("CMakeLists.txt"))
 
-    for operation, content in (("certificate issuance", issue), ("CRL signing", crl)):
+    for operation, content in (
+        ("certificate issuance", issue),
+        ("CRL signing", crl),
+        ("OCSP signing", ocsp),
+    ):
         forbidden_hits = [
             token for token in FORBIDDEN_SIGNING_PATH_TOKENS if token in content
         ]
@@ -121,6 +153,13 @@ def validate(root: Path) -> None:
         fail(
             "CRL signing does not use the FileKeyProvider boundary:\n"
             + "\n".join(missing_crl)
+        )
+
+    missing_ocsp = [token for token in REQUIRED_OCSP_TOKENS if token not in ocsp]
+    if missing_ocsp:
+        fail(
+            "OCSP signing does not use the FileKeyProvider boundary:\n"
+            + "\n".join(missing_ocsp)
         )
 
     missing_provider = [token for token in REQUIRED_PROVIDER_TOKENS if token not in provider]
@@ -148,6 +187,15 @@ def validate(root: Path) -> None:
             + "\n".join(missing_crl_provider_tests)
         )
 
+    missing_ocsp_provider_tests = [
+        token for token in REQUIRED_OCSP_PROVIDER_TEST_TOKENS if token not in ocsp_provider_test
+    ]
+    if missing_ocsp_provider_tests:
+        fail(
+            "OCSP FileKeyProvider tests are missing required coverage:\n"
+            + "\n".join(missing_ocsp_provider_tests)
+        )
+
     for marker in (
         "class SigningKeyProvider",
         "class FileKeyProvider",
@@ -164,6 +212,8 @@ def validate(root: Path) -> None:
         fail("CMake does not register FileKeyProvider tests")
     if "tests/crl_file_key_provider_test.cpp" not in cmake:
         fail("CMake does not register CRL FileKeyProvider tests")
+    if "tests/ocsp_file_key_provider_test.cpp" not in cmake:
+        fail("CMake does not register OCSP FileKeyProvider tests")
 
     for relative_root in (Path("include"), Path("src/core")):
         scan_root = root / relative_root

@@ -151,6 +151,11 @@ private:
     X509 *issuer_certificate,
     ProviderPolicy policy);
 
+[[nodiscard]] SigningKeyHandle resolve_ocsp_signing_key(
+    const std::string &key_ref,
+    X509 *signer_certificate,
+    ProviderPolicy policy);
+
 [[noreturn]] void throw_provider_sign_failed(const SigningKeyHandle &handle);
 
 } // namespace anopki::core::openssl_key_providers

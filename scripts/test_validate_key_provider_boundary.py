@@ -43,6 +43,7 @@ X509_check_private_key
 int reject_private_key_password(char *, int, int, void *) noexcept
 PEM_read_bio_PrivateKey(bio.get(), nullptr, reject_private_key_password, nullptr)
 crl_generate_sign
+ocsp_response_sign
 """,
     )
     write(
@@ -65,6 +66,15 @@ throw_provider_sign_failed(key);
     )
     write(
         root,
+        "src/backends/openssl/ocsp.cpp",
+        """#include "key_providers/file_key_provider.hpp"
+auto key = resolve_ocsp_signing_key(ref, cert, provider_policy_from_environment());
+OCSP_basic_sign(response, cert, key.native_handle(), EVP_sha256(), nullptr, 0);
+throw_provider_sign_failed(key);
+""",
+    )
+    write(
+        root,
         "tests/file_key_provider_test.cpp",
         """write_encrypted_private_key
 EVP_aes_256_cbc
@@ -72,6 +82,8 @@ encrypted.pem
 test-only-password
 resolve_crl_signing_key
 crl_generate_sign
+resolve_ocsp_signing_key
+ocsp_response_sign
 """,
     )
     write(
@@ -89,11 +101,27 @@ deterministic CRL DER
     )
     write(
         root,
+        "tests/ocsp_file_key_provider_test.cpp",
+        """file:
+kms:
+provider.invalid_reference
+provider.key_not_found
+provider.key_parse_failed
+provider.algorithm_mismatch
+provider.key_binding_mismatch
+provider.exportability_violation
+OCSP_basic_verify
+provider-signed OCSP response verification failed
+""",
+    )
+    write(
+        root,
         "CMakeLists.txt",
         """add_library(adapter
 src/backends/openssl/key_providers/file_key_provider.cpp)
 add_executable(test tests/file_key_provider_test.cpp)
 add_executable(crl_test tests/crl_file_key_provider_test.cpp)
+add_executable(ocsp_test tests/ocsp_file_key_provider_test.cpp)
 """,
     )
     write(root, "include/anopki/core.hpp", "// neutral\n")
@@ -170,6 +198,51 @@ def test_missing_crl_provider_test_fails() -> None:
         expect_failure(root, "CRL FileKeyProvider tests are missing required coverage")
 
 
+def test_ocsp_direct_bio_open_fails() -> None:
+    with tempfile.TemporaryDirectory() as dirname:
+        root = Path(dirname)
+        clean_fixture(root)
+        ocsp = root / "src/backends/openssl/ocsp.cpp"
+        ocsp.write_text(ocsp.read_text(encoding="utf-8") + 'BIO_new_file(path, "rb");\n', encoding="utf-8")
+        expect_failure(root, "OCSP signing directly loads a private key")
+
+
+def test_ocsp_direct_pem_read_fails() -> None:
+    with tempfile.TemporaryDirectory() as dirname:
+        root = Path(dirname)
+        clean_fixture(root)
+        ocsp = root / "src/backends/openssl/ocsp.cpp"
+        ocsp.write_text(ocsp.read_text(encoding="utf-8") + "PEM_read_bio_PrivateKey(bio, 0, 0, 0);\n", encoding="utf-8")
+        expect_failure(root, "OCSP signing directly loads a private key")
+
+
+def test_missing_ocsp_resolution_fails() -> None:
+    with tempfile.TemporaryDirectory() as dirname:
+        root = Path(dirname)
+        clean_fixture(root)
+        ocsp = root / "src/backends/openssl/ocsp.cpp"
+        ocsp.write_text(ocsp.read_text(encoding="utf-8").replace("resolve_ocsp_signing_key", "legacy_ocsp_key_loader"), encoding="utf-8")
+        expect_failure(root, "OCSP signing does not use the FileKeyProvider boundary")
+
+
+def test_missing_ocsp_provider_test_fails() -> None:
+    with tempfile.TemporaryDirectory() as dirname:
+        root = Path(dirname)
+        clean_fixture(root)
+        test = root / "tests/ocsp_file_key_provider_test.cpp"
+        test.write_text(test.read_text(encoding="utf-8").replace("provider.algorithm_mismatch", "missing"), encoding="utf-8")
+        expect_failure(root, "OCSP FileKeyProvider tests are missing required coverage")
+
+
+def test_missing_ocsp_cmake_test_fails() -> None:
+    with tempfile.TemporaryDirectory() as dirname:
+        root = Path(dirname)
+        clean_fixture(root)
+        cmake = root / "CMakeLists.txt"
+        cmake.write_text(cmake.read_text(encoding="utf-8").replace("tests/ocsp_file_key_provider_test.cpp", ""), encoding="utf-8")
+        expect_failure(root, "does not register OCSP FileKeyProvider tests")
+
+
 def test_interactive_password_callback_fails() -> None:
     with tempfile.TemporaryDirectory() as dirname:
         root = Path(dirname)
@@ -241,6 +314,11 @@ def main() -> None:
     test_crl_direct_pem_read_fails()
     test_missing_crl_resolution_fails()
     test_missing_crl_provider_test_fails()
+    test_ocsp_direct_bio_open_fails()
+    test_ocsp_direct_pem_read_fails()
+    test_missing_ocsp_resolution_fails()
+    test_missing_ocsp_provider_test_fails()
+    test_missing_ocsp_cmake_test_fails()
     test_interactive_password_callback_fails()
     test_missing_encrypted_pem_rejection_test_fails()
     test_missing_resolution_fails()

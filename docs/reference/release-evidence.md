@@ -303,7 +303,7 @@ Required fields:
 
 | Field | Required value/evidence for this slice |
 | --- | --- |
-| operation | `certificate_issue` or `crl_generate_sign` |
+| operation | `certificate_issue`, `crl_generate_sign`, or `ocsp_response_sign` |
 | product profile | `community-openssl` |
 | selected backend | `openssl` |
 | provider ID/class | `file` / `file` |
@@ -312,17 +312,17 @@ Required fields:
 | exportability | `true` |
 | requested signature algorithm | tested request value |
 | key algorithm compatibility | pass or stable `provider.algorithm_mismatch` |
-| issuer binding | pass or stable `provider.key_binding_mismatch` |
-| signing result | `X509_sign`/`X509_CRL_sign` success or stable `provider.sign_failed` |
+| signer certificate binding | pass or stable `provider.key_binding_mismatch` |
+| signing result | `X509_sign`/`X509_CRL_sign`/`OCSP_basic_sign` success or stable `provider.sign_failed` |
 | fallback used | `false` |
 | production policy | exportable file provider rejected |
-| golden result | existing certificate and CRL golden fixtures unchanged |
-| boundary result | `issue.cpp` and `crl.cpp` contain no direct issuer-key file open/PEM private-key read |
+| golden result | existing certificate, CRL, and OCSP golden fixtures unchanged |
+| boundary result | `issue.cpp`, `crl.cpp`, and `ocsp.cpp` contain no direct signing-key file open/PEM private-key read |
 
 Evidence must include:
 
 - full Community CTest result from the reviewed repository commit,
-- certificate and CRL OpenSSL golden fixture results,
+- certificate, CRL, and OCSP OpenSSL golden fixture results,
 - `file:` and bare-path success tests,
 - all required negative provider tests,
 - source-boundary validator and validator self-tests,
@@ -337,7 +337,7 @@ Current scope statement:
 ```text
 certificate issuance: FileKeyProvider implemented, exportable, local/dev only
 CRL signing: FileKeyProvider implemented, exportable, local/dev only
-OCSP signing: not migrated
+OCSP response signing: FileKeyProvider implemented, exportable, local/dev only
 non-exportable provider: not implemented
 fallback_used: false
 production_ready: false for file-provider signing
