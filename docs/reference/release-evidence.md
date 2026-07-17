@@ -113,6 +113,18 @@ credentials are prohibited.
 
 `scripts/verify-audit-replay-drill.py` runs exact lifecycle and HTTP regressions for issuance-audit repair and operator-scoped dead-letter replay. It proves current signing and policy evidence reconstruction, idempotent repair, preserved prior job/webhook history, unrelated-message isolation, recovered delivery completion, redaction, and exact-commit binding. Evidence is packaged as `anopki-audit-replay-verification.tar.gz`; raw key references, payload bodies, endpoint secrets, credentials and private-key material are prohibited.
 
+## Intermediate Issuer Rollover Evidence Runner
+
+`scripts/verify-issuer-rollover-drill.py` runs the exact lifecycle regressions for
+certificate-profile intermediate issuer rollover and rollback. It proves that
+both issuers are active intermediates under the same active trust anchor, the
+profile switch is conditional and atomic, stale retries do not duplicate audit
+or outbox events, existing certificates remain bound to the previous issuer,
+old-issuer CRL publication continues during overlap, and explicit rollback
+restores the previous issuer. Evidence is packaged as
+`anopki-issuer-rollover-verification.tar.gz` and excludes raw key references,
+certificate/CSR payloads, credentials, and private-key material.
+
 ## Supported-Go Evidence Runner
 
 `scripts/verify-go-release.py` is the maintained Community entry point for Go
@@ -251,6 +263,8 @@ evidence still needs release workflow artifacts containing archives,
 - `python scripts/verify-status-outage-drill.py --out-dir .tmp\status-outage-evidence\verify-local`
 - `python scripts/test_verify_audit_replay_drill.py`
 - `python scripts/verify-audit-replay-drill.py --out-dir .tmp\audit-replay-evidence\verify-local`
+- `python scripts/test_verify_issuer_rollover_drill.py`
+- `python scripts/verify-issuer-rollover-drill.py --out-dir .tmp\issuer-rollover-evidence\verify-local`
 - `python scripts/test_validate_release_artifacts.py`
 - `python scripts/test_validate_service_contracts.py`
 - `python scripts/validate-service-contracts.py`

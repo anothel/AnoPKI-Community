@@ -25,8 +25,8 @@ def require_release_workflow() -> None:
         "id-token: write", 'go-version: "1.25.12"',
         "python scripts/verify-go-release.py", "--profile full",
         "anopki-go-verification.tar.gz", "anopki-recovery-verification.tar.gz",
-        "anopki-status-outage-verification.tar.gz", "anopki-audit-replay-verification.tar.gz",
-        "python scripts/verify-recovery-drill.py", "python scripts/verify-status-outage-drill.py", "python scripts/verify-audit-replay-drill.py",
+        "anopki-status-outage-verification.tar.gz", "anopki-audit-replay-verification.tar.gz", "anopki-issuer-rollover-verification.tar.gz",
+        "python scripts/verify-recovery-drill.py", "python scripts/verify-status-outage-drill.py", "python scripts/verify-audit-replay-drill.py", "python scripts/verify-issuer-rollover-drill.py",
         "cmake --build build-release --config Release", 'VERSION="$(cat VERSION)"',
         "go build -ldflags", "anopki-service-v${VERSION}-linux-amd64.tar.gz",
         "anopki-core-v${VERSION}-linux-amd64.tar.gz",
@@ -51,6 +51,7 @@ def copy_release_evidence_inputs(dst: Path) -> None:
         "scripts/verify-recovery-drill.py",
         "scripts/verify-status-outage-drill.py",
         "scripts/verify-audit-replay-drill.py",
+        "scripts/verify-issuer-rollover-drill.py",
         ".github/workflows/ci.yml",
         ".github/workflows/release.yml",
     ]
@@ -255,6 +256,22 @@ def test_missing_release_audit_replay_evidence_fails(tmp_path: Path) -> None:
     result = run_validator(tmp_path)
     assert result.returncode == 1
 
+def test_missing_issuer_rollover_runner_fails(tmp_path: Path) -> None:
+    copy_release_evidence_inputs(tmp_path)
+    mutate(tmp_path / "scripts/verify-issuer-rollover-drill.py", "same-parent-chain-required")
+    result = run_validator(tmp_path)
+    assert result.returncode == 1
+    assert "same-parent-chain-required" in result.stderr
+
+
+def test_missing_release_issuer_rollover_evidence_fails(tmp_path: Path) -> None:
+    copy_release_evidence_inputs(tmp_path)
+    mutate(tmp_path / ".github/workflows/release.yml", "anopki-issuer-rollover-verification.tar.gz")
+    result = run_validator(tmp_path)
+    assert result.returncode == 1
+    assert "anopki-issuer-rollover-verification.tar.gz" in result.stderr
+
+
 def main() -> None:
     result = run_validator(ROOT)
     if result.returncode != 0:
@@ -280,6 +297,8 @@ def main() -> None:
         test_audit_replay_minimum_go_version_format_drift_fails,
         test_missing_audit_replay_runner_fails,
         test_missing_release_audit_replay_evidence_fails,
+        test_missing_issuer_rollover_runner_fails,
+        test_missing_release_issuer_rollover_evidence_fails,
         test_missing_release_signing_evidence_fails,
         test_missing_release_dry_run_gate_fails,
         test_release_evidence_placeholder_fails,

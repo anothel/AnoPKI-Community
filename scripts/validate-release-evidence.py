@@ -20,6 +20,7 @@ REQUIRED_DOC_TEXT = [
     "## SQLite Recovery Evidence Runner",
     "## CRL And OCSP Outage Evidence Runner",
     "## Audit Repair And Dead-Letter Replay Evidence Runner",
+    "## Intermediate Issuer Rollover Evidence Runner",
     "## Supported-Go Evidence Runner",
     "## Required Evidence Per Release Candidate",
     "verify-go-release.py",
@@ -27,6 +28,7 @@ REQUIRED_DOC_TEXT = [
     "anopki-recovery-verification.tar.gz",
     "anopki-status-outage-verification.tar.gz",
     "anopki-audit-replay-verification.tar.gz",
+    "anopki-issuer-rollover-verification.tar.gz",
     "syft",
     "cosign",
     "govulncheck",
@@ -79,6 +81,9 @@ REQUIRED_CI_TEXT = [
     "python scripts/test_verify_audit_replay_drill.py",
     "python scripts/verify-audit-replay-drill.py",
     "anopki-audit-replay-verification",
+    "python scripts/test_verify_issuer_rollover_drill.py",
+    "python scripts/verify-issuer-rollover-drill.py",
+    "anopki-issuer-rollover-verification",
     "python scripts/test_validate_release_artifacts.py",
     "python scripts/test_validate_release_evidence.py",
     "python scripts/validate-release-evidence.py",
@@ -168,6 +173,21 @@ REQUIRED_AUDIT_REPLAY_RUNNER_TEXT = [
     "sensitive-evidence-exclusion",
 ]
 
+
+REQUIRED_ISSUER_ROLLOVER_RUNNER_TEXT = [
+    "MINIMUM_GO_VERSION = (1, 25, 11)",
+    "community_issuer_rollover_drill",
+    "TestCertificateProfileIssuerRolloverAndRollbackPreservesOverlap",
+    "TestCertificateProfileIssuerRolloverRejectsDifferentParentAndStaleRetry",
+    "TestCertificateProfileIssuerRolloverRollsBackWhenAuditFails",
+    "TestCertificateProfileIssuerConditionalUpdate",
+    "issuer-rollover-verification.json",
+    "issuer-rollover-verification.md",
+    "issuer-rollover-test.log",
+    "same-parent-chain-required",
+    "sensitive-evidence-exclusion",
+]
+
 REQUIRED_RELEASE_TEXT = [
     "workflow_dispatch:",
     "tags:",
@@ -184,6 +204,8 @@ REQUIRED_RELEASE_TEXT = [
     "anopki-status-outage-verification.tar.gz",
     "python scripts/verify-audit-replay-drill.py",
     "anopki-audit-replay-verification.tar.gz",
+    "python scripts/verify-issuer-rollover-drill.py",
+    "anopki-issuer-rollover-verification.tar.gz",
     '--commit "${GITHUB_SHA}"',
     'VERSION="$(cat VERSION)"',
     "go build -ldflags",
@@ -287,6 +309,7 @@ def main() -> None:
     require_text(root / "scripts/verify-recovery-drill.py", REQUIRED_RECOVERY_RUNNER_TEXT)
     require_text(root / "scripts/verify-status-outage-drill.py", REQUIRED_STATUS_OUTAGE_RUNNER_TEXT)
     require_text(root / "scripts/verify-audit-replay-drill.py", REQUIRED_AUDIT_REPLAY_RUNNER_TEXT)
+    require_text(root / "scripts/verify-issuer-rollover-drill.py", REQUIRED_ISSUER_ROLLOVER_RUNNER_TEXT)
     require_text(root / ".github/workflows/ci.yml", REQUIRED_CI_TEXT)
     require_text(root / ".github/workflows/release.yml", REQUIRED_RELEASE_TEXT)
     print("release evidence ok")

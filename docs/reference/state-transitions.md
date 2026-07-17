@@ -82,6 +82,17 @@ Renewal and reissue do not mutate the source certificate. They create a new
 pending enrollment from a valid certificate and retain its ID as
 `source_certificate_id`.
 
+## Certificate Profile Issuer
+
+| Current | Trigger | Next |
+| --- | --- | --- |
+| old active intermediate | atomic same-root `rollover` transition | new active intermediate |
+| new active intermediate | explicit same-root `rollback` transition | previous active intermediate |
+
+The expected current issuer and profile `updated_at` are conditional-write
+inputs. A stale retry returns invalid-transition semantics. Existing
+certificates remain associated with their original issuer during overlap.
+
 ## CRL Publication
 
 | Current | Trigger | Next |

@@ -63,6 +63,13 @@ jobs:
       - name: Package audit/replay verification evidence
         run: |
           tar -czf dist/anopki-audit-replay-verification.tar.gz -C .tmp/release-audit-replay-evidence audit-replay-verification.json audit-replay-verification.md audit-replay-test.log
+      - name: Run intermediate issuer rollover verification
+        run: |
+          python scripts/test_verify_issuer_rollover_drill.py
+          python scripts/verify-issuer-rollover-drill.py --out-dir .tmp/release-issuer-rollover-evidence --commit "${GITHUB_SHA}"
+      - name: Package issuer rollover verification evidence
+        run: |
+          tar -czf dist/anopki-issuer-rollover-verification.tar.gz -C .tmp/release-issuer-rollover-evidence issuer-rollover-verification.json issuer-rollover-verification.md issuer-rollover-test.log
       - name: Read release version
         run: |
           VERSION="$(cat VERSION)"

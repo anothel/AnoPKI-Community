@@ -102,6 +102,8 @@ The expiration scan worker is disabled by default. Set `ANOPKI_EXPIRATION_SCAN_E
 The operator expiry SLO reports zero success only when no valid or suspended certificates inside the 14-day window are still missing a renewal notification.
 The inventory view joins certificate, identity, issuer, and profile references. It exposes owner, team, service, environment, deployment target, issuer, profile, issuer key reference, revocation state, last seen timestamp, and ownership completeness warnings. It supports exact filters for owner, team, service, environment, issuer_id, profile_id, and revocation_state, plus ascending/descending sort and limit/offset pagination.
 
+Certificate profile issuer transitions emit `certificate_profile.issuer_rolled_over` or `certificate_profile.issuer_rolled_back` outbox events. The transition is allowed only between active intermediates sharing the same active root trust anchor; stale expected-issuer retries fail closed.
+
 Notification endpoints deliver lifecycle outbox events to operator webhooks:
 
 - `POST /notification-endpoints`

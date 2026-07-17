@@ -55,6 +55,8 @@ def main() -> None:
         'python scripts\\verify-status-outage-drill.py --out-dir .tmp\\status-outage-evidence\\verify-local',
         'python scripts\\test_verify_audit_replay_drill.py',
         'python scripts\\verify-audit-replay-drill.py --out-dir .tmp\\audit-replay-evidence\\verify-local',
+        'python scripts\\test_verify_issuer_rollover_drill.py',
+        'python scripts\\verify-issuer-rollover-drill.py --out-dir .tmp\\issuer-rollover-evidence\\verify-local',
         'python scripts\\test_validate_release_artifacts.py',
         'python scripts\\test_validate_service_contracts.py',
         'python scripts\\validate-service-contracts.py',
@@ -91,6 +93,8 @@ def main() -> None:
         raise SystemExit("verify-local must run the CRL/OCSP outage drill under .tmp")
     if "verify-audit-replay-drill.py" not in script_text or ".tmp\\audit-replay-evidence" not in script_text:
         raise SystemExit("verify-local must run the audit/replay drill under .tmp")
+    if "verify-issuer-rollover-drill.py" not in script_text or ".tmp\\issuer-rollover-evidence" not in script_text:
+        raise SystemExit("verify-local must run the issuer rollover drill under .tmp")
     if "Resolve-OpenSSLRuntime" not in script_text or "libcrypto*.dll" not in script_text:
         raise SystemExit("verify-local must validate Windows OpenSSL runtime DLLs")
     if "$env:PATH = $previousPath" not in script_text:

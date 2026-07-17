@@ -143,6 +143,18 @@ $steps = @(
         Command = @("python", "scripts\verify-audit-replay-drill.py", "--out-dir", ".tmp\audit-replay-evidence\verify-local")
     },
     @{
+        Name = "issuer rollover drill tests"
+        Dir = $RepoRoot
+        Display = "python scripts\test_verify_issuer_rollover_drill.py"
+        Command = @("python", "scripts\test_verify_issuer_rollover_drill.py")
+    },
+    @{
+        Name = "intermediate issuer rollover drill"
+        Dir = $RepoRoot
+        Display = "python scripts\verify-issuer-rollover-drill.py --out-dir .tmp\issuer-rollover-evidence\verify-local"
+        Command = @("python", "scripts\verify-issuer-rollover-drill.py", "--out-dir", ".tmp\issuer-rollover-evidence\verify-local")
+    },
+    @{
         Name = "release artifact validator tests"
         Dir = $RepoRoot
         Display = "python scripts\test_validate_release_artifacts.py"

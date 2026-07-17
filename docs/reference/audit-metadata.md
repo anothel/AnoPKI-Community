@@ -305,6 +305,17 @@ ocsp_responder.disabled
 ocsp_responder.created
 ```
 
+Certificate-profile issuer transitions emit one of:
+
+```text
+certificate_profile.issuer_rolled_over
+certificate_profile.issuer_rolled_back
+```
+
+Transition metadata includes `profile_id`, `previous_issuer_id`,
+`next_issuer_id`, `parent_issuer_id`, `transition`, and a bounded operator
+reason. Raw key references and certificate payloads are not recorded.
+
 ACME challenge processing and completion events include:
 
 ```text

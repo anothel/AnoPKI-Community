@@ -75,6 +75,78 @@ func TestSQLStoreNestedWithinTxUsesSameTransaction(t *testing.T) {
 	testNestedWithinTxUsesSameTransaction(t, newTestSQLiteRepository(t))
 }
 
+func TestCertificateProfileIssuerConditionalUpdate(t *testing.T) {
+	for _, tt := range []struct {
+		name string
+		repo Repository
+	}{
+		{name: "memory", repo: NewMemoryStore()},
+		{name: "sqlite", repo: newTestSQLiteRepository(t)},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			testCertificateProfileIssuerConditionalUpdate(t, tt.repo)
+		})
+	}
+}
+
+func testCertificateProfileIssuerConditionalUpdate(t *testing.T, repo Repository) {
+	t.Helper()
+	ctx := context.Background()
+	base := time.Date(2026, time.January, 2, 3, 4, 5, 0, time.UTC)
+	for _, issuerID := range []string{"issuer-old", "issuer-new"} {
+		if err := repo.CreateIssuer(ctx, domain.Issuer{
+			ID:             issuerID,
+			Name:           issuerID,
+			Kind:           domain.IssuerIntermediateCA,
+			Status:         domain.IssuerActive,
+			CertificatePEM: "certificate",
+			KeyRef:         "file:key.pem",
+			CreatedAt:      base,
+			UpdatedAt:      base,
+		}); err != nil {
+			t.Fatalf("CreateIssuer(%s) returned error: %v", issuerID, err)
+		}
+	}
+
+	profile := domain.CertificateProfile{
+		ID:                         "profile-issuer-transition",
+		Name:                       "profile",
+		Description:                "profile",
+		IssuerID:                   "issuer-old",
+		ValidityPeriodSeconds:      int64((24 * time.Hour).Seconds()),
+		AllowedDNSPatterns:         []string{"*.example.test"},
+		AllowedKeyAlgorithms:       []string{"rsa"},
+		MinKeySizeBits:             2048,
+		AllowedSignatureAlgorithms: []string{"sha256WithRSAEncryption"},
+		CreatedAt:                  base,
+		UpdatedAt:                  base,
+	}
+	if err := repo.CreateCertificateProfile(ctx, profile); err != nil {
+		t.Fatalf("CreateCertificateProfile returned error: %v", err)
+	}
+
+	updated := profile
+	updated.IssuerID = "issuer-new"
+	updated.UpdatedAt = base.Add(time.Minute)
+	if err := repo.UpdateCertificateProfileIssuerIfCurrent(ctx, updated, profile.IssuerID, profile.UpdatedAt); err != nil {
+		t.Fatalf("UpdateCertificateProfileIssuerIfCurrent returned error: %v", err)
+	}
+	stored, err := repo.GetCertificateProfile(ctx, profile.ID)
+	if err != nil {
+		t.Fatalf("GetCertificateProfile returned error: %v", err)
+	}
+	if stored.IssuerID != updated.IssuerID || !stored.UpdatedAt.Equal(updated.UpdatedAt) {
+		t.Fatalf("stored profile = %#v, want issuer %q updated_at %s", stored, updated.IssuerID, updated.UpdatedAt)
+	}
+
+	if err := repo.UpdateCertificateProfileIssuerIfCurrent(ctx, profile, "issuer-old", base); !errors.Is(err, domain.ErrInvalidTransition) {
+		t.Fatalf("stale UpdateCertificateProfileIssuerIfCurrent error = %v, want ErrInvalidTransition", err)
+	}
+	if err := repo.UpdateCertificateProfileIssuerIfCurrent(ctx, domain.CertificateProfile{ID: "missing"}, "issuer-old", base); !errors.Is(err, domain.ErrCertificateProfileNotFound) {
+		t.Fatalf("missing UpdateCertificateProfileIssuerIfCurrent error = %v, want ErrCertificateProfileNotFound", err)
+	}
+}
+
 func testNestedWithinTxUsesSameTransaction(t *testing.T, repo Repository) {
 	t.Helper()
 	ctx := context.Background()

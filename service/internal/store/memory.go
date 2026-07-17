@@ -277,6 +277,13 @@ func (s *MemoryStore) ListCertificateProfiles(ctx context.Context) ([]domain.Cer
 	return profiles, nil
 }
 
+func (s *MemoryStore) UpdateCertificateProfileIssuerIfCurrent(ctx context.Context, profile domain.CertificateProfile, currentIssuerID string, currentUpdatedAt time.Time) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	return updateCertificateProfileIssuerIfCurrent(s.profiles, profile, currentIssuerID, currentUpdatedAt)
+}
+
 func (s *MemoryStore) CreateEnrollment(ctx context.Context, enrollment domain.Enrollment) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -979,6 +986,18 @@ func listDueOutboxMessages(messages map[string]domain.OutboxMessage, now time.Ti
 	return due
 }
 
+func updateCertificateProfileIssuerIfCurrent(profiles map[string]domain.CertificateProfile, profile domain.CertificateProfile, currentIssuerID string, currentUpdatedAt time.Time) error {
+	stored, ok := profiles[profile.ID]
+	if !ok {
+		return domain.ErrCertificateProfileNotFound
+	}
+	if stored.IssuerID != currentIssuerID || !stored.UpdatedAt.Equal(currentUpdatedAt) {
+		return domain.ErrInvalidTransition
+	}
+	profiles[profile.ID] = copyCertificateProfile(profile)
+	return nil
+}
+
 func outboxMessageDue(message domain.OutboxMessage, now time.Time) bool {
 	switch message.Status {
 	case domain.OutboxPending:
@@ -1333,6 +1352,10 @@ func (tx *memoryTx) ListCertificateProfiles(ctx context.Context) ([]domain.Certi
 		profiles = append(profiles, copyCertificateProfile(profile))
 	}
 	return profiles, nil
+}
+
+func (tx *memoryTx) UpdateCertificateProfileIssuerIfCurrent(ctx context.Context, profile domain.CertificateProfile, currentIssuerID string, currentUpdatedAt time.Time) error {
+	return updateCertificateProfileIssuerIfCurrent(tx.profiles, profile, currentIssuerID, currentUpdatedAt)
 }
 
 func (tx *memoryTx) CreateEnrollment(ctx context.Context, enrollment domain.Enrollment) error {

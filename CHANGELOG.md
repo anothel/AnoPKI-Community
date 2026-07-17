@@ -9,6 +9,7 @@ commands and known gaps before tagging.
 
 ### Added
 
+- An atomic certificate-profile intermediate issuer rollover and rollback contract with same-root validation, stale-transition rejection, overlap preservation, audit/outbox evidence, and an exact-commit verification runner.
 - A fail-closed audit-repair and dead-letter replay drill that proves current signing/policy evidence reconstruction, idempotent repair, scoped replay, preserved attempt history, recovered delivery completion, redaction and exact-commit release binding.
 - A fail-closed CRL/OCSP outage-and-recovery drill covering lifecycle atomicity, public 502 mapping, no phantom CRL publication, no success audit during failure, recovery numbering, completed signing evidence, CI artifact upload, and strict release archive validation.
 - Stable allow/reject/unknown policy-decision audit metadata with redacted validation-evidence references for enrollment creation, replacement enrollment, certificate issuance, failure auditing, retry, and legacy audit repair.

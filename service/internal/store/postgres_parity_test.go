@@ -24,6 +24,7 @@ func TestPostgresIntegrationRepositoryParity(t *testing.T) {
 		{name: "outbox_lease_recovery", run: testOutboxLeaseRecovery},
 		{name: "webhook_delivery_tracking", run: testWebhookDeliveryTracking},
 		{name: "audit_query_retention", run: testAuditEventQueryAndRetention},
+		{name: "certificate_profile_issuer_transition", run: testCertificateProfileIssuerConditionalUpdate},
 		{name: "nested_transactions", run: testNestedWithinTxUsesSameTransaction},
 		{name: "acme_state", run: testACMEState},
 	}

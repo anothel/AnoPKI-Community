@@ -158,6 +158,28 @@ jobs:
           path: .tmp/audit-replay-evidence/ci/
           if-no-files-found: error
 
+  issuer-rollover-drill:
+    name: Intermediate issuer rollover drill
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.25.12"
+          cache-dependency-path: |
+            service/go.mod
+            service/go.sum
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.x"
+      - run: python scripts/test_verify_issuer_rollover_drill.py
+      - run: python scripts/verify-issuer-rollover-drill.py --out-dir .tmp/issuer-rollover-evidence/ci --commit "${GITHUB_SHA}"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: anopki-issuer-rollover-verification
+          path: .tmp/issuer-rollover-evidence/ci/
+          if-no-files-found: error
+
   secret-baseline:
     name: Secret baseline scan
     runs-on: ubuntu-latest

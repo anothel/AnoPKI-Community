@@ -39,6 +39,7 @@ type CertificateProfileRepository interface {
 	CreateCertificateProfile(ctx context.Context, profile domain.CertificateProfile) error
 	GetCertificateProfile(ctx context.Context, id string) (domain.CertificateProfile, error)
 	ListCertificateProfiles(ctx context.Context) ([]domain.CertificateProfile, error)
+	UpdateCertificateProfileIssuerIfCurrent(ctx context.Context, profile domain.CertificateProfile, currentIssuerID string, currentUpdatedAt time.Time) error
 }
 
 type EnrollmentRepository interface {

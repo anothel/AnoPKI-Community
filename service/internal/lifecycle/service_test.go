@@ -6359,6 +6359,231 @@ func TestEnsureAPIKeyRejectsExistingKeyWithoutOperatorScope(t *testing.T) {
 	}
 }
 
+func TestCertificateProfileIssuerRolloverAndRollbackPreservesOverlap(t *testing.T) {
+	ctx := context.Background()
+	repo := store.NewMemoryStore()
+	coreClient := &fakeIssuer{crlResult: corecli.GenerateCRLResult{CRLPEM: "crl-pem"}}
+	clock := fixedClock{now: time.Date(2026, time.January, 2, 3, 4, 5, 0, time.UTC)}
+	service := New(repo, coreClient, clock, &fakeIDGenerator{})
+
+	root, err := service.CreateIssuer(ctx, "admin", CreateIssuerRequest{
+		Name: "root", Kind: domain.IssuerRootCA, CertificatePEM: "root-cert", KeyRef: "root-key", TrustAnchor: true,
+	})
+	if err != nil {
+		t.Fatalf("CreateIssuer root returned error: %v", err)
+	}
+	oldIssuer, err := service.CreateIssuer(ctx, "admin", CreateIssuerRequest{
+		Name: "intermediate-old", Kind: domain.IssuerIntermediateCA, ParentIssuerID: root.ID,
+		CertificatePEM: "old-cert", KeyRef: "old-key", CRLDistributionPoints: []string{"https://pki.example.test/old.crl"},
+	})
+	if err != nil {
+		t.Fatalf("CreateIssuer old returned error: %v", err)
+	}
+	newIssuer, err := service.CreateIssuer(ctx, "admin", CreateIssuerRequest{
+		Name: "intermediate-new", Kind: domain.IssuerIntermediateCA, ParentIssuerID: root.ID,
+		CertificatePEM: "new-cert", KeyRef: "new-key", CRLDistributionPoints: []string{"https://pki.example.test/new.crl"},
+	})
+	if err != nil {
+		t.Fatalf("CreateIssuer new returned error: %v", err)
+	}
+	profile, err := service.CreateCertificateProfile(ctx, "admin", CreateCertificateProfileRequest{
+		Name: "machine", IssuerID: oldIssuer.ID, ValidityPeriodSeconds: int64((24 * time.Hour).Seconds()),
+		AllowedSignatureAlgorithms: []string{"sha256"}, BasicConstraints: domain.BasicConstraintsPolicy{Critical: true},
+	})
+	if err != nil {
+		t.Fatalf("CreateCertificateProfile returned error: %v", err)
+	}
+	identity, err := service.CreateIdentity(ctx, "admin", CreateIdentityRequest{Type: domain.IdentityMachine, Name: "edge-01"})
+	if err != nil {
+		t.Fatalf("CreateIdentity returned error: %v", err)
+	}
+
+	issue := func(issuerID string, csr string) domain.Certificate {
+		enrollment, err := service.CreateEnrollment(ctx, "operator", CreateEnrollmentRequest{
+			IdentityID: identity.ID, IssuerID: issuerID, CertificateProfileID: profile.ID,
+			CSRPEM: csr, RequestedSubject: "CN=edge-01", RequestedDNSNames: []string{"edge-01.example.test"},
+			RequestedIPAddresses: []string{"127.0.0.1"}, RequestedNotAfter: clock.now.Add(12 * time.Hour),
+		})
+		if err != nil {
+			t.Fatalf("CreateEnrollment(%s) returned error: %v", issuerID, err)
+		}
+		if _, err := service.ApproveEnrollment(ctx, "approver", enrollment.ID); err != nil {
+			t.Fatalf("ApproveEnrollment returned error: %v", err)
+		}
+		certificate, err := service.IssueCertificate(ctx, "issuer", enrollment.ID)
+		if err != nil {
+			t.Fatalf("IssueCertificate returned error: %v", err)
+		}
+		return certificate
+	}
+
+	oldCertificate := issue(oldIssuer.ID, "csr-old")
+	if got := coreClient.requests[len(coreClient.requests)-1]; got.IssuerCertificatePEM != "old-cert" || got.IssuerKeyRef != "old-key" {
+		t.Fatalf("old issuer request = %#v", got)
+	}
+
+	rolled, err := service.TransitionCertificateProfileIssuer(ctx, "operator", TransitionCertificateProfileIssuerRequest{
+		ProfileID: profile.ID, CurrentIssuerID: oldIssuer.ID, NextIssuerID: newIssuer.ID,
+		Transition: CertificateProfileIssuerRollover, Reason: "planned intermediate rotation",
+	})
+	if err != nil {
+		t.Fatalf("TransitionCertificateProfileIssuer rollover returned error: %v", err)
+	}
+	if rolled.IssuerID != newIssuer.ID {
+		t.Fatalf("rolled profile issuer = %q, want %q", rolled.IssuerID, newIssuer.ID)
+	}
+
+	_ = issue(newIssuer.ID, "csr-new")
+	if got := coreClient.requests[len(coreClient.requests)-1]; got.IssuerCertificatePEM != "new-cert" || got.IssuerKeyRef != "new-key" {
+		t.Fatalf("new issuer request = %#v", got)
+	}
+
+	if _, err := service.RevokeCertificate(ctx, "operator", oldCertificate.ID, domain.RevocationSuperseded); err != nil {
+		t.Fatalf("RevokeCertificate old certificate returned error: %v", err)
+	}
+	publication, err := service.PublishCRL(ctx, "operator", PublishCRLRequest{
+		IssuerID: oldIssuer.ID, DistributionPoint: oldIssuer.CRLDistributionPoints[0], NextUpdate: clock.now.Add(time.Hour),
+	})
+	if err != nil {
+		t.Fatalf("PublishCRL old issuer after rollover returned error: %v", err)
+	}
+	if publication.IssuerID != oldIssuer.ID || publication.CRLNumber != 1 {
+		t.Fatalf("old issuer publication = %#v", publication)
+	}
+
+	rolledBack, err := service.TransitionCertificateProfileIssuer(ctx, "operator", TransitionCertificateProfileIssuerRequest{
+		ProfileID: profile.ID, CurrentIssuerID: newIssuer.ID, NextIssuerID: oldIssuer.ID,
+		Transition: CertificateProfileIssuerRollback, Reason: "new intermediate validation failed",
+	})
+	if err != nil {
+		t.Fatalf("TransitionCertificateProfileIssuer rollback returned error: %v", err)
+	}
+	if rolledBack.IssuerID != oldIssuer.ID {
+		t.Fatalf("rolled-back profile issuer = %q, want %q", rolledBack.IssuerID, oldIssuer.ID)
+	}
+
+	events := mustListAuditEvents(t, service, ctx)
+	var transitions []domain.AuditEvent
+	for _, event := range events {
+		if event.Action == "certificate_profile.issuer_rolled_over" || event.Action == "certificate_profile.issuer_rolled_back" {
+			transitions = append(transitions, event)
+		}
+	}
+	if len(transitions) != 2 {
+		t.Fatalf("profile issuer transition audit count = %d, want 2", len(transitions))
+	}
+	first := auditMetadata(t, transitions[0])
+	if first["previous_issuer_id"] != oldIssuer.ID || first["next_issuer_id"] != newIssuer.ID || first["parent_issuer_id"] != root.ID || first["transition"] != "rollover" {
+		t.Fatalf("rollover audit metadata = %#v", first)
+	}
+	second := auditMetadata(t, transitions[1])
+	if second["previous_issuer_id"] != newIssuer.ID || second["next_issuer_id"] != oldIssuer.ID || second["transition"] != "rollback" {
+		t.Fatalf("rollback audit metadata = %#v", second)
+	}
+	messages, err := repo.ListOutboxMessages(ctx, "")
+	if err != nil {
+		t.Fatalf("ListOutboxMessages returned error: %v", err)
+	}
+	transitionMessages := 0
+	for _, message := range messages {
+		if message.Type == "certificate_profile.issuer_rolled_over" || message.Type == "certificate_profile.issuer_rolled_back" {
+			transitionMessages++
+		}
+	}
+	if transitionMessages != 2 {
+		t.Fatalf("profile issuer transition outbox count = %d, want 2", transitionMessages)
+	}
+}
+
+func TestCertificateProfileIssuerRolloverRejectsDifferentParentAndStaleRetry(t *testing.T) {
+	ctx := context.Background()
+	repo := store.NewMemoryStore()
+	service := New(repo, &fakeIssuer{}, fixedClock{now: time.Date(2026, time.January, 2, 3, 4, 5, 0, time.UTC)}, &fakeIDGenerator{})
+	rootA, _ := service.CreateIssuer(ctx, "admin", CreateIssuerRequest{Name: "root-a", Kind: domain.IssuerRootCA, CertificatePEM: "root-a-cert", KeyRef: "root-a-key", TrustAnchor: true})
+	rootB, _ := service.CreateIssuer(ctx, "admin", CreateIssuerRequest{Name: "root-b", Kind: domain.IssuerRootCA, CertificatePEM: "root-b-cert", KeyRef: "root-b-key", TrustAnchor: true})
+	oldIssuer, _ := service.CreateIssuer(ctx, "admin", CreateIssuerRequest{Name: "old", Kind: domain.IssuerIntermediateCA, ParentIssuerID: rootA.ID, CertificatePEM: "old-cert", KeyRef: "old-key"})
+	newIssuer, _ := service.CreateIssuer(ctx, "admin", CreateIssuerRequest{Name: "new", Kind: domain.IssuerIntermediateCA, ParentIssuerID: rootA.ID, CertificatePEM: "new-cert", KeyRef: "new-key"})
+	otherIssuer, _ := service.CreateIssuer(ctx, "admin", CreateIssuerRequest{Name: "other", Kind: domain.IssuerIntermediateCA, ParentIssuerID: rootB.ID, CertificatePEM: "other-cert", KeyRef: "other-key"})
+	profile, err := service.CreateCertificateProfile(ctx, "admin", CreateCertificateProfileRequest{Name: "profile", IssuerID: oldIssuer.ID, ValidityPeriodSeconds: 3600, AllowedSignatureAlgorithms: []string{"sha256"}, BasicConstraints: domain.BasicConstraintsPolicy{Critical: true}})
+	if err != nil {
+		t.Fatalf("CreateCertificateProfile returned error: %v", err)
+	}
+
+	_, err = service.TransitionCertificateProfileIssuer(ctx, "operator", TransitionCertificateProfileIssuerRequest{ProfileID: profile.ID, CurrentIssuerID: oldIssuer.ID, NextIssuerID: otherIssuer.ID, Transition: CertificateProfileIssuerRollover, Reason: "different parent"})
+	if !errors.Is(err, domain.ErrInvalidRequest) {
+		t.Fatalf("different-parent rollover error = %v, want ErrInvalidRequest", err)
+	}
+	stored, _ := repo.GetCertificateProfile(ctx, profile.ID)
+	if stored.IssuerID != oldIssuer.ID {
+		t.Fatalf("profile issuer changed after rejected transition: %q", stored.IssuerID)
+	}
+
+	if _, err := service.TransitionCertificateProfileIssuer(ctx, "operator", TransitionCertificateProfileIssuerRequest{ProfileID: profile.ID, CurrentIssuerID: oldIssuer.ID, NextIssuerID: newIssuer.ID, Transition: CertificateProfileIssuerRollover, Reason: "planned"}); err != nil {
+		t.Fatalf("valid rollover returned error: %v", err)
+	}
+	_, err = service.TransitionCertificateProfileIssuer(ctx, "operator", TransitionCertificateProfileIssuerRequest{ProfileID: profile.ID, CurrentIssuerID: oldIssuer.ID, NextIssuerID: newIssuer.ID, Transition: CertificateProfileIssuerRollover, Reason: "duplicate"})
+	if !errors.Is(err, domain.ErrInvalidTransition) {
+		t.Fatalf("stale retry error = %v, want ErrInvalidTransition", err)
+	}
+
+	events := mustListAuditEvents(t, service, ctx)
+	transitionCount := 0
+	for _, event := range events {
+		if event.Action == "certificate_profile.issuer_rolled_over" {
+			transitionCount++
+		}
+	}
+	if transitionCount != 1 {
+		t.Fatalf("rollover audit count = %d, want 1", transitionCount)
+	}
+	messages, _ := repo.ListOutboxMessages(ctx, "")
+	messageCount := 0
+	for _, message := range messages {
+		if message.Type == "certificate_profile.issuer_rolled_over" {
+			messageCount++
+		}
+	}
+	if messageCount != 1 {
+		t.Fatalf("rollover outbox count = %d, want 1", messageCount)
+	}
+}
+
+func TestCertificateProfileIssuerRolloverRollsBackWhenAuditFails(t *testing.T) {
+	ctx := context.Background()
+	base := store.NewMemoryStore()
+	boom := errors.New("audit unavailable")
+	repo := &failAuditRepository{Repository: base, action: "certificate_profile.issuer_rolled_over", err: boom}
+	service := New(repo, &fakeIssuer{}, fixedClock{now: time.Date(2026, time.January, 2, 3, 4, 5, 0, time.UTC)}, &fakeIDGenerator{})
+	root, _ := service.CreateIssuer(ctx, "admin", CreateIssuerRequest{Name: "root", Kind: domain.IssuerRootCA, CertificatePEM: "root-cert", KeyRef: "root-key", TrustAnchor: true})
+	oldIssuer, _ := service.CreateIssuer(ctx, "admin", CreateIssuerRequest{Name: "old", Kind: domain.IssuerIntermediateCA, ParentIssuerID: root.ID, CertificatePEM: "old-cert", KeyRef: "old-key"})
+	newIssuer, _ := service.CreateIssuer(ctx, "admin", CreateIssuerRequest{Name: "new", Kind: domain.IssuerIntermediateCA, ParentIssuerID: root.ID, CertificatePEM: "new-cert", KeyRef: "new-key"})
+	profile, err := service.CreateCertificateProfile(ctx, "admin", CreateCertificateProfileRequest{Name: "profile", IssuerID: oldIssuer.ID, ValidityPeriodSeconds: 3600, AllowedSignatureAlgorithms: []string{"sha256"}, BasicConstraints: domain.BasicConstraintsPolicy{Critical: true}})
+	if err != nil {
+		t.Fatalf("CreateCertificateProfile returned error: %v", err)
+	}
+
+	_, err = service.TransitionCertificateProfileIssuer(ctx, "operator", TransitionCertificateProfileIssuerRequest{ProfileID: profile.ID, CurrentIssuerID: oldIssuer.ID, NextIssuerID: newIssuer.ID, Transition: CertificateProfileIssuerRollover, Reason: "planned"})
+	if !errors.Is(err, boom) {
+		t.Fatalf("TransitionCertificateProfileIssuer error = %v, want audit error", err)
+	}
+	stored, err := base.GetCertificateProfile(ctx, profile.ID)
+	if err != nil {
+		t.Fatalf("GetCertificateProfile returned error: %v", err)
+	}
+	if stored.IssuerID != oldIssuer.ID {
+		t.Fatalf("profile issuer after audit failure = %q, want %q", stored.IssuerID, oldIssuer.ID)
+	}
+	messages, err := base.ListOutboxMessages(ctx, "")
+	if err != nil {
+		t.Fatalf("ListOutboxMessages returned error: %v", err)
+	}
+	for _, message := range messages {
+		if message.Type == "certificate_profile.issuer_rolled_over" {
+			t.Fatalf("rollover outbox persisted after audit failure: %#v", message)
+		}
+	}
+}
+
 type fakeIssuer struct {
 	requests                        []corecli.IssueRequest
 	crlRequests                     []corecli.GenerateCRLRequest

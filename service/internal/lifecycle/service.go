@@ -244,6 +244,21 @@ type CreateCertificateProfileRequest struct {
 	AuthorityKeyIdentifier     bool
 }
 
+type CertificateProfileIssuerTransition string
+
+const (
+	CertificateProfileIssuerRollover CertificateProfileIssuerTransition = "rollover"
+	CertificateProfileIssuerRollback CertificateProfileIssuerTransition = "rollback"
+)
+
+type TransitionCertificateProfileIssuerRequest struct {
+	ProfileID       string
+	CurrentIssuerID string
+	NextIssuerID    string
+	Transition      CertificateProfileIssuerTransition
+	Reason          string
+}
+
 type CreateEnrollmentRequest struct {
 	IdentityID           string
 	IssuerID             string
@@ -1975,6 +1990,88 @@ func (s *Service) CreateCertificateProfile(ctx context.Context, actor string, re
 		return domain.CertificateProfile{}, err
 	}
 	return profile, nil
+}
+
+func (s *Service) TransitionCertificateProfileIssuer(ctx context.Context, actor string, req TransitionCertificateProfileIssuerRequest) (domain.CertificateProfile, error) {
+	if err := validateCertificateProfileIssuerTransitionRequest(req); err != nil {
+		return domain.CertificateProfile{}, err
+	}
+
+	now := s.clock.Now()
+	var updated domain.CertificateProfile
+	if err := s.repo.WithinTx(ctx, func(repo store.Repository) error {
+		profile, err := repo.GetCertificateProfile(ctx, req.ProfileID)
+		if err != nil {
+			return err
+		}
+		if profile.IssuerID != req.CurrentIssuerID {
+			return domain.ErrInvalidTransition
+		}
+
+		currentIssuer, err := repo.GetIssuer(ctx, req.CurrentIssuerID)
+		if err != nil {
+			return err
+		}
+		nextIssuer, err := repo.GetIssuer(ctx, req.NextIssuerID)
+		if err != nil {
+			return err
+		}
+		parentID, err := validateIntermediateIssuerTransition(repo, ctx, currentIssuer, nextIssuer)
+		if err != nil {
+			return err
+		}
+
+		currentUpdatedAt := profile.UpdatedAt
+		profile.IssuerID = nextIssuer.ID
+		profile.UpdatedAt = now
+		if err := repo.UpdateCertificateProfileIssuerIfCurrent(ctx, profile, currentIssuer.ID, currentUpdatedAt); err != nil {
+			return err
+		}
+
+		action := "certificate_profile.issuer_rolled_over"
+		if req.Transition == CertificateProfileIssuerRollback {
+			action = "certificate_profile.issuer_rolled_back"
+		}
+		fields := auditFields(
+			"profile_id", profile.ID,
+			"previous_issuer_id", currentIssuer.ID,
+			"next_issuer_id", nextIssuer.ID,
+			"parent_issuer_id", parentID,
+			"transition", string(req.Transition),
+			"reason", strings.TrimSpace(req.Reason),
+		)
+		if err := s.createAuditEvent(ctx, repo, actor, action, "certificate_profile", profile.ID, now, fields); err != nil {
+			return err
+		}
+		if err := s.createOutboxMessage(ctx, repo, action, now, fields); err != nil {
+			return err
+		}
+		updated = profile
+		return nil
+	}); err != nil {
+		return domain.CertificateProfile{}, err
+	}
+	return updated, nil
+}
+
+func validateIntermediateIssuerTransition(repo store.Repository, ctx context.Context, currentIssuer domain.Issuer, nextIssuer domain.Issuer) (string, error) {
+	if currentIssuer.ID == nextIssuer.ID ||
+		currentIssuer.Status != domain.IssuerActive ||
+		nextIssuer.Status != domain.IssuerActive ||
+		currentIssuer.Kind != domain.IssuerIntermediateCA ||
+		nextIssuer.Kind != domain.IssuerIntermediateCA ||
+		isBlank(currentIssuer.ParentIssuerID) ||
+		currentIssuer.ParentIssuerID != nextIssuer.ParentIssuerID {
+		return "", domain.ErrInvalidRequest
+	}
+	parent, err := repo.GetIssuer(ctx, currentIssuer.ParentIssuerID)
+	if err != nil {
+		return "", err
+	}
+	if parent.Status != domain.IssuerActive || parent.Kind != domain.IssuerRootCA || !parent.TrustAnchor {
+		return "", domain.ErrInvalidRequest
+	}
+	return parent.ID, nil
 }
 
 func (s *Service) CreateEnrollment(ctx context.Context, actor string, req CreateEnrollmentRequest) (domain.Enrollment, error) {
@@ -4470,6 +4567,20 @@ func validateCreateIssuerRequest(req CreateIssuerRequest, productionPolicy bool)
 
 func validateSupportedSigningKeyRef(ref string) error {
 	if keyref.Class(ref) != keyref.ClassFile {
+		return domain.ErrInvalidRequest
+	}
+	return nil
+}
+
+func validateCertificateProfileIssuerTransitionRequest(req TransitionCertificateProfileIssuerRequest) error {
+	if isBlank(req.ProfileID) || isBlank(req.CurrentIssuerID) || isBlank(req.NextIssuerID) || req.CurrentIssuerID == req.NextIssuerID {
+		return domain.ErrInvalidRequest
+	}
+	if req.Transition != CertificateProfileIssuerRollover && req.Transition != CertificateProfileIssuerRollback {
+		return domain.ErrInvalidRequest
+	}
+	reason := strings.TrimSpace(req.Reason)
+	if reason == "" || len(reason) > 256 || strings.ContainsAny(reason, "\r\n") {
 		return domain.ErrInvalidRequest
 	}
 	return nil

@@ -143,6 +143,12 @@ python scripts\test_verify_audit_replay_drill.py
 python scripts\verify-audit-replay-drill.py --out-dir .tmp\audit-replay-evidence\verify-local
 # requires Go 1.25.11+ and proves idempotent audit repair and scoped dead-letter recovery
 
+python scripts\test_verify_issuer_rollover_drill.py
+# issuer rollover drill tests passed: 5
+
+python scripts\verify-issuer-rollover-drill.py --out-dir .tmp\issuer-rollover-evidence\verify-local
+# requires Go 1.25.11+ and proves atomic same-root rollover and rollback semantics
+
 python scripts\test_validate_release_artifacts.py
 # release artifact tests ok
 

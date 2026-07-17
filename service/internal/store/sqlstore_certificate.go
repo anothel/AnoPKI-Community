@@ -24,6 +24,10 @@ func (s *SQLStore) ListCertificateProfiles(ctx context.Context) ([]domain.Certif
 	return s.repository().ListCertificateProfiles(ctx)
 }
 
+func (s *SQLStore) UpdateCertificateProfileIssuerIfCurrent(ctx context.Context, profile domain.CertificateProfile, currentIssuerID string, currentUpdatedAt time.Time) error {
+	return s.repository().UpdateCertificateProfileIssuerIfCurrent(ctx, profile, currentIssuerID, currentUpdatedAt)
+}
+
 func (s *SQLStore) CreateEnrollment(ctx context.Context, enrollment domain.Enrollment) error {
 	return s.repository().CreateEnrollment(ctx, enrollment)
 }
@@ -228,6 +232,33 @@ ORDER BY created_at, id`)
 		return nil, err
 	}
 	return profiles, nil
+}
+
+func (r sqlRepository) UpdateCertificateProfileIssuerIfCurrent(ctx context.Context, profile domain.CertificateProfile, currentIssuerID string, currentUpdatedAt time.Time) error {
+	result, err := r.exec.ExecContext(ctx, `
+UPDATE certificate_profiles
+SET issuer_id = $1, updated_at = $2
+WHERE id = $3 AND issuer_id = $4 AND updated_at = $5`,
+		profile.IssuerID,
+		formatSQLTime(profile.UpdatedAt),
+		profile.ID,
+		currentIssuerID,
+		formatSQLTime(currentUpdatedAt),
+	)
+	if err != nil {
+		return err
+	}
+	rows, err := result.RowsAffected()
+	if err != nil {
+		return err
+	}
+	if rows == 0 {
+		if _, getErr := r.GetCertificateProfile(ctx, profile.ID); getErr != nil {
+			return getErr
+		}
+		return domain.ErrInvalidTransition
+	}
+	return nil
 }
 
 func (r sqlRepository) CreateEnrollment(ctx context.Context, enrollment domain.Enrollment) error {
