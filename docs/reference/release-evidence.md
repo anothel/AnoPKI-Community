@@ -109,6 +109,10 @@ tests and eight named checks to pass on the exact same Community commit as
 `anopki-release-metadata.json`. Raw key references, private-key material and
 credentials are prohibited.
 
+## Audit Repair And Dead-Letter Replay Evidence Runner
+
+`scripts/verify-audit-replay-drill.py` runs exact lifecycle and HTTP regressions for issuance-audit repair and operator-scoped dead-letter replay. It proves current signing and policy evidence reconstruction, idempotent repair, preserved prior job/webhook history, unrelated-message isolation, recovered delivery completion, redaction, and exact-commit binding. Evidence is packaged as `anopki-audit-replay-verification.tar.gz`; raw key references, payload bodies, endpoint secrets, credentials and private-key material are prohibited.
+
 ## Supported-Go Evidence Runner
 
 `scripts/verify-go-release.py` is the maintained Community entry point for Go
@@ -245,6 +249,8 @@ evidence still needs release workflow artifacts containing archives,
 - `python scripts/verify-recovery-drill.py --out-dir .tmp\recovery-evidence\verify-local`
 - `python scripts/test_verify_status_outage_drill.py`
 - `python scripts/verify-status-outage-drill.py --out-dir .tmp\status-outage-evidence\verify-local`
+- `python scripts/test_verify_audit_replay_drill.py`
+- `python scripts/verify-audit-replay-drill.py --out-dir .tmp\audit-replay-evidence\verify-local`
 - `python scripts/test_validate_release_artifacts.py`
 - `python scripts/test_validate_service_contracts.py`
 - `python scripts/validate-service-contracts.py`

@@ -2099,6 +2099,109 @@ func TestReplayDeadLetterOutboxMessagesFiltersByEventTypeAndTimeWindow(t *testin
 	}
 }
 
+func TestReplayDeadLetterOutboxMessagesRecoversAfterOperatorReplay(t *testing.T) {
+	api := newTestAPI(t)
+	requests := 0
+	receiver := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		requests++
+		w.WriteHeader(http.StatusNoContent)
+	}))
+	defer receiver.Close()
+	endpoint := domain.NotificationEndpoint{
+		ID:         "endpoint-http-replay",
+		Name:       "HTTP replay receiver",
+		Type:       domain.NotificationEndpointWebhook,
+		Status:     domain.NotificationEndpointActive,
+		URL:        receiver.URL,
+		Secret:     "http-replay-secret-not-evidence",
+		EventTypes: []string{"certificate.issued"},
+		CreatedAt:  testNow.Add(-3 * time.Hour),
+		UpdatedAt:  testNow.Add(-3 * time.Hour),
+	}
+	if err := api.repo.CreateNotificationEndpoint(api.ctx, endpoint); err != nil {
+		t.Fatalf("CreateNotificationEndpoint returned error: %v", err)
+	}
+	message := domain.OutboxMessage{
+		ID:           "outbox-http-replay",
+		Type:         "certificate.issued",
+		PayloadJSON:  `{"certificate_id":"certificate-http-replay"}`,
+		Status:       domain.OutboxDeadLetter,
+		AvailableAt:  testNow.Add(-time.Hour),
+		AttemptCount: 2,
+		MaxAttempts:  2,
+		LastError:    "receiver unavailable",
+		CreatedAt:    testNow.Add(-2 * time.Hour),
+		UpdatedAt:    testNow.Add(-time.Hour),
+	}
+	if err := api.repo.CreateOutboxMessage(api.ctx, message); err != nil {
+		t.Fatalf("CreateOutboxMessage returned error: %v", err)
+	}
+	if err := api.repo.CreateJobAttempt(api.ctx, domain.JobAttempt{
+		ID:              "attempt-http-replay-1",
+		OutboxMessageID: message.ID,
+		Status:          domain.JobAttemptFailed,
+		Error:           "receiver unavailable",
+		StartedAt:       testNow.Add(-2 * time.Hour),
+		FinishedAt:      testNow.Add(-2*time.Hour + time.Minute),
+		CreatedAt:       testNow.Add(-2*time.Hour + time.Minute),
+	}); err != nil {
+		t.Fatalf("CreateJobAttempt returned error: %v", err)
+	}
+
+	var replayed apiOutboxBulkReplay
+	status := api.doJSON(t, http.MethodPost, "/outbox/messages/dead-letter/replay", "operator", map[string]any{
+		"event_type":   message.Type,
+		"created_from": testNow.Add(-3 * time.Hour),
+		"created_to":   testNow,
+		"limit":        10,
+	}, &replayed)
+	assertStatus(t, status, http.StatusOK)
+	if replayed.ReplayedCount != 1 || !reflect.DeepEqual(replayed.MessageIDs, []string{message.ID}) {
+		t.Fatalf("bulk replay response = %#v", replayed)
+	}
+
+	dispatcher := lifecycle.NewOutboxDispatcher(
+		api.repo,
+		lifecycle.NewWebhookOutboxHandler(api.repo, receiver.Client()),
+		fixedClock{now: testNow},
+		&fakeIDGenerator{},
+	)
+	processed, err := dispatcher.RunOnce(api.ctx, 10)
+	if err != nil {
+		t.Fatalf("RunOnce returned error: %v", err)
+	}
+	if processed != 1 || requests != 1 {
+		t.Fatalf("processed=%d requests=%d, want 1/1", processed, requests)
+	}
+	stored, err := api.repo.GetOutboxMessage(api.ctx, message.ID)
+	if err != nil {
+		t.Fatalf("GetOutboxMessage returned error: %v", err)
+	}
+	if stored.Status != domain.OutboxCompleted || stored.LastError != "" {
+		t.Fatalf("stored message after replay = %#v", stored)
+	}
+	attempts, err := api.repo.ListJobAttemptsByOutboxMessage(api.ctx, message.ID)
+	if err != nil {
+		t.Fatalf("ListJobAttemptsByOutboxMessage returned error: %v", err)
+	}
+	if len(attempts) != 2 || attempts[0].Status != domain.JobAttemptFailed || attempts[1].Status != domain.JobAttemptSucceeded {
+		t.Fatalf("attempt history = %#v", attempts)
+	}
+	var events []apiAuditEvent
+	status = api.doJSON(t, http.MethodGet, "/audit-events?action=outbox.bulk_replay_requested", "", nil, &events)
+	assertStatus(t, status, http.StatusOK)
+	if len(events) != 1 || events[0].Actor != "operator" {
+		t.Fatalf("bulk replay audit events = %#v", events)
+	}
+	metadata := apiAuditMetadata(t, events[0])
+	if metadata["replayed_count"] != "1" || metadata["outbox_message_type"] != message.Type {
+		t.Fatalf("bulk replay audit metadata = %#v", metadata)
+	}
+	if strings.Contains(events[0].MetadataJSON, message.PayloadJSON) || strings.Contains(events[0].MetadataJSON, endpoint.Secret) {
+		t.Fatalf("bulk replay audit exposes payload or secret: %s", events[0].MetadataJSON)
+	}
+}
+
 func TestCreateCertificateProfile(t *testing.T) {
 	api := newTestAPI(t)
 	issuer := api.createIssuer(t)

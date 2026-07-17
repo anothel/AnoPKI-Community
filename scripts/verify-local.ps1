@@ -131,6 +131,18 @@ $steps = @(
         Command = @("python", "scripts\verify-status-outage-drill.py", "--out-dir", ".tmp\status-outage-evidence\verify-local")
     },
     @{
+        Name = "audit/replay drill tests"
+        Dir = $RepoRoot
+        Display = "python scripts\test_verify_audit_replay_drill.py"
+        Command = @("python", "scripts\test_verify_audit_replay_drill.py")
+    },
+    @{
+        Name = "audit repair and dead-letter replay drill"
+        Dir = $RepoRoot
+        Display = "python scripts\verify-audit-replay-drill.py --out-dir .tmp\audit-replay-evidence\verify-local"
+        Command = @("python", "scripts\verify-audit-replay-drill.py", "--out-dir", ".tmp\audit-replay-evidence\verify-local")
+    },
+    @{
         Name = "release artifact validator tests"
         Dir = $RepoRoot
         Display = "python scripts\test_validate_release_artifacts.py"

@@ -37,7 +37,8 @@ Completed backend and FileKeyProvider work is intentionally omitted.
 - Keep policy-decision reasons and redacted validation-evidence references stable across enrollment, issuance, retry and audit repair.
 - Keep the executable SQLite backup/restore drill and release evidence contract current.
 - Keep the executable CRL/OCSP outage-and-recovery drill and release evidence contract current.
-- Expand issuer rotation, intermediate rollover, audit-repair, dead-letter, PostgreSQL and multi-node recovery evidence.
+- Keep the audit-repair and dead-letter replay drill and release evidence contract current.
+- Expand issuer rotation, intermediate rollover, PostgreSQL and multi-node recovery evidence.
 - Complete tamper-evident audit storage only after event-schema stability is sufficient.
 
 ## P2 — Refactor safety

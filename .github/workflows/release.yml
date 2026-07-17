@@ -56,6 +56,13 @@ jobs:
       - name: Package status outage verification evidence
         run: |
           tar -czf dist/anopki-status-outage-verification.tar.gz -C .tmp/release-status-outage-evidence status-outage-verification.json status-outage-verification.md status-outage-test.log
+      - name: Run audit repair and dead-letter replay verification
+        run: |
+          python scripts/test_verify_audit_replay_drill.py
+          python scripts/verify-audit-replay-drill.py --out-dir .tmp/release-audit-replay-evidence --commit "${GITHUB_SHA}"
+      - name: Package audit/replay verification evidence
+        run: |
+          tar -czf dist/anopki-audit-replay-verification.tar.gz -C .tmp/release-audit-replay-evidence audit-replay-verification.json audit-replay-verification.md audit-replay-test.log
       - name: Read release version
         run: |
           VERSION="$(cat VERSION)"

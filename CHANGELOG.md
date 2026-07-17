@@ -9,6 +9,7 @@ commands and known gaps before tagging.
 
 ### Added
 
+- A fail-closed audit-repair and dead-letter replay drill that proves current signing/policy evidence reconstruction, idempotent repair, scoped replay, preserved attempt history, recovered delivery completion, redaction and exact-commit release binding.
 - A fail-closed CRL/OCSP outage-and-recovery drill covering lifecycle atomicity, public 502 mapping, no phantom CRL publication, no success audit during failure, recovery numbering, completed signing evidence, CI artifact upload, and strict release archive validation.
 - Stable allow/reject/unknown policy-decision audit metadata with redacted validation-evidence references for enrollment creation, replacement enrollment, certificate issuance, failure auditing, retry, and legacy audit repair.
 - A deterministic fail-closed SQLite backup/restore drill with strict redacted evidence, CI artifact upload, release archive validation, and regression tests for dirty migrations, lost CRL state and private-key material.

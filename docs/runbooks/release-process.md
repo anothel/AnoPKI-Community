@@ -32,6 +32,8 @@ python scripts\test_verify_recovery_drill.py
 python scripts\verify-recovery-drill.py --out-dir .tmp\recovery-evidence\full
 python scripts\test_verify_status_outage_drill.py
 python scripts\verify-status-outage-drill.py --out-dir .tmp\status-outage-evidence\full
+python scripts\test_verify_audit_replay_drill.py
+python scripts\verify-audit-replay-drill.py --out-dir .tmp\audit-replay-evidence\full
 ```
 
 The full profile runs baseline tests, vet and build plus race, staticcheck,
@@ -104,6 +106,7 @@ Certbot smoke requires Linux/WSL or elevated Windows with certbot installed.
    Attach its run URL and versioned `anopki-release-<run-id>` artifact containing
    validated service/core archives, full-profile `anopki-go-verification.tar.gz`,
    `anopki-recovery-verification.tar.gz`, `anopki-status-outage-verification.tar.gz`,
+   `anopki-audit-replay-verification.tar.gz`,
    `anopki-backend-info.json`, `anopki-release-metadata.json`, `SHA256SUMS`,
    CycloneDX SBOM, and
    `SIGNING-STATUS.txt`. The profile metadata must match the built Core and

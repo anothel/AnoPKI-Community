@@ -74,6 +74,8 @@ python scripts\test_verify_recovery_drill.py
 python scripts\verify-recovery-drill.py --out-dir .tmp\recovery-evidence\manual
 python scripts\test_verify_status_outage_drill.py
 python scripts\verify-status-outage-drill.py --out-dir .tmp\status-outage-evidence\manual
+python scripts\test_verify_audit_replay_drill.py
+python scripts\verify-audit-replay-drill.py --out-dir .tmp\audit-replay-evidence\manual
 ```
 
 The drill creates the current SQLite schema, seeds issuer and OCSP responder
@@ -97,7 +99,7 @@ or private-key material. The separate status-outage drill executes the exact
 lifecycle and HTTP CRL/OCSP failure-and-recovery regressions. It proves no
 phantom CRL publication or success audit is created during signer failure, public
 failures map correctly, CRL numbering resumes without a skipped publication and
-recovered operations return through the normal signing-evidence contract.
+recovered operations return through the normal signing-evidence contract. The audit/replay drill separately proves idempotent issuance-audit reconstruction, scoped dead-letter selection, preserved job/webhook history, and successful completion only after receiver recovery.
 
 These drills cover deterministic SQLite backup/restore and single-node
 CRL/OCSP signer-outage semantics. PostgreSQL, multi-node traffic and real

@@ -257,6 +257,74 @@ def write_status_outage_evidence_archive(
             archive.add(root / "unexpected.txt", arcname="unexpected.txt")
 
 
+def write_audit_replay_evidence_archive(
+    path: Path,
+    *,
+    result: str = "passed",
+    commit: str = "0123456789abcdef0123456789abcdef01234567",
+    extra_field: bool = False,
+    extra_member: bool = False,
+) -> None:
+    root = path.parent / "audit-replay-evidence"
+    if root.exists():
+        shutil.rmtree(root)
+    root.mkdir(parents=True, exist_ok=True)
+    tests = [
+        ("github.com/anothel/anopki/service/internal/lifecycle", "TestRepairMissingIssuanceAuditEventsPreservesCurrentEvidenceAndIsIdempotent"),
+        ("github.com/anothel/anopki/service/internal/lifecycle", "TestReplayDeadLetterOutboxMessagesPreservesHistoryAndCompletesAfterRecovery"),
+        ("github.com/anothel/anopki/service/internal/httpapi", "TestRepairMissingIssuanceAuditEvents"),
+        ("github.com/anothel/anopki/service/internal/httpapi", "TestReplayDeadLetterOutboxMessagesRecoversAfterOperatorReplay"),
+    ]
+    checks = [
+        "audit-repair-current-signing-evidence",
+        "audit-repair-current-policy-evidence",
+        "audit-repair-idempotent",
+        "audit-repair-sensitive-input-redaction",
+        "dead-letter-scope-guarded",
+        "dead-letter-attempt-history-preserved",
+        "dead-letter-webhook-history-preserved",
+        "dead-letter-recovery-completes",
+        "dead-letter-replay-audited",
+        "sensitive-evidence-exclusion",
+    ]
+    regex = "^(" + "|".join(name for _, name in tests) + ")$"
+    evidence = {
+        "schema_version": 1,
+        "evidence_type": "community_audit_replay_drill",
+        "product": "AnoPKI",
+        "edition": "community",
+        "product_profile": "community-openssl",
+        "commit": commit,
+        "minimum_go_version": "1.25.11",
+        "started_at": "2026-07-17T01:00:00Z",
+        "completed_at": "2026-07-17T01:00:01Z",
+        "result": result,
+        "go_version": "go version go1.25.12 linux/amd64",
+        "test_command": ["go", "test", "-json", "-count=1", "-run", regex, "./internal/lifecycle", "./internal/httpapi"],
+        "tests": [{"package": package, "name": name, "status": "pass"} for package, name in tests],
+        "checks": [{"name": name, "status": "passed"} for name in checks],
+        "redaction": {
+            "private_key_markers_found": False,
+            "raw_key_references_in_evidence": False,
+            "sensitive_values_in_evidence": False,
+        },
+        "blocker": "" if result == "passed" else "test failure",
+    }
+    if extra_field:
+        evidence["unexpected"] = "drift"
+    (root / "audit-replay-verification.json").write_text(json.dumps(evidence), encoding="utf-8")
+    (root / "audit-replay-verification.md").write_text("# Audit/replay evidence\n", encoding="utf-8")
+    (root / "audit-replay-test.log").write_text("pass\n", encoding="utf-8")
+    if extra_member:
+        (root / "unexpected.txt").write_text("unexpected\n", encoding="utf-8")
+    with tarfile.open(path, "w:gz") as archive:
+        archive.add(root / "audit-replay-verification.json", arcname="audit-replay-verification.json")
+        archive.add(root / "audit-replay-verification.md", arcname="audit-replay-verification.md")
+        archive.add(root / "audit-replay-test.log", arcname="audit-replay-test.log")
+        if extra_member:
+            archive.add(root / "unexpected.txt", arcname="unexpected.txt")
+
+
 def backend_info() -> dict[str, object]:
     return {
         "product_profile": "community-openssl",
@@ -336,6 +404,7 @@ def write_valid_dist(dist: Path) -> tuple[Path, Path]:
     write_go_evidence_archive(dist / "anopki-go-verification.tar.gz")
     write_recovery_evidence_archive(dist / "anopki-recovery-verification.tar.gz")
     write_status_outage_evidence_archive(dist / "anopki-status-outage-verification.tar.gz")
+    write_audit_replay_evidence_archive(dist / "anopki-audit-replay-verification.tar.gz")
     backend = backend_info()
     (dist / "anopki-backend-info.json").write_text(json.dumps(backend), encoding="utf-8")
     (dist / "anopki-release-metadata.json").write_text(json.dumps(release_metadata(backend)), encoding="utf-8")
@@ -716,6 +785,61 @@ def test_unexpected_status_outage_member_fails() -> None:
     assert "unexpected status outage evidence members" in result.stderr
 
 
+def test_missing_audit_replay_evidence_fails() -> None:
+    with tempfile.TemporaryDirectory() as tmp:
+        dist = Path(tmp)
+        write_valid_dist(dist)
+        (dist / "anopki-audit-replay-verification.tar.gz").unlink()
+        rewrite_checksums(dist)
+        result = run_validator(dist)
+    assert result.returncode == 1
+    assert "missing audit/replay verification evidence" in result.stderr
+
+
+def test_failed_audit_replay_evidence_fails() -> None:
+    with tempfile.TemporaryDirectory() as tmp:
+        dist = Path(tmp)
+        write_valid_dist(dist)
+        write_audit_replay_evidence_archive(dist / "anopki-audit-replay-verification.tar.gz", result="failed")
+        rewrite_checksums(dist)
+        result = run_validator(dist)
+    assert result.returncode == 1
+    assert "audit/replay verification drill did not pass" in result.stderr
+
+
+def test_audit_replay_commit_mismatch_fails() -> None:
+    with tempfile.TemporaryDirectory() as tmp:
+        dist = Path(tmp)
+        write_valid_dist(dist)
+        write_audit_replay_evidence_archive(dist / "anopki-audit-replay-verification.tar.gz", commit="f" * 40)
+        rewrite_checksums(dist)
+        result = run_validator(dist)
+    assert result.returncode == 1
+    assert "audit/replay verification commit does not match" in result.stderr
+
+
+def test_unknown_audit_replay_field_fails() -> None:
+    with tempfile.TemporaryDirectory() as tmp:
+        dist = Path(tmp)
+        write_valid_dist(dist)
+        write_audit_replay_evidence_archive(dist / "anopki-audit-replay-verification.tar.gz", extra_field=True)
+        rewrite_checksums(dist)
+        result = run_validator(dist)
+    assert result.returncode == 1
+    assert "audit/replay verification evidence has unknown fields" in result.stderr
+
+
+def test_unexpected_audit_replay_member_fails() -> None:
+    with tempfile.TemporaryDirectory() as tmp:
+        dist = Path(tmp)
+        write_valid_dist(dist)
+        write_audit_replay_evidence_archive(dist / "anopki-audit-replay-verification.tar.gz", extra_member=True)
+        rewrite_checksums(dist)
+        result = run_validator(dist)
+    assert result.returncode == 1
+    assert "unexpected audit/replay evidence members" in result.stderr
+
+
 def main() -> None:
     test_valid_release_artifacts_pass()
     test_missing_release_archive_fails()
@@ -747,6 +871,11 @@ def main() -> None:
     test_status_outage_commit_mismatch_fails()
     test_unknown_status_outage_field_fails()
     test_unexpected_status_outage_member_fails()
+    test_missing_audit_replay_evidence_fails()
+    test_failed_audit_replay_evidence_fails()
+    test_audit_replay_commit_mismatch_fails()
+    test_unknown_audit_replay_field_fails()
+    test_unexpected_audit_replay_member_fails()
     print("release artifact tests ok")
 
 
