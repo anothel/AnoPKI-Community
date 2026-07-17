@@ -4409,6 +4409,24 @@ func testACMECSRBase64URLWithSubject(t *testing.T, subject pkix.Name) string {
 	return base64.RawURLEncoding.EncodeToString(der)
 }
 
+func fakeSigningEvidence(operation string, algorithm string) corecli.SigningEvidence {
+	return corecli.SigningEvidence{
+		SchemaVersion:               1,
+		EvidenceSource:              "core_signing",
+		Operation:                   operation,
+		ProviderID:                  "openssl.file",
+		ProviderClass:               "file",
+		ProviderReadiness:           "ready",
+		ProviderExportability:       "exportable",
+		ReferenceClass:              "file",
+		KeyAlgorithm:                "rsa",
+		RequestedSignatureAlgorithm: algorithm,
+		IssuerBindingVerified:       true,
+		FallbackUsed:                false,
+		ResultCode:                  "ok",
+	}
+}
+
 type fakeIssuer struct {
 	requests                          []corecli.IssueRequest
 	crlRequests                       []corecli.GenerateCRLRequest
@@ -4436,11 +4454,12 @@ func (f *fakeIssuer) Issue(ctx context.Context, req corecli.IssueRequest) (corec
 		return corecli.IssueResult{}, f.err
 	}
 	return corecli.IssueResult{
-		CertificatePEM: "issued:" + req.CSRPEM,
-		SerialNumber:   "serial:" + req.Subject,
-		Subject:        req.Subject,
-		NotBefore:      req.NotBefore,
-		NotAfter:       req.NotAfter,
+		CertificatePEM:  "issued:" + req.CSRPEM,
+		SerialNumber:    "serial:" + req.Subject,
+		Subject:         req.Subject,
+		NotBefore:       req.NotBefore,
+		NotAfter:        req.NotAfter,
+		SigningEvidence: fakeSigningEvidence("certificate_issue", req.SignatureAlgorithm),
 	}, nil
 }
 
@@ -4453,7 +4472,10 @@ func (f *fakeIssuer) GenerateCRL(ctx context.Context, req corecli.GenerateCRLReq
 	if crlPEM == "" {
 		crlPEM = "crl-pem"
 	}
-	return corecli.GenerateCRLResult{CRLPEM: crlPEM}, nil
+	return corecli.GenerateCRLResult{
+		CRLPEM:          crlPEM,
+		SigningEvidence: fakeSigningEvidence("crl_generate_sign", "sha256"),
+	}, nil
 }
 
 func (f *fakeIssuer) InspectOCSPIssuer(ctx context.Context, issuerCertificatePEM string, hashAlgorithm string) (corecli.OCSPIssuerInfo, error) {
@@ -4489,7 +4511,10 @@ func (f *fakeIssuer) GenerateOCSPResponse(ctx context.Context, req corecli.Gener
 	if f.err != nil {
 		return corecli.GenerateOCSPResponseResult{}, f.err
 	}
-	return corecli.GenerateOCSPResponseResult{ResponseDER: f.ocspResponseDER}, nil
+	return corecli.GenerateOCSPResponseResult{
+		ResponseDER:     f.ocspResponseDER,
+		SigningEvidence: fakeSigningEvidence("ocsp_response_sign", "sha256"),
+	}, nil
 }
 
 type fixedClock struct {
