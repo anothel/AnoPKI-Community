@@ -125,6 +125,9 @@ test_signing_evidence_sidecar
 ANOPKI_CORE_SIGNING_EVIDENCE_FILE
 core_signing
 provider.evidence_failed
+ecdsa_with_sha256
+key_algorithm == "ecdsa"
+NID_ecdsa_with_SHA256
 """,
     )
     write(
@@ -136,6 +139,11 @@ provider.key_not_found
 provider.key_parse_failed
 provider.key_binding_mismatch
 provider.exportability_violation
+write_encrypted_private_key
+encrypted.pem
+generate_ec_key
+NID_ecdsa_with_SHA256
+ECDSA CRL TBS DER
 X509_CRL_verify
 deterministic CRL DER
 """,
@@ -151,6 +159,11 @@ provider.key_parse_failed
 provider.algorithm_mismatch
 provider.key_binding_mismatch
 provider.exportability_violation
+write_encrypted_private_key
+encrypted.pem
+generate_ec_key
+NID_ecdsa_with_SHA256
+test_ecdsa_success
 OCSP_basic_verify
 provider-signed OCSP response verification failed
 """,
@@ -398,6 +411,42 @@ def test_missing_resolver_source_fails() -> None:
         expect_failure(root, "missing KeyProvider boundary file")
 
 
+def test_missing_certificate_ecdsa_coverage_fails() -> None:
+    with tempfile.TemporaryDirectory() as dirname:
+        root = Path(dirname)
+        clean_fixture(root)
+        test = root / "tests/file_key_provider_test.cpp"
+        test.write_text(
+            test.read_text(encoding="utf-8").replace("NID_ecdsa_with_SHA256", "missing"),
+            encoding="utf-8",
+        )
+        expect_failure(root, "FileKeyProvider tests do not cover")
+
+
+def test_missing_crl_ecdsa_coverage_fails() -> None:
+    with tempfile.TemporaryDirectory() as dirname:
+        root = Path(dirname)
+        clean_fixture(root)
+        test = root / "tests/crl_file_key_provider_test.cpp"
+        test.write_text(
+            test.read_text(encoding="utf-8").replace("ECDSA CRL TBS DER", "missing"),
+            encoding="utf-8",
+        )
+        expect_failure(root, "CRL FileKeyProvider tests are missing required coverage")
+
+
+def test_missing_ocsp_ecdsa_coverage_fails() -> None:
+    with tempfile.TemporaryDirectory() as dirname:
+        root = Path(dirname)
+        clean_fixture(root)
+        test = root / "tests/ocsp_file_key_provider_test.cpp"
+        test.write_text(
+            test.read_text(encoding="utf-8").replace("test_ecdsa_success", "missing"),
+            encoding="utf-8",
+        )
+        expect_failure(root, "OCSP FileKeyProvider tests are missing required coverage")
+
+
 def test_provider_specific_resolver_coupling_fails() -> None:
     with tempfile.TemporaryDirectory() as dirname:
         root = Path(dirname)
@@ -502,6 +551,9 @@ def main() -> None:
     test_missing_cmake_source_fails()
     test_missing_crl_cmake_test_fails()
     test_missing_resolver_source_fails()
+    test_missing_certificate_ecdsa_coverage_fails()
+    test_missing_crl_ecdsa_coverage_fails()
+    test_missing_ocsp_ecdsa_coverage_fails()
     test_provider_specific_resolver_coupling_fails()
     test_missing_software_token_test_fails()
     test_missing_software_token_cmake_test_fails()

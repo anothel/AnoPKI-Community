@@ -23,7 +23,6 @@ Completed backend and FileKeyProvider work is intentionally omitted.
 
 - Keep certificate, CRL and OCSP direct-key-loading regression guards active.
 - Keep `FileKeyProvider` local/development only and production-rejected.
-- Add ECDSA and encrypted-key negative fixtures when they materially improve coverage.
 - Keep signing evidence strict, redacted and tied to actual C++ signing results.
 - Do not introduce a runtime software-token, PKCS#11, HSM or KMS provider in Community without a new scope decision.
 

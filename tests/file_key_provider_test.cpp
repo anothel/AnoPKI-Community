@@ -182,6 +182,22 @@ std::vector<unsigned char> certificate_der(X509 *certificate)
 	return output;
 }
 
+std::vector<unsigned char> certificate_tbs_der(X509 *certificate)
+{
+	const int size = i2d_re_X509_tbs(certificate, nullptr);
+	if (size <= 0)
+	{
+		fail("TBS DER size failed");
+	}
+	std::vector<unsigned char> output(static_cast<std::size_t>(size));
+	unsigned char *cursor = output.data();
+	if (i2d_re_X509_tbs(certificate, &cursor) != size)
+	{
+		fail("TBS DER encode failed");
+	}
+	return output;
+}
+
 void write_private_key(const std::filesystem::path &path, EVP_PKEY *key)
 {
 	BIO *bio = BIO_new_file(path.string().c_str(), "wb");
@@ -451,6 +467,39 @@ void test_success_and_golden_equivalence(const TempDirectory &temp)
 	EvpPkeyPtr issuer_public{X509_get_pubkey(issuer.get())};
 	require(issuer_public != nullptr && X509_verify(through_provider.get(), issuer_public.get()) == 1,
 	        "provider-signed certificate verification failed");
+
+	EvpPkeyPtr ec_issuer_key = generate_ec_key();
+	EvpPkeyPtr ec_subject_key = generate_ec_key();
+	X509Ptr ec_issuer = make_issuer_certificate(ec_issuer_key.get(), "AnoPKI ECDSA Provider Test CA");
+	const std::filesystem::path ec_key_path = temp.path() / "ecdsa-issuer.pem";
+	write_private_key(ec_key_path, ec_issuer_key.get());
+
+	SigningKeyHandle ec_handle = resolve_certificate_signing_key(
+	    "file:" + ec_key_path.string(), "ecdsa_with_sha256", ec_issuer.get(), ProviderPolicy{});
+	require(ec_handle.native_handle() != nullptr, "ECDSA file reference did not return a key handle");
+	require(ec_handle.evidence().operation == "certificate_issue", "ECDSA operation evidence mismatch");
+	require(ec_handle.evidence().requested_signature_algorithm == "ecdsa_with_sha256",
+	        "ECDSA requested algorithm evidence mismatch");
+	require(ec_handle.evidence().key_algorithm == "ecdsa", "ECDSA key algorithm evidence mismatch");
+	require(ec_handle.evidence().issuer_binding_verified, "ECDSA issuer binding evidence missing");
+	require(!ec_handle.evidence().fallback_used, "ECDSA provider path used fallback");
+
+	X509Ptr ec_direct = make_unsigned_leaf(ec_issuer.get(), ec_subject_key.get());
+	X509Ptr ec_through_provider = make_unsigned_leaf(ec_issuer.get(), ec_subject_key.get());
+	if (X509_sign(ec_direct.get(), ec_issuer_key.get(), EVP_sha256()) <= 0 ||
+	    X509_sign(ec_through_provider.get(), ec_handle.native_handle(), EVP_sha256()) <= 0)
+	{
+		fail("ECDSA provider signing failed");
+	}
+	require(certificate_tbs_der(ec_direct.get()) == certificate_tbs_der(ec_through_provider.get()),
+	        "provider changed ECDSA certificate TBS DER");
+	require(X509_get_signature_nid(ec_through_provider.get()) == NID_ecdsa_with_SHA256,
+	        "provider-signed certificate did not use ECDSA with SHA-256");
+	EvpPkeyPtr ec_issuer_public{X509_get_pubkey(ec_issuer.get())};
+	require(ec_issuer_public != nullptr &&
+	            X509_verify(ec_through_provider.get(), ec_issuer_public.get()) == 1,
+	        "provider-signed ECDSA certificate verification failed");
+
 	expect_provider_error(
 	    [&] { throw_provider_sign_failed(file_handle); },
 	    ProviderErrorCode::sign_failed,

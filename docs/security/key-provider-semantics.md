@@ -152,7 +152,7 @@ is opened.
   never contain a raw `key_ref` or filesystem path.
 - Real non-exportable provider: not implemented.
 - Remote KMS prepare/sign/finalize: not implemented.
-- Enterprise/AnoCrypto-C provider compatibility: not implemented.
+- Other product-profile provider integrations are outside this Community project.
 
 No production HSM/KMS/PKCS#11 or non-exportability claim is allowed from this
 slice.

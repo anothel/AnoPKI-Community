@@ -144,6 +144,19 @@ EvpPkeyPtr generate_rsa_key()
 	return EvpPkeyPtr{key};
 }
 
+EvpPkeyPtr generate_ec_key()
+{
+	EvpPkeyCtxPtr context{EVP_PKEY_CTX_new_id(EVP_PKEY_EC, nullptr)};
+	require(context != nullptr, "failed to allocate EC context");
+	require(EVP_PKEY_keygen_init(context.get()) == 1, "failed to initialize EC generation");
+	require(
+	    EVP_PKEY_CTX_set_ec_paramgen_curve_nid(context.get(), NID_X9_62_prime256v1) == 1,
+	    "failed to select P-256");
+	EVP_PKEY *key = nullptr;
+	require(EVP_PKEY_keygen(context.get(), &key) == 1, "failed to generate EC key");
+	return EvpPkeyPtr{key};
+}
+
 #ifdef EVP_PKEY_ED25519
 EvpPkeyPtr generate_ed25519_key()
 {
@@ -246,6 +259,23 @@ void write_private_key(const std::filesystem::path &path, EVP_PKEY *key)
 	    "failed to write private key");
 }
 
+void write_encrypted_private_key(const std::filesystem::path &path, EVP_PKEY *key)
+{
+	BioPtr bio{BIO_new_file(path.string().c_str(), "wb")};
+	require(bio != nullptr, "failed to open encrypted private-key output");
+	constexpr unsigned char password[] = "test-only-password";
+	require(
+	    PEM_write_bio_PrivateKey(
+	        bio.get(),
+	        key,
+	        EVP_aes_256_cbc(),
+	        password,
+	        static_cast<int>(sizeof(password) - 1U),
+	        nullptr,
+	        nullptr) == 1,
+	    "failed to write encrypted private key");
+}
+
 std::string request_der(X509 *leaf, X509 *issuer, OCSP_CERTID **out_id)
 {
 	OCSPRequestPtr request{OCSP_REQUEST_new()};
@@ -290,7 +320,11 @@ anopki::core::GenerateOCSPResponseRequest make_request(
 	return response;
 }
 
-void verify_response(const std::string &der, X509 *signer_certificate, OCSP_CERTID *id)
+void verify_response(
+    const std::string &der,
+    X509 *signer_certificate,
+    OCSP_CERTID *id,
+    int expected_signature_nid = NID_undef)
 {
 	OCSPResponsePtr response = parse_response(der);
 	require(
@@ -298,6 +332,14 @@ void verify_response(const std::string &der, X509 *signer_certificate, OCSP_CERT
 	    "OCSP response status was not successful");
 	OCSPBasicResponsePtr basic{OCSP_response_get1_basic(response.get())};
 	require(basic != nullptr, "missing OCSP basic response");
+	if (expected_signature_nid != NID_undef)
+	{
+		const X509_ALGOR *signature_algorithm = OCSP_resp_get0_tbs_sigalg(basic.get());
+		const ASN1_OBJECT *signature_object = nullptr;
+		X509_ALGOR_get0(&signature_object, nullptr, nullptr, signature_algorithm);
+		require(signature_object != nullptr && OBJ_obj2nid(signature_object) == expected_signature_nid,
+		        "OCSP response signature algorithm mismatch");
+	}
 
 	STACK_OF(X509) *certificates = sk_X509_new_null();
 	require(certificates != nullptr, "failed to allocate OCSP signer stack");
@@ -355,6 +397,28 @@ void test_success(const TempDirectory &temp)
 	verify_response(file_result.response_der, issuer.get(), id.get());
 }
 
+void test_ecdsa_success(const TempDirectory &temp)
+{
+	EvpPkeyPtr issuer_key = generate_ec_key();
+	EvpPkeyPtr leaf_key = generate_rsa_key();
+	X509Ptr issuer = make_ca_certificate(issuer_key.get(), "AnoPKI ECDSA OCSP Provider CA");
+	X509Ptr leaf = make_leaf_certificate(leaf_key.get(), issuer.get(), issuer_key.get());
+	const std::filesystem::path key_path = temp.path() / "ecdsa-issuer.pem";
+	write_private_key(key_path, issuer_key.get());
+	OCSP_CERTID *raw_id = nullptr;
+	const std::string request = request_der(leaf.get(), issuer.get(), &raw_id);
+	OCSPCertIDPtr id{raw_id};
+	const std::string issuer_pem = certificate_pem(issuer.get());
+
+	const auto bare_result = anopki::core::generate_ocsp_response(
+	    make_request(request, issuer_pem, key_path.string()));
+	verify_response(bare_result.response_der, issuer.get(), id.get(), NID_ecdsa_with_SHA256);
+
+	const auto file_result = anopki::core::generate_ocsp_response(
+	    make_request(request, issuer_pem, "file:" + key_path.string()));
+	verify_response(file_result.response_der, issuer.get(), id.get(), NID_ecdsa_with_SHA256);
+}
+
 void test_failures_and_no_fallback(const TempDirectory &temp)
 {
 	EvpPkeyPtr issuer_key = generate_rsa_key();
@@ -371,10 +435,12 @@ void test_failures_and_no_fallback(const TempDirectory &temp)
 	const std::filesystem::path valid_path = temp.path() / "valid.pem";
 	const std::filesystem::path other_path = temp.path() / "other.pem";
 	const std::filesystem::path malformed_path = temp.path() / "malformed.pem";
+	const std::filesystem::path encrypted_path = temp.path() / "encrypted.pem";
 	const std::filesystem::path directory_path = temp.path() / "directory";
 	const std::filesystem::path missing_path = temp.path() / "missing-secret.pem";
 	write_private_key(valid_path, issuer_key.get());
 	write_private_key(other_path, other_key.get());
+	write_encrypted_private_key(encrypted_path, issuer_key.get());
 	std::ofstream{malformed_path} << "not a private key\n";
 	std::filesystem::create_directory(directory_path);
 
@@ -405,6 +471,13 @@ void test_failures_and_no_fallback(const TempDirectory &temp)
 	    },
 	    "provider.key_parse_failed",
 	    malformed_path.filename().string());
+	expect_error(
+	    [&] {
+		    (void)anopki::core::generate_ocsp_response(
+		        make_request(request, issuer_pem, "file:" + encrypted_path.string()));
+	    },
+	    "provider.key_parse_failed",
+	    "test-only-password");
 	expect_error(
 	    [&] {
 		    (void)anopki::core::generate_ocsp_response(
@@ -461,6 +534,7 @@ int main(int argc, char *argv[])
 		require(argc == 2, "expected build directory argument");
 		TempDirectory temp{argv[1]};
 		test_success(temp);
+		test_ecdsa_success(temp);
 		test_failures_and_no_fallback(temp);
 		std::cout << "OCSP file key provider tests passed\n";
 		return 0;

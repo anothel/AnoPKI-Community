@@ -140,6 +140,19 @@ EvpPkeyPtr generate_rsa_key()
 	return EvpPkeyPtr{key};
 }
 
+EvpPkeyPtr generate_ec_key()
+{
+	EvpPkeyCtxPtr context{EVP_PKEY_CTX_new_id(EVP_PKEY_EC, nullptr)};
+	require(context != nullptr, "failed to allocate EC context");
+	require(EVP_PKEY_keygen_init(context.get()) == 1, "failed to initialize EC generation");
+	require(
+	    EVP_PKEY_CTX_set_ec_paramgen_curve_nid(context.get(), NID_X9_62_prime256v1) == 1,
+	    "failed to select P-256");
+	EVP_PKEY *key = nullptr;
+	require(EVP_PKEY_keygen(context.get(), &key) == 1, "failed to generate EC key");
+	return EvpPkeyPtr{key};
+}
+
 void add_name(X509_NAME *name, const char *common_name)
 {
 	require(
@@ -207,6 +220,23 @@ void write_private_key(const std::filesystem::path &path, EVP_PKEY *key)
 	    "failed to write private key");
 }
 
+void write_encrypted_private_key(const std::filesystem::path &path, EVP_PKEY *key)
+{
+	BioPtr bio{BIO_new_file(path.string().c_str(), "wb")};
+	require(bio != nullptr, "failed to open encrypted private-key output");
+	constexpr unsigned char password[] = "test-only-password";
+	require(
+	    PEM_write_bio_PrivateKey(
+	        bio.get(),
+	        key,
+	        EVP_aes_256_cbc(),
+	        password,
+	        static_cast<int>(sizeof(password) - 1U),
+	        nullptr,
+	        nullptr) == 1,
+	    "failed to write encrypted private key");
+}
+
 X509CrlPtr parse_crl(const std::string &pem)
 {
 	BioPtr bio{BIO_new_mem_buf(pem.data(), static_cast<int>(pem.size()))};
@@ -224,6 +254,16 @@ std::string crl_der(X509_CRL *crl)
 	const long size = BIO_get_mem_data(bio.get(), &data);
 	require(size > 0 && data != nullptr, "empty CRL DER");
 	return std::string{data, static_cast<std::string::size_type>(size)};
+}
+
+std::string crl_tbs_der(X509_CRL *crl)
+{
+	const int size = i2d_re_X509_CRL_tbs(crl, nullptr);
+	require(size > 0, "failed to size CRL TBS DER");
+	std::string output(static_cast<std::size_t>(size), '\0');
+	unsigned char *cursor = reinterpret_cast<unsigned char *>(output.data());
+	require(i2d_re_X509_CRL_tbs(crl, &cursor) == size, "failed to encode CRL TBS DER");
+	return output;
 }
 
 anopki::core::GenerateCRLRequest make_request(
@@ -277,6 +317,27 @@ void test_success_and_golden_equivalence(const TempDirectory &temp)
 	require(
 	    issuer_public != nullptr && X509_CRL_verify(file_crl.get(), issuer_public.get()) == 1,
 	    "provider-signed CRL verification failed");
+
+	EvpPkeyPtr ec_issuer_key = generate_ec_key();
+	X509Ptr ec_issuer = make_ca_certificate(ec_issuer_key.get(), "AnoPKI ECDSA CRL Provider CA");
+	const std::string ec_issuer_pem = certificate_pem(ec_issuer.get());
+	const std::filesystem::path ec_key_path = temp.path() / "ecdsa-issuer.pem";
+	write_private_key(ec_key_path, ec_issuer_key.get());
+
+	const auto ec_bare_result = anopki::core::generate_crl(make_request(ec_issuer_pem, ec_key_path.string()));
+	const auto ec_file_result = anopki::core::generate_crl(
+	    make_request(ec_issuer_pem, "file:" + ec_key_path.string()));
+	X509CrlPtr ec_bare_crl = parse_crl(ec_bare_result.crl_pem);
+	X509CrlPtr ec_file_crl = parse_crl(ec_file_result.crl_pem);
+	require(crl_tbs_der(ec_bare_crl.get()) == crl_tbs_der(ec_file_crl.get()),
+	        "file reference changed ECDSA CRL TBS DER");
+	require(X509_CRL_get_signature_nid(ec_file_crl.get()) == NID_ecdsa_with_SHA256,
+	        "provider-signed CRL did not use ECDSA with SHA-256");
+	EvpPkeyPtr ec_issuer_public{X509_get_pubkey(ec_issuer.get())};
+	require(
+	    ec_issuer_public != nullptr && X509_CRL_verify(ec_bare_crl.get(), ec_issuer_public.get()) == 1 &&
+	        X509_CRL_verify(ec_file_crl.get(), ec_issuer_public.get()) == 1,
+	    "provider-signed ECDSA CRL verification failed");
 }
 
 void test_failures_and_no_fallback(const TempDirectory &temp)
@@ -288,10 +349,12 @@ void test_failures_and_no_fallback(const TempDirectory &temp)
 	const std::filesystem::path valid_path = temp.path() / "valid.pem";
 	const std::filesystem::path other_path = temp.path() / "other.pem";
 	const std::filesystem::path malformed_path = temp.path() / "malformed.pem";
+	const std::filesystem::path encrypted_path = temp.path() / "encrypted.pem";
 	const std::filesystem::path directory_path = temp.path() / "directory";
 	const std::filesystem::path missing_path = temp.path() / "missing-secret.pem";
 	write_private_key(valid_path, issuer_key.get());
 	write_private_key(other_path, other_key.get());
+	write_encrypted_private_key(encrypted_path, issuer_key.get());
 	std::ofstream{malformed_path} << "not a private key\n";
 	std::filesystem::create_directory(directory_path);
 
@@ -307,6 +370,10 @@ void test_failures_and_no_fallback(const TempDirectory &temp)
 	    [&] { (void)anopki::core::generate_crl(make_request(issuer_pem, "file:" + malformed_path.string())); },
 	    "provider.key_parse_failed",
 	    malformed_path.filename().string());
+	expect_error(
+	    [&] { (void)anopki::core::generate_crl(make_request(issuer_pem, "file:" + encrypted_path.string())); },
+	    "provider.key_parse_failed",
+	    "test-only-password");
 	expect_error(
 	    [&] { (void)anopki::core::generate_crl(make_request(issuer_pem, "file:" + other_path.string())); },
 	    "provider.key_binding_mismatch",

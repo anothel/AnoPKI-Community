@@ -21,13 +21,13 @@ partial, planned, smoke-only, or not-production-stable.
 | Identity, issuer, profile, enrollment, approval, issuance | Implemented, not-production-stable | Service README, OpenAPI, state transitions, Go/C++ boundary tests. | Public API compatibility freeze. |
 | Certificate inventory, renewal, reissue, revocation, suspension, expiration scan | Implemented, not-production-stable | Service README, state transitions, lifecycle tests. | Deployment-target automation remains planned. |
 | CRL publication and OCSP response | Implemented, not-production-stable | Service README, core CLI contract, CRL/OCSP tests. | HA deployment and outage drill evidence. |
-| Delegated OCSP responder registration and rotation | Implemented, not-production-stable | Service README, OpenAPI, lifecycle tests. | Production key-provider boundary. |
+| Delegated OCSP responder registration and rotation | Implemented, not-production-stable | Service README, OpenAPI, lifecycle tests. | Production non-exportable provider support remains outside the current Community runtime scope. |
 | Audit events, outbox, webhook delivery | Partial, not-production-stable | Service README, webhook receiver reference, outbox tests, audit tamper-evidence plan, SIEM detection examples. | Tamper-evident hash-chain implementation and SIEM exporter integration. |
 | API key auth and operational probes | Implemented, not-production-stable | Service README, production startup guard tests, access model. | First-class role/ABAC enforcement waits for an operator directory. |
 | Public RFC 8555 ACME protocol adapter | Partial, smoke-only, not-production-stable | RFC 8555 conformance matrix plus lego and WSL certbot smoke evidence. | EAB and DNS-01 remain gated. |
 | Internal ACME state management endpoints | Implemented, not-production-stable | Service README, OpenAPI, store tests. | Operator-facing shape can change before 1.0. |
 | Release artifact provenance | Partial | Release evidence, `/version` backend/provider-policy metadata, version metadata validation, profile metadata generation, artifact smoke validation, and release workflow docs. | Compatibility matrix evidence per release candidate. |
-| HSM/KMS/PKCS#11 signing boundary | Partial | ADR 0007, key-provider semantics, certificate/CRL/OCSP FileKeyProvider tests, a single-provider resolver, test-only software-token contract coverage, production rejection, and source-boundary validation. | Real non-exportable provider support and provider-result audit correlation. |
+| HSM/KMS/PKCS#11 signing boundary | Partial | ADR 0007, key-provider semantics, certificate/CRL/OCSP FileKeyProvider tests, ECDSA and encrypted-PEM regression coverage, a single-provider resolver, test-only software-token contract coverage, signing-result audit correlation, production rejection, and source-boundary validation. | Real non-exportable provider support remains outside the current Community runtime scope. |
 
 ## Endpoint Stability Labels
 

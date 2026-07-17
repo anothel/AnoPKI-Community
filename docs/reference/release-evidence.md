@@ -351,6 +351,8 @@ Evidence must include:
 - full Community CTest result from the reviewed repository commit,
 - certificate, CRL, and OCSP OpenSSL golden fixture results,
 - `file:` and bare-path success tests,
+- RSA and ECDSA success coverage for certificate, CRL, and OCSP signing,
+- non-interactive encrypted-PEM rejection on all three signing paths,
 - all required negative provider tests,
 - source-boundary validator and validator self-tests,
 - single-provider resolver and test-only software-token contract test,
@@ -390,7 +392,8 @@ The latest cumulative Community source was configured with:
 ```
 
 The complete C++ target set built successfully and the resulting CTest run
-passed 14/14 tests, including certificate, CRL, OCSP, backend-profile,
-FileKeyProvider, software-token contract, Core CLI, and source-boundary tests.
+passed 14/14 tests, including RSA/ECDSA certificate, CRL, and OCSP paths,
+encrypted-PEM rejection, backend-profile, FileKeyProvider, software-token
+contract, Core CLI, and source-boundary tests.
 This closes the previously recorded local warning blocker. Supported-Go and
 remote candidate evidence remain separate pending gates.

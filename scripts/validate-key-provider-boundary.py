@@ -86,10 +86,17 @@ REQUIRED_PROVIDER_TEST_TOKENS = (
     "EVP_aes_256_cbc",
     "encrypted.pem",
     "test-only-password",
+    "ecdsa_with_sha256",
+    'key_algorithm == "ecdsa"',
+    "NID_ecdsa_with_SHA256",
     "resolve_crl_signing_key",
     "crl_generate_sign",
     "resolve_ocsp_signing_key",
-    "ocsp_response_sign",    "test_signing_evidence_sidecar",    "ANOPKI_CORE_SIGNING_EVIDENCE_FILE",    "core_signing",    "provider.evidence_failed",
+    "ocsp_response_sign",
+    "test_signing_evidence_sidecar",
+    "ANOPKI_CORE_SIGNING_EVIDENCE_FILE",
+    "core_signing",
+    "provider.evidence_failed",
 )
 
 REQUIRED_CRL_PROVIDER_TEST_TOKENS = (
@@ -99,6 +106,11 @@ REQUIRED_CRL_PROVIDER_TEST_TOKENS = (
     "provider.key_parse_failed",
     "provider.key_binding_mismatch",
     "provider.exportability_violation",
+    "write_encrypted_private_key",
+    "encrypted.pem",
+    "generate_ec_key",
+    "NID_ecdsa_with_SHA256",
+    "ECDSA CRL TBS DER",
     "X509_CRL_verify",
     "deterministic CRL DER",
 )
@@ -112,6 +124,11 @@ REQUIRED_OCSP_PROVIDER_TEST_TOKENS = (
     "provider.algorithm_mismatch",
     "provider.key_binding_mismatch",
     "provider.exportability_violation",
+    "write_encrypted_private_key",
+    "encrypted.pem",
+    "generate_ec_key",
+    "NID_ecdsa_with_SHA256",
+    "test_ecdsa_success",
     "OCSP_basic_verify",
     "provider-signed OCSP response verification failed",
 )

@@ -28,7 +28,7 @@ algorithm support.
 
 - Maintain inventory fields for key and signature algorithms.
 - Keep RSA/ECDSA policy-change plans and relying-party compatibility evidence.
-- Add negative fixtures when an allowed algorithm or key-size policy changes.
+- Keep RSA/ECDSA provider success, mismatch, binding, and encrypted-key rejection fixtures current when algorithm policy changes.
 - Record the exact OpenSSL version, capability set, and build fingerprint for
   every release candidate.
 
