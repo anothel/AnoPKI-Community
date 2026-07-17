@@ -47,6 +47,7 @@ def main() -> None:
         "python scripts\\test_verify_local.py",
         "python scripts\\test_validate_version_metadata.py",
         "python scripts\\validate-version-metadata.py",
+        "python scripts\\test_generate_release_metadata.py",
         "python scripts\\test_validate_release_artifacts.py",
         "python scripts\\test_validate_service_contracts.py",
         "python scripts\\validate-service-contracts.py",
