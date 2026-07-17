@@ -2245,6 +2245,20 @@ func TestCreateEnrollmentPolicyFailureRecordsReason(t *testing.T) {
 		metadata["policy_decision_reason"] != "identity_dns_not_allowed" {
 		t.Fatalf("failure audit metadata = %#v", metadata)
 	}
+	refs, ok := metadata["policy_validation_evidence_refs"].([]any)
+	if !ok || len(refs) < 5 {
+		t.Fatalf("failure policy evidence refs = %#v", metadata["policy_validation_evidence_refs"])
+	}
+	encodedRefs, err := json.Marshal(refs)
+	if err != nil {
+		t.Fatalf("marshal failure policy evidence refs: %v", err)
+	}
+	if !strings.Contains(string(encodedRefs), "identity:"+identity.ID) ||
+		!strings.Contains(string(encodedRefs), "issuer:"+issuer.ID) ||
+		strings.Contains(string(encodedRefs), "edge-01.example.test") ||
+		strings.Contains(string(encodedRefs), "csr-pem") {
+		t.Fatalf("failure policy evidence refs are missing references or expose raw input: %s", encodedRefs)
+	}
 }
 
 func TestApproveEnrollment(t *testing.T) {

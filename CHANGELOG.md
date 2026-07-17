@@ -9,6 +9,7 @@ commands and known gaps before tagging.
 
 ### Added
 
+- Stable allow/reject/unknown policy-decision audit metadata with redacted validation-evidence references for enrollment creation, replacement enrollment, certificate issuance, failure auditing, retry, and legacy audit repair.
 - A deterministic fail-closed SQLite backup/restore drill with strict redacted evidence, CI artifact upload, release archive validation, and regression tests for dirty migrations, lost CRL state and private-key material.
 - ECDSA P-256 signing regression coverage for certificate issuance, CRL generation, and OCSP responses, plus non-interactive encrypted-PEM rejection at all three Community FileKeyProvider operation boundaries.
 - A fail-closed Community Go release verification runner that requires Go 1.25.11 or newer, pins race/static-analysis/security tool versions, emits redacted JSON/Markdown/log evidence, and is consumed by local verification, CI, and release artifacts.

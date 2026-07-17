@@ -26,15 +26,29 @@ http_path
 http_status
 ```
 
-When a non-ACME enrollment or issuance policy rejects a request, failed API
-request metadata also includes:
+Enrollment creation, renewal/reissue enrollment creation, and certificate
+issuance audit events record the policy outcome:
 
 ```text
-policy_decision = reject
+policy_decision = allow | reject | unknown
 policy_decision_reason
+policy_validation_evidence_refs
 ```
 
-Current stable `policy_decision_reason` values:
+Successful enrollment events use `enrollment_policy_passed`; successful
+certificate issuance events use `issuance_policy_passed`. Failed API request
+events use `reject` and one of the stable rejection reasons below. Audit repair
+for a legacy certificate whose enrollment or policy state is unavailable uses
+`unknown` with `legacy_policy_evidence_unavailable`; it does not invent a passed
+policy decision.
+
+`policy_validation_evidence_refs` is an ordered array of redacted references.
+It contains the schema identifier, identity/issuer/profile IDs when available,
+a SHA-256 CSR reference, and a SHA-256 digest over the normalized request and
+policy inputs. It never contains the CSR PEM, SAN values, private-key material,
+credentials, or raw provider references.
+
+Current stable rejection `policy_decision_reason` values:
 
 ```text
 csr_forbidden_extension_requested

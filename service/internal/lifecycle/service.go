@@ -154,7 +154,8 @@ type APIKeyAuditMetadata struct {
 }
 
 type policyDecisionError struct {
-	reason string
+	reason       string
+	evidenceRefs []string
 }
 
 func (e *policyDecisionError) Error() string {
@@ -2010,11 +2011,12 @@ func (s *Service) CreateEnrollment(ctx context.Context, actor string, req Create
 	if !sameStringSet(req.RequestedDNSNames, csrInfo.DNSNames) || !sameStringSet(req.RequestedIPAddresses, csrInfo.IPAddresses) {
 		return domain.Enrollment{}, domain.ErrInvalidRequest
 	}
+	policyEvidenceRefs := policyValidationEvidenceRefs(req, profile, identity)
 	if err := validateEnrollmentProfilePolicy(req, profile, csrInfo, now); err != nil {
-		return domain.Enrollment{}, err
+		return domain.Enrollment{}, attachPolicyValidationEvidence(err, policyEvidenceRefs)
 	}
 	if err := validateEnrollmentIdentityPolicy(req, identity); err != nil {
-		return domain.Enrollment{}, err
+		return domain.Enrollment{}, attachPolicyValidationEvidence(err, policyEvidenceRefs)
 	}
 
 	enrollment := domain.Enrollment{
@@ -2053,6 +2055,7 @@ func (s *Service) CreateEnrollment(ctx context.Context, actor string, req Create
 		if err := addIdentityDeploymentTarget(ctx, repo, enrollment.IdentityID, fields); err != nil {
 			return err
 		}
+		addPolicyDecisionAuditFields(fields, "allow", "enrollment_policy_passed", policyEvidenceRefs)
 		return s.createAuditEvent(ctx, repo, actor, "enrollment.created", "enrollment", enrollment.ID, now, fields)
 	}); err != nil {
 		return domain.Enrollment{}, err
@@ -2192,15 +2195,16 @@ func (s *Service) createCertificateReplacementEnrollment(ctx context.Context, ac
 			return domain.Enrollment{}, domain.ErrInvalidRequest
 		}
 	}
-	if err := validateEnrollmentProfilePolicy(createReq, profile, csrInfo, now); err != nil {
-		return domain.Enrollment{}, err
-	}
 	identity, err := s.repo.GetIdentity(ctx, createReq.IdentityID)
 	if err != nil {
 		return domain.Enrollment{}, err
 	}
+	policyEvidenceRefs := policyValidationEvidenceRefs(createReq, profile, identity)
+	if err := validateEnrollmentProfilePolicy(createReq, profile, csrInfo, now); err != nil {
+		return domain.Enrollment{}, attachPolicyValidationEvidence(err, policyEvidenceRefs)
+	}
 	if err := validateEnrollmentIdentityPolicy(createReq, identity); err != nil {
-		return domain.Enrollment{}, err
+		return domain.Enrollment{}, attachPolicyValidationEvidence(err, policyEvidenceRefs)
 	}
 
 	enrollment := domain.Enrollment{
@@ -2259,6 +2263,7 @@ func (s *Service) createCertificateReplacementEnrollment(ctx context.Context, ac
 		if err := addIdentityDeploymentTarget(ctx, repo, enrollment.IdentityID, fields); err != nil {
 			return err
 		}
+		addPolicyDecisionAuditFields(fields, "allow", "enrollment_policy_passed", policyEvidenceRefs)
 		if err := s.createAuditEvent(ctx, repo, actor, action, "enrollment", enrollment.ID, now, fields); err != nil {
 			return err
 		}
@@ -2415,11 +2420,13 @@ func (s *Service) IssueCertificate(ctx context.Context, actor string, enrollment
 			return domain.Certificate{}, mapCSRInspectError(err)
 		}
 	}
-	if err := validateEnrollmentProfilePolicy(enrollmentProfilePolicyRequest(enrollment), profile, csrInfo, now); err != nil {
-		return domain.Certificate{}, err
+	policyRequest := enrollmentProfilePolicyRequest(enrollment)
+	policyEvidenceRefs := policyValidationEvidenceRefs(policyRequest, profile, identity)
+	if err := validateEnrollmentProfilePolicy(policyRequest, profile, csrInfo, now); err != nil {
+		return domain.Certificate{}, attachPolicyValidationEvidence(err, policyEvidenceRefs)
 	}
-	if err := validateEnrollmentIdentityPolicy(enrollmentProfilePolicyRequest(enrollment), identity); err != nil {
-		return domain.Certificate{}, err
+	if err := validateEnrollmentIdentityPolicy(policyRequest, identity); err != nil {
+		return domain.Certificate{}, attachPolicyValidationEvidence(err, policyEvidenceRefs)
 	}
 	if err := s.validatePublicTLSLint(ctx, enrollment, profile, csrInfo); err != nil {
 		return domain.Certificate{}, err
@@ -2669,6 +2676,9 @@ func (s *Service) ensureCertificateIssuedAuditEvent(ctx context.Context, actor s
 			"serial_number", certificate.SerialNumber,
 			"profile_id", certificate.CertificateProfileID,
 		)
+		if err := addCertificatePolicyAuditFields(ctx, repo, certificate, fields); err != nil {
+			return err
+		}
 		if err := addReplacementCertificateLinkage(ctx, repo, certificate, fields); err != nil {
 			return err
 		}
@@ -2700,6 +2710,52 @@ func (s *Service) ensureCertificateIssuedAuditEvent(ctx context.Context, actor s
 		return err
 	}
 	return nil
+}
+
+func addCertificatePolicyAuditFields(ctx context.Context, repo store.Repository, certificate domain.Certificate, fields map[string]any) error {
+	enrollment, err := repo.GetEnrollment(ctx, certificate.EnrollmentID)
+	if errors.Is(err, domain.ErrEnrollmentNotFound) {
+		addPolicyDecisionAuditFields(fields, "unknown", "legacy_policy_evidence_unavailable", legacyPolicyEvidenceRefs(certificate))
+		return nil
+	}
+	if err != nil {
+		return err
+	}
+	identity, err := repo.GetIdentity(ctx, certificate.IdentityID)
+	if errors.Is(err, domain.ErrIdentityNotFound) {
+		addPolicyDecisionAuditFields(fields, "unknown", "legacy_policy_evidence_unavailable", legacyPolicyEvidenceRefs(certificate))
+		return nil
+	}
+	if err != nil {
+		return err
+	}
+	var profile domain.CertificateProfile
+	if certificate.CertificateProfileID != "" {
+		profile, err = repo.GetCertificateProfile(ctx, certificate.CertificateProfileID)
+		if errors.Is(err, domain.ErrCertificateProfileNotFound) {
+			addPolicyDecisionAuditFields(fields, "unknown", "legacy_policy_evidence_unavailable", legacyPolicyEvidenceRefs(certificate))
+			return nil
+		}
+		if err != nil {
+			return err
+		}
+	}
+	refs := policyValidationEvidenceRefs(enrollmentProfilePolicyRequest(enrollment), profile, identity)
+	addPolicyDecisionAuditFields(fields, "allow", "issuance_policy_passed", refs)
+	return nil
+}
+
+func legacyPolicyEvidenceRefs(certificate domain.Certificate) []string {
+	refs := []string{
+		"schema:" + policyValidationEvidenceSchema,
+		"identity:" + certificate.IdentityID,
+		"issuer:" + certificate.IssuerID,
+		"enrollment:" + certificate.EnrollmentID,
+	}
+	if certificate.CertificateProfileID != "" {
+		refs = append(refs, "profile:"+certificate.CertificateProfileID)
+	}
+	return refs
 }
 
 func addReplacementCertificateLinkage(ctx context.Context, repo store.Repository, certificate domain.Certificate, fields map[string]any) error {
@@ -3436,6 +3492,9 @@ func (s *Service) RecordAPIFailure(ctx context.Context, actor string, req APIFai
 	if reason := policyDecisionReason(req.Err); reason != "" {
 		fields["policy_decision"] = "reject"
 		fields["policy_decision_reason"] = reason
+		if refs := policyDecisionEvidenceRefs(req.Err); len(refs) != 0 {
+			fields["policy_validation_evidence_refs"] = refs
+		}
 	}
 	return s.repo.WithinTx(ctx, func(repo store.Repository) error {
 		return s.createAuditEventWithResult(ctx, repo, actor, "api.request_failed", "api", s.idgen.NewID(), now, fields, "error", auditErrorCode(req.Err))
@@ -3817,6 +3876,92 @@ func auditFields(pairs ...string) map[string]any {
 	return fields
 }
 
+const policyValidationEvidenceSchema = "anopki.policy.validation.v1"
+
+type policyValidationEvidenceInput struct {
+	Schema                      string   `json:"schema"`
+	IdentityID                  string   `json:"identity_id,omitempty"`
+	IdentityAllowedDNSNames     []string `json:"identity_allowed_dns_names,omitempty"`
+	IdentityAllowedIPAddresses  []string `json:"identity_allowed_ip_addresses,omitempty"`
+	IssuerID                    string   `json:"issuer_id"`
+	ProfileID                   string   `json:"profile_id,omitempty"`
+	ProfileValiditySeconds      int64    `json:"profile_validity_seconds,omitempty"`
+	ProfilePublicTLS            bool     `json:"profile_public_tls"`
+	ProfileAllowedDNSPatterns   []string `json:"profile_allowed_dns_patterns,omitempty"`
+	ProfileAllowedIPRanges      []string `json:"profile_allowed_ip_ranges,omitempty"`
+	ProfileAllowedKeyAlgs       []string `json:"profile_allowed_key_algorithms,omitempty"`
+	ProfileMinKeySizeBits       int      `json:"profile_min_key_size_bits,omitempty"`
+	ProfileAllowedSignatureAlgs []string `json:"profile_allowed_signature_algorithms,omitempty"`
+	RequestedSubject            string   `json:"requested_subject"`
+	RequestedDNSNames           []string `json:"requested_dns_names,omitempty"`
+	RequestedIPAddresses        []string `json:"requested_ip_addresses,omitempty"`
+	RequestedNotAfter           string   `json:"requested_not_after"`
+	CSRReference                string   `json:"csr_reference"`
+}
+
+func addPolicyDecisionAuditFields(fields map[string]any, decision string, reason string, refs []string) map[string]any {
+	fields["policy_decision"] = decision
+	fields["policy_decision_reason"] = reason
+	if len(refs) != 0 {
+		fields["policy_validation_evidence_refs"] = append([]string(nil), refs...)
+	}
+	return fields
+}
+
+func policyValidationEvidenceRefs(req CreateEnrollmentRequest, profile domain.CertificateProfile, identity domain.Identity) []string {
+	csrRef := sha256EvidenceReference("csr", []byte(req.CSRPEM))
+	input := policyValidationEvidenceInput{
+		Schema:                      policyValidationEvidenceSchema,
+		IdentityID:                  identity.ID,
+		IdentityAllowedDNSNames:     sortedStrings(identity.AllowedDNSNames),
+		IdentityAllowedIPAddresses:  sortedStrings(identity.AllowedIPAddresses),
+		IssuerID:                    req.IssuerID,
+		ProfileID:                   profile.ID,
+		ProfileValiditySeconds:      profile.ValidityPeriodSeconds,
+		ProfilePublicTLS:            profile.PublicTLS,
+		ProfileAllowedDNSPatterns:   sortedStrings(profile.AllowedDNSPatterns),
+		ProfileAllowedIPRanges:      sortedStrings(profile.AllowedIPRanges),
+		ProfileAllowedKeyAlgs:       sortedStrings(profile.AllowedKeyAlgorithms),
+		ProfileMinKeySizeBits:       profile.MinKeySizeBits,
+		ProfileAllowedSignatureAlgs: sortedStrings(profile.AllowedSignatureAlgorithms),
+		RequestedSubject:            strings.TrimSpace(req.RequestedSubject),
+		RequestedDNSNames:           sortedStrings(req.RequestedDNSNames),
+		RequestedIPAddresses:        sortedStrings(req.RequestedIPAddresses),
+		RequestedNotAfter:           req.RequestedNotAfter.UTC().Format(time.RFC3339Nano),
+		CSRReference:                csrRef,
+	}
+	encoded, err := json.Marshal(input)
+	if err != nil {
+		return nil
+	}
+	refs := []string{"schema:" + policyValidationEvidenceSchema}
+	if identity.ID != "" {
+		refs = append(refs, "identity:"+identity.ID)
+	}
+	if req.IssuerID != "" {
+		refs = append(refs, "issuer:"+req.IssuerID)
+	}
+	if profile.ID != "" {
+		refs = append(refs, "profile:"+profile.ID)
+	}
+	if strings.TrimSpace(req.CSRPEM) != "" {
+		refs = append(refs, csrRef)
+	}
+	refs = append(refs, sha256EvidenceReference("policy-input", encoded))
+	return refs
+}
+
+func sha256EvidenceReference(kind string, payload []byte) string {
+	sum := sha256.Sum256(payload)
+	return kind + ":sha256:" + hex.EncodeToString(sum[:])
+}
+
+func sortedStrings(values []string) []string {
+	out := append([]string(nil), values...)
+	sort.Strings(out)
+	return out
+}
+
 func apiKeyAuditFields(key domain.APIKey) map[string]any {
 	fields := auditFields(
 		"api_key_id", key.ID,
@@ -4051,12 +4196,30 @@ func policyDecision(reason string) error {
 	return &policyDecisionError{reason: reason}
 }
 
+func attachPolicyValidationEvidence(err error, refs []string) error {
+	var policyErr *policyDecisionError
+	if !errors.As(err, &policyErr) {
+		return err
+	}
+	attached := *policyErr
+	attached.evidenceRefs = append([]string(nil), refs...)
+	return &attached
+}
+
 func policyDecisionReason(err error) string {
 	var policyErr *policyDecisionError
 	if errors.As(err, &policyErr) {
 		return policyErr.reason
 	}
 	return ""
+}
+
+func policyDecisionEvidenceRefs(err error) []string {
+	var policyErr *policyDecisionError
+	if errors.As(err, &policyErr) {
+		return append([]string(nil), policyErr.evidenceRefs...)
+	}
+	return nil
 }
 
 func validateAPIKeyScopes(scopes []domain.APIKeyScope) error {

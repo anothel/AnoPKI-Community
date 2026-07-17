@@ -34,7 +34,7 @@ Completed backend and FileKeyProvider work is intentionally omitted.
 
 ## P2 — Audit and recovery
 
-- Add policy-decision reason and validation-evidence references.
+- Keep policy-decision reasons and redacted validation-evidence references stable across enrollment, issuance, retry and audit repair.
 - Keep the executable SQLite backup/restore drill and release evidence contract current.
 - Expand issuer rotation, intermediate rollover, CRL/OCSP live-outage, audit-repair, dead-letter, PostgreSQL and multi-node recovery evidence.
 - Complete tamper-evident audit storage only after event-schema stability is sufficient.

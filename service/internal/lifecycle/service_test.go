@@ -190,9 +190,12 @@ func TestManualEnrollmentLifecycle(t *testing.T) {
 	enrollmentMetadata := auditMetadata(t, events[2])
 	if enrollmentMetadata["identity_id"] != identity.ID ||
 		enrollmentMetadata["issuer_id"] != issuer.ID ||
-		enrollmentMetadata["enrollment_id"] != enrollment.ID {
+		enrollmentMetadata["enrollment_id"] != enrollment.ID ||
+		enrollmentMetadata["policy_decision"] != "allow" ||
+		enrollmentMetadata["policy_decision_reason"] != "enrollment_policy_passed" {
 		t.Fatalf("enrollment audit metadata = %#v", enrollmentMetadata)
 	}
+	assertPolicyEvidenceRefs(t, enrollmentMetadata, identity.ID, issuer.ID, "")
 	certificateMetadata := auditMetadata(t, events[4])
 	if certificateMetadata["identity_id"] != identity.ID ||
 		certificateMetadata["issuer_id"] != issuer.ID ||
@@ -206,9 +209,12 @@ func TestManualEnrollmentLifecycle(t *testing.T) {
 		certificateMetadata["key_provider_signing_proven"] != true ||
 		certificateMetadata["key_provider_binding_verified"] != true ||
 		certificateMetadata["key_provider_fallback_used"] != false ||
-		certificateMetadata["key_provider_result_code"] != "ok" {
+		certificateMetadata["key_provider_result_code"] != "ok" ||
+		certificateMetadata["policy_decision"] != "allow" ||
+		certificateMetadata["policy_decision_reason"] != "issuance_policy_passed" {
 		t.Fatalf("certificate audit metadata = %#v", certificateMetadata)
 	}
+	assertPolicyEvidenceRefs(t, certificateMetadata, identity.ID, issuer.ID, "")
 }
 
 func TestIssueCertificateRecordsSignerMetrics(t *testing.T) {
@@ -2834,6 +2840,59 @@ func TestCreateEnrollmentRejectsInvalidRequest(t *testing.T) {
 	}
 }
 
+func TestPolicyValidationEvidenceRefsAreDeterministicAndRedacted(t *testing.T) {
+	now := time.Date(2026, time.January, 3, 4, 5, 6, 0, time.UTC)
+	reqA := CreateEnrollmentRequest{
+		IdentityID:           "identity-1",
+		IssuerID:             "issuer-1",
+		CertificateProfileID: "profile-1",
+		CSRPEM:               "sensitive-csr-pem",
+		RequestedSubject:     "CN=edge-01",
+		RequestedDNSNames:    []string{"b.example.test", "a.example.test"},
+		RequestedIPAddresses: []string{"192.0.2.20", "192.0.2.10"},
+		RequestedNotAfter:    now,
+	}
+	reqB := reqA
+	reqB.RequestedDNSNames = []string{"a.example.test", "b.example.test"}
+	reqB.RequestedIPAddresses = []string{"192.0.2.10", "192.0.2.20"}
+	profileA := domain.CertificateProfile{
+		ID:                         "profile-1",
+		ValidityPeriodSeconds:      86400,
+		AllowedDNSPatterns:         []string{"*.b.example.test", "*.a.example.test"},
+		AllowedIPRanges:            []string{"192.0.2.0/25", "192.0.2.128/25"},
+		AllowedKeyAlgorithms:       []string{"rsa", "ecdsa"},
+		AllowedSignatureAlgorithms: []string{"rsa_with_sha256", "ecdsa_with_sha256"},
+	}
+	profileB := profileA
+	profileB.AllowedDNSPatterns = []string{"*.a.example.test", "*.b.example.test"}
+	profileB.AllowedIPRanges = []string{"192.0.2.128/25", "192.0.2.0/25"}
+	profileB.AllowedKeyAlgorithms = []string{"ecdsa", "rsa"}
+	profileB.AllowedSignatureAlgorithms = []string{"ecdsa_with_sha256", "rsa_with_sha256"}
+	identityA := domain.Identity{
+		ID:                 "identity-1",
+		AllowedDNSNames:    []string{"b.example.test", "a.example.test"},
+		AllowedIPAddresses: []string{"192.0.2.20", "192.0.2.10"},
+	}
+	identityB := identityA
+	identityB.AllowedDNSNames = []string{"a.example.test", "b.example.test"}
+	identityB.AllowedIPAddresses = []string{"192.0.2.10", "192.0.2.20"}
+
+	refsA := policyValidationEvidenceRefs(reqA, profileA, identityA)
+	refsB := policyValidationEvidenceRefs(reqB, profileB, identityB)
+	if !reflect.DeepEqual(refsA, refsB) {
+		t.Fatalf("policy evidence refs differ after list reordering:\nA=%#v\nB=%#v", refsA, refsB)
+	}
+	encoded, err := json.Marshal(refsA)
+	if err != nil {
+		t.Fatalf("marshal policy evidence refs: %v", err)
+	}
+	for _, raw := range []string{"sensitive-csr-pem", "a.example.test", "192.0.2.10"} {
+		if strings.Contains(string(encoded), raw) {
+			t.Fatalf("policy evidence refs expose %q: %s", raw, encoded)
+		}
+	}
+}
+
 func TestCreateEnrollmentStoresCSRSANs(t *testing.T) {
 	ctx := context.Background()
 	coreClient := &fakeIssuer{
@@ -5323,9 +5382,12 @@ func TestRepairMissingIssuanceAuditEvents(t *testing.T) {
 	}
 	metadata := auditMetadata(t, event)
 	if metadata["key_provider_class"] != "file" ||
-		metadata["key_provider_exportability"] != "exportable" {
+		metadata["key_provider_exportability"] != "exportable" ||
+		metadata["policy_decision"] != "unknown" ||
+		metadata["policy_decision_reason"] != "legacy_policy_evidence_unavailable" {
 		t.Fatalf("repair audit metadata = %#v", metadata)
 	}
+	assertPolicyEvidenceRefs(t, metadata, certificate.IdentityID, certificate.IssuerID, certificate.CertificateProfileID)
 
 	repaired, err = service.RepairMissingIssuanceAuditEvents(ctx, "operator")
 	if err != nil {
@@ -6273,6 +6335,45 @@ func (tx *staleRevocationTx) UpdateCertificateIfStatus(ctx context.Context, cert
 func (tx *staleRevocationTx) CreateRevocation(ctx context.Context, revocation domain.Revocation) error {
 	tx.parent.createRevocationCalled = true
 	return errors.New("CreateRevocation should not be called")
+}
+
+func assertPolicyEvidenceRefs(t *testing.T, metadata map[string]any, identityID string, issuerID string, profileID string) {
+	t.Helper()
+	values, ok := metadata["policy_validation_evidence_refs"].([]any)
+	if !ok || len(values) < 4 {
+		t.Fatalf("policy evidence refs = %#v; metadata=%#v", metadata["policy_validation_evidence_refs"], metadata)
+	}
+	refs := make([]string, 0, len(values))
+	for _, value := range values {
+		ref, ok := value.(string)
+		if !ok {
+			t.Fatalf("policy evidence ref = %#v, want string", value)
+		}
+		refs = append(refs, ref)
+	}
+	want := []string{"schema:" + policyValidationEvidenceSchema, "identity:" + identityID, "issuer:" + issuerID}
+	if profileID != "" {
+		want = append(want, "profile:"+profileID)
+	}
+	for _, expected := range want {
+		found := false
+		for _, ref := range refs {
+			if ref == expected {
+				found = true
+				break
+			}
+		}
+		if !found {
+			t.Fatalf("missing policy evidence ref %q in %#v", expected, refs)
+		}
+	}
+	encoded, err := json.Marshal(refs)
+	if err != nil {
+		t.Fatalf("marshal policy evidence refs: %v", err)
+	}
+	if strings.Contains(string(encoded), "edge-01.example.test") || strings.Contains(string(encoded), "csr-pem") {
+		t.Fatalf("policy evidence refs expose raw policy input: %s", encoded)
+	}
 }
 
 func auditMetadata(t *testing.T, event domain.AuditEvent) map[string]any {
