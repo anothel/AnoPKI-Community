@@ -3,9 +3,11 @@
 ## Status
 
 Accepted. The Community/OpenSSL certificate-issuance, CRL-signing, and
-OCSP-response-signing `FileKeyProvider` vertical slices are implemented.
-Non-exportable providers and remote KMS remain pending and are not implied by
-this status.
+OCSP-response-signing `FileKeyProvider` vertical slices are implemented. A
+single-provider resolver and test-only software-token contract now pin provider
+selection, evidence consistency, production exportability checks, and no-fallback
+semantics. Real non-exportable providers and remote KMS remain pending and are
+not implied by this status.
 
 ## Context
 
@@ -50,6 +52,8 @@ and OCSP response signing.
 src/backends/openssl/key_providers/
   file_key_provider.hpp
   file_key_provider.cpp
+  provider_resolver.hpp
+  provider_resolver.cpp
 ```
 
 The adapter-private provider contract supplies:
@@ -85,6 +89,23 @@ The file provider is explicitly:
 - rejected when `ANOPKI_ENV=production`,
 - never a fallback target for another provider reference.
 
+## Single-Provider Resolver And Test Contract
+
+The adapter-private resolver accepts exactly one already-selected provider. It
+has no provider list, does not know about `FileKeyProvider`, and cannot search
+for an alternative implementation. Before acquisition it rejects invalid or
+unsupported references, unavailable providers, and exportable providers in
+production. After acquisition it verifies that provider metadata, operation identity, requested algorithm, key algorithm,
+binding verification, and `fallback_used=false` evidence match the selected provider and
+request.
+
+A software-token provider exists only inside the C++ test target. It exercises a
+non-exportable metadata shape, actual OpenSSL signing through the returned
+handle, provider failure propagation, evidence mismatch rejection, and
+single-acquire behavior. It is not linked into `anopki-core`, is not selectable
+by Community runtime configuration, and is not evidence of production
+non-exportability or PKCS#11/HSM support.
+
 ## Stable Provider Errors
 
 - `provider.invalid_reference`
@@ -108,12 +129,14 @@ diagnostics.
 Certificate, CRL, and OCSP signing evidence requires the selected C++ provider path to:
 
 1. resolve the requested reference without fallback,
-2. acquire and parse the actual key,
-3. verify requested algorithm compatibility,
-4. verify issuer certificate/key binding,
-5. complete `X509_sign`, `X509_CRL_sign`, or `OCSP_basic_sign` with the
+2. acquire the selected provider exactly once and reject mismatched provider
+   evidence or any `fallback_used=true` result,
+3. acquire and parse the actual key,
+4. verify requested algorithm compatibility,
+5. verify issuer certificate/key binding,
+6. complete `X509_sign`, `X509_CRL_sign`, or `OCSP_basic_sign` with the
    returned handle,
-6. preserve the certificate, CRL, and OCSP golden results.
+7. preserve the certificate, CRL, and OCSP golden results.
 
 A release candidate records those test and validator results. A successful Go
 readiness check alone cannot mark cryptographic signing evidence as passed.
@@ -133,6 +156,8 @@ readiness check alone cannot mark cryptographic signing evidence as passed.
 - Existing public lifecycle and Core CLI JSON contracts remain unchanged.
 - Existing certificate, CRL, and OCSP behavior remains pinned by the Community
   golden and integration tests.
+- A test-only software-token provider pins the generic resolver contract without
+  becoming a runtime or production provider.
 - Production still rejects the exportable file provider.
 - Enterprise synchronizes this reviewed Community change only after the
   Community commit SHA is known.

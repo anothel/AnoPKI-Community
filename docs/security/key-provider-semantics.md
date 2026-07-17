@@ -21,6 +21,7 @@ All signing keys are addressed by `key_ref`.
 | Class | Intended use | Exportability | Current implementation |
 | --- | --- | --- | --- |
 | File | Local development and smoke | Exportable | Certificate issuance, CRL generation, and OCSP response signing |
+| Software token | Contract testing only | Simulated non-exportable metadata | Test target only; not a runtime provider or production evidence |
 | PKCS#11/local HSM | Future production signing | Non-exportable | Not implemented |
 | Cloud KMS | Future Enterprise remote signing | Non-exportable | Not implemented |
 
@@ -51,6 +52,19 @@ certificate, CRL, and OCSP results.
 The provider evidence identifies `certificate_issue`, `crl_generate_sign`, and
 `ocsp_response_sign` separately. A successful result for one operation is not
 evidence for another.
+
+## Resolver Contract Test
+
+The adapter-private resolver receives exactly one selected provider. It rejects
+invalid references, unsupported references, unavailable readiness, and
+exportable production providers before acquisition. It acquires once, then
+fails closed if returned provider metadata, operation identity, requested algorithm, key algorithm, or
+binding result differs from the selection or if the provider claims
+`fallback_used=true`.
+
+The test-only software-token resolver contract lives only under `tests/`.
+Its non-exportable flag is simulated contract metadata, not evidence that
+AnoPKI currently controls a real non-exportable device or token.
 
 ## Go And C++ Evidence Responsibilities
 
@@ -113,7 +127,8 @@ is opened.
 - Certificate issuance: provider-isolated through `FileKeyProvider`.
 - CRL signing: provider-isolated through `FileKeyProvider`.
 - OCSP response signing: provider-isolated through `FileKeyProvider`.
-- Non-exportable provider: not implemented.
+- Test-only software-token resolver contract: implemented; not shipped.
+- Real non-exportable provider: not implemented.
 - Remote KMS prepare/sign/finalize: not implemented.
 - Enterprise/AnoCrypto-C provider compatibility: not implemented.
 

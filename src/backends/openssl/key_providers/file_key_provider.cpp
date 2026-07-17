@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: MPL-2.0
 #include "file_key_provider.hpp"
+#include "provider_resolver.hpp"
 
 #include <openssl/bio.h>
 #include <openssl/err.h>
@@ -248,6 +249,8 @@ std::string_view to_string(ProviderClass value) noexcept
 	{
 	case ProviderClass::file:
 		return "file";
+	case ProviderClass::software_token:
+		return "software_token";
 	}
 	return "file";
 }
@@ -460,16 +463,10 @@ SigningKeyHandle resolve_signing_key(
     ProviderPolicy policy)
 {
 	FileKeyProvider provider;
-	if (!provider.accepts(key_ref))
-	{
-		if (blank(key_ref) || has_embedded_nul(key_ref))
-		{
-			fail(ProviderErrorCode::invalid_reference, "reference");
-		}
-		fail(ProviderErrorCode::unavailable, "resolve");
-	}
-	return provider.acquire(SigningKeyRequest{
-	    std::move(operation), key_ref, signature_algorithm, issuer_certificate, policy});
+	return resolve_signing_key_with_provider(
+	    provider,
+	    SigningKeyRequest{
+	        std::move(operation), key_ref, signature_algorithm, issuer_certificate, policy});
 }
 
 } // namespace

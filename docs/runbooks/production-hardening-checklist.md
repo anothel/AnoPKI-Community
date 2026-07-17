@@ -44,7 +44,7 @@ this checklist does not make a deployment production-stable by itself.
 
 ## Open Gaps To Accept
 
-- HSM/KMS/PKCS#11 signing boundary is not implemented.
+- File-provider signing is isolated and rejected in production, but no real non-exportable HSM/KMS/PKCS#11 provider is implemented.
 - Tamper-evident audit hash-chain is planned, not implemented.
 - DNS-01 and EAB are deferred until real integrations exist.
 - Deploy adapters and post-deployment synthetic checks wait for selected targets.

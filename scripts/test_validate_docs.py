@@ -136,6 +136,34 @@ def test_missing_key_provider_semantics_doc_fails(tmp_path: Path) -> None:
     assert "missing required docs" in result.stderr
 
 
+def test_stale_software_token_roadmap_item_fails(tmp_path: Path) -> None:
+    copy_docs_inputs(tmp_path)
+    roadmap = tmp_path / "docs" / "ROADMAP.md"
+    roadmap.write_text(
+        roadmap.read_text(encoding="utf-8") + "\n- Add a mock/software-token provider before selecting a real provider.\n",
+        encoding="utf-8",
+    )
+
+    result = run_validator(tmp_path)
+
+    assert result.returncode == 1
+    assert "completed software-token contract work" in result.stderr
+
+
+def test_missing_software_token_contract_wording_fails(tmp_path: Path) -> None:
+    copy_docs_inputs(tmp_path)
+    semantics = tmp_path / "docs" / "security" / "key-provider-semantics.md"
+    semantics.write_text(
+        semantics.read_text(encoding="utf-8").replace("test-only software-token resolver contract", "resolver contract", 1),
+        encoding="utf-8",
+    )
+
+    result = run_validator(tmp_path)
+
+    assert result.returncode == 1
+    assert "KeyProvider signing direction docs missing required wording" in result.stderr
+
+
 def test_missing_wsl_certbot_compatibility_row_fails(tmp_path: Path) -> None:
     copy_docs_inputs(tmp_path)
     compatibility = tmp_path / "docs" / "acme-client-compatibility.md"
@@ -182,10 +210,8 @@ def test_stale_public_tls_readme_next_work_fails(tmp_path: Path) -> None:
     copy_docs_inputs(tmp_path)
     readme = tmp_path / "README.md"
     readme.write_text(
-        readme.read_text(encoding="utf-8").replace(
-            "Current execution focus: release evidence, exposing backend/profile metadata through service operations, external AnoCrypto-C capability parity, and key-boundary migration planning.",
-            "Current execution focus: release operations, supply-chain evidence, and backend/key-boundary migration planning unless public TLS issuance enables a linting hook.",
-        ),
+        readme.read_text(encoding="utf-8")
+        + "\nCurrent execution focus: release operations unless public TLS issuance enables a linting hook.\n",
         encoding="utf-8",
     )
 
@@ -291,6 +317,14 @@ def main() -> None:
         test_anocrypto_direction_removed_from_roadmap_fails(Path(dirname))
     with tempfile.TemporaryDirectory() as dirname:
         test_legacy_identifiers_outside_migration_context_fail(Path(dirname))
+    with tempfile.TemporaryDirectory() as dirname:
+        test_missing_key_provider_signing_adr_fails(Path(dirname))
+    with tempfile.TemporaryDirectory() as dirname:
+        test_key_provider_direction_drift_fails(Path(dirname))
+    with tempfile.TemporaryDirectory() as dirname:
+        test_stale_software_token_roadmap_item_fails(Path(dirname))
+    with tempfile.TemporaryDirectory() as dirname:
+        test_missing_software_token_contract_wording_fails(Path(dirname))
     print("docs validator tests ok")
 
 
@@ -361,10 +395,6 @@ def test_legacy_identifiers_outside_migration_context_fail(tmp_path: Path) -> No
     assert "legacy project identifiers found outside migration or historical docs" in result.stderr
 
 
-if __name__ == "__main__":
-    main()
-
-
 def test_missing_key_provider_signing_adr_fails(tmp_path: Path) -> None:
     copy_docs_inputs(tmp_path)
     (tmp_path / "docs" / "adr" / "0007-key-provider-signing-boundary.md").unlink()
@@ -379,7 +409,7 @@ def test_key_provider_direction_drift_fails(tmp_path: Path) -> None:
     copy_docs_inputs(tmp_path)
     adr = tmp_path / "docs" / "adr" / "0007-key-provider-signing-boundary.md"
     adr.write_text(
-        adr.read_text(encoding="utf-8").replace("deliberately scoped hybrid", "automatic universal provider", 1),
+        adr.read_text(encoding="utf-8").replace("deliberately scoped hybrid", "automatic universal provider"),
         encoding="utf-8",
     )
 
@@ -387,3 +417,7 @@ def test_key_provider_direction_drift_fails(tmp_path: Path) -> None:
 
     assert result.returncode == 1
     assert "KeyProvider signing direction docs missing required wording" in result.stderr
+
+
+if __name__ == "__main__":
+    main()

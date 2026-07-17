@@ -24,7 +24,8 @@ def clean_fixture(root: Path) -> None:
     write(
         root,
         "src/backends/openssl/key_providers/file_key_provider.hpp",
-        """class SigningKeyProvider {};
+        """enum class ProviderClass { file, software_token };
+class SigningKeyProvider {};
 class FileKeyProvider {};
 class SigningKeyHandle {};
 struct ProviderMetadata {};
@@ -44,6 +45,37 @@ int reject_private_key_password(char *, int, int, void *) noexcept
 PEM_read_bio_PrivateKey(bio.get(), nullptr, reject_private_key_password, nullptr)
 crl_generate_sign
 ocsp_response_sign
+resolve_signing_key_with_provider
+""",
+    )
+    write(
+        root,
+        "src/backends/openssl/key_providers/provider_resolver.hpp",
+        """SigningKeyHandle resolve_signing_key_with_provider(
+const SigningKeyProvider &provider,
+const SigningKeyRequest &request);
+""",
+    )
+    write(
+        root,
+        "src/backends/openssl/key_providers/provider_resolver.cpp",
+        """SigningKeyHandle resolve_signing_key_with_provider(
+const SigningKeyProvider &provider,
+const SigningKeyRequest &request) {
+auto metadata = provider.metadata();
+provider.accepts(request.key_ref);
+ProviderReadiness::ready;
+metadata.exportable;
+auto handle = provider.acquire(request);
+auto evidence = handle.evidence();
+evidence.requested_signature_algorithm;
+evidence.key_algorithm.empty();
+evidence.issuer_binding_verified;
+evidence.fallback_used;
+ProviderErrorCode::profile_mismatch;
+"evidence";
+return handle;
+}
 """,
     )
     write(
@@ -116,12 +148,31 @@ provider-signed OCSP response verification failed
     )
     write(
         root,
+        "tests/software_token_key_provider_test.cpp",
+        """class SoftwareTokenKeyProvider {};
+ProviderClass::software_token;
+"softtoken:issuer";
+policy.production_mode = true;
+provider.acquire_count() == 1;
+ProviderErrorCode::profile_mismatch;
+mismatched_algorithm;
+unverified_binding;
+empty_key_algorithm;
+fallback_claim;
+resolve_signing_key_with_provider;
+X509_verify;
+""",
+    )
+    write(
+        root,
         "CMakeLists.txt",
         """add_library(adapter
-src/backends/openssl/key_providers/file_key_provider.cpp)
+src/backends/openssl/key_providers/file_key_provider.cpp
+src/backends/openssl/key_providers/provider_resolver.cpp)
 add_executable(test tests/file_key_provider_test.cpp)
 add_executable(crl_test tests/crl_file_key_provider_test.cpp)
 add_executable(ocsp_test tests/ocsp_file_key_provider_test.cpp)
+add_executable(software_token_test tests/software_token_key_provider_test.cpp)
 """,
     )
     write(root, "include/anopki/core.hpp", "// neutral\n")
@@ -298,6 +349,51 @@ def test_missing_crl_cmake_test_fails() -> None:
         expect_failure(root, "does not register CRL FileKeyProvider tests")
 
 
+def test_missing_resolver_source_fails() -> None:
+    with tempfile.TemporaryDirectory() as dirname:
+        root = Path(dirname)
+        clean_fixture(root)
+        (root / "src/backends/openssl/key_providers/provider_resolver.cpp").unlink()
+        expect_failure(root, "missing KeyProvider boundary file")
+
+
+def test_provider_specific_resolver_coupling_fails() -> None:
+    with tempfile.TemporaryDirectory() as dirname:
+        root = Path(dirname)
+        clean_fixture(root)
+        resolver = root / "src/backends/openssl/key_providers/provider_resolver.cpp"
+        resolver.write_text(resolver.read_text(encoding="utf-8") + "FileKeyProvider fallback;\n", encoding="utf-8")
+        resolver.write_text(resolver.read_text(encoding="utf-8") + "FileKeyProvider fallback;\n", encoding="utf-8")
+        expect_failure(root, "fallback/provider-specific coupling")
+
+
+def test_missing_software_token_test_fails() -> None:
+    with tempfile.TemporaryDirectory() as dirname:
+        root = Path(dirname)
+        clean_fixture(root)
+        test = root / "tests/software_token_key_provider_test.cpp"
+        test.write_text(test.read_text(encoding="utf-8").replace("fallback_claim", "missing"), encoding="utf-8")
+        expect_failure(root, "software-token provider contract tests are missing required coverage")
+
+
+def test_missing_software_token_cmake_test_fails() -> None:
+    with tempfile.TemporaryDirectory() as dirname:
+        root = Path(dirname)
+        clean_fixture(root)
+        cmake = root / "CMakeLists.txt"
+        cmake.write_text(cmake.read_text(encoding="utf-8").replace("tests/software_token_key_provider_test.cpp", ""), encoding="utf-8")
+        expect_failure(root, "does not register software-token provider contract tests")
+
+
+def test_missing_resolver_cmake_source_fails() -> None:
+    with tempfile.TemporaryDirectory() as dirname:
+        root = Path(dirname)
+        clean_fixture(root)
+        cmake = root / "CMakeLists.txt"
+        cmake.write_text(cmake.read_text(encoding="utf-8").replace("src/backends/openssl/key_providers/provider_resolver.cpp", ""), encoding="utf-8")
+        expect_failure(root, "does not compile the single-provider resolver")
+
+
 def test_openssl_type_escape_fails() -> None:
     with tempfile.TemporaryDirectory() as dirname:
         root = Path(dirname)
@@ -324,6 +420,11 @@ def main() -> None:
     test_missing_resolution_fails()
     test_missing_cmake_source_fails()
     test_missing_crl_cmake_test_fails()
+    test_missing_resolver_source_fails()
+    test_provider_specific_resolver_coupling_fails()
+    test_missing_software_token_test_fails()
+    test_missing_software_token_cmake_test_fails()
+    test_missing_resolver_cmake_source_fails()
     test_openssl_type_escape_fails()
     print("key provider boundary validator tests ok")
 

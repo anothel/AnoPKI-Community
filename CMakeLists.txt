@@ -59,6 +59,7 @@ add_library(anopki_openssl_adapter
     src/backends/openssl/csr.cpp
     src/backends/openssl/issue.cpp
     src/backends/openssl/key_providers/file_key_provider.cpp
+    src/backends/openssl/key_providers/provider_resolver.cpp
     src/backends/openssl/ocsp.cpp
     src/backends/openssl/openssl_backend.cpp
 )
@@ -227,6 +228,23 @@ if(BUILD_TESTING)
             OpenSSL::Crypto
     )
     add_test(NAME anopki.file_key_provider COMMAND anopki_file_key_provider_test)
+
+    add_executable(anopki_software_token_key_provider_test
+        tests/software_token_key_provider_test.cpp
+    )
+    target_include_directories(anopki_software_token_key_provider_test
+        PRIVATE
+            ${CMAKE_CURRENT_SOURCE_DIR}/src/backends/openssl
+    )
+    target_link_libraries(anopki_software_token_key_provider_test
+        PRIVATE
+            anopki::openssl_adapter
+            OpenSSL::Crypto
+    )
+    add_test(
+        NAME anopki.software_token_key_provider
+        COMMAND anopki_software_token_key_provider_test
+    )
 
     find_package(Python3 REQUIRED COMPONENTS Interpreter)
     add_test(

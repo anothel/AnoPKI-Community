@@ -14,6 +14,7 @@ namespace anopki::core::openssl_key_providers
 enum class ProviderClass
 {
 	file,
+	software_token,
 };
 
 enum class ProviderReadiness

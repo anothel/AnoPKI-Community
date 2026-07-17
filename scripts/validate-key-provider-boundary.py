@@ -9,12 +9,15 @@ from pathlib import Path
 
 PROVIDER_HEADER = Path("src/backends/openssl/key_providers/file_key_provider.hpp")
 PROVIDER_SOURCE = Path("src/backends/openssl/key_providers/file_key_provider.cpp")
+PROVIDER_RESOLVER_HEADER = Path("src/backends/openssl/key_providers/provider_resolver.hpp")
+PROVIDER_RESOLVER_SOURCE = Path("src/backends/openssl/key_providers/provider_resolver.cpp")
 ISSUE_SOURCE = Path("src/backends/openssl/issue.cpp")
 CRL_SOURCE = Path("src/backends/openssl/crl.cpp")
 OCSP_SOURCE = Path("src/backends/openssl/ocsp.cpp")
 PROVIDER_TEST = Path("tests/file_key_provider_test.cpp")
 CRL_PROVIDER_TEST = Path("tests/crl_file_key_provider_test.cpp")
 OCSP_PROVIDER_TEST = Path("tests/ocsp_file_key_provider_test.cpp")
+SOFTWARE_TOKEN_PROVIDER_TEST = Path("tests/software_token_key_provider_test.cpp")
 
 FORBIDDEN_SIGNING_PATH_TOKENS = (
     "BIO_new_file",
@@ -103,6 +106,43 @@ REQUIRED_OCSP_PROVIDER_TEST_TOKENS = (
     "OCSP_basic_verify",
     "provider-signed OCSP response verification failed",
 )
+REQUIRED_RESOLVER_TOKENS = (
+    "resolve_signing_key_with_provider",
+    "const SigningKeyProvider &provider",
+    "provider.metadata()",
+    "provider.accepts(request.key_ref)",
+    "ProviderReadiness::ready",
+    "metadata.exportable",
+    "provider.acquire(request)",
+    "evidence.requested_signature_algorithm",
+    "evidence.key_algorithm.empty()",
+    "evidence.issuer_binding_verified",
+    "evidence.fallback_used",
+    "ProviderErrorCode::profile_mismatch",
+    '"evidence"',
+)
+
+FORBIDDEN_RESOLVER_TOKENS = (
+    "FileKeyProvider",
+    "std::vector<SigningKeyProvider",
+    "std::vector<const SigningKeyProvider",
+)
+
+REQUIRED_SOFTWARE_TOKEN_TEST_TOKENS = (
+    "class SoftwareTokenKeyProvider",
+    "ProviderClass::software_token",
+    '"softtoken:issuer"',
+    "policy.production_mode = true",
+    "provider.acquire_count() == 1",
+    "ProviderErrorCode::profile_mismatch",
+    "mismatched_algorithm",
+    "unverified_binding",
+    "empty_key_algorithm",
+    "fallback_claim",
+    "resolve_signing_key_with_provider",
+    "X509_verify",
+)
+
 
 
 def fail(message: str) -> None:
@@ -119,12 +159,15 @@ def read_required(root: Path, relative: Path) -> str:
 def validate(root: Path) -> None:
     header = read_required(root, PROVIDER_HEADER)
     provider = read_required(root, PROVIDER_SOURCE)
+    resolver_header = read_required(root, PROVIDER_RESOLVER_HEADER)
+    resolver = read_required(root, PROVIDER_RESOLVER_SOURCE)
     issue = read_required(root, ISSUE_SOURCE)
     crl = read_required(root, CRL_SOURCE)
     ocsp = read_required(root, OCSP_SOURCE)
     provider_test = read_required(root, PROVIDER_TEST)
     crl_provider_test = read_required(root, CRL_PROVIDER_TEST)
     ocsp_provider_test = read_required(root, OCSP_PROVIDER_TEST)
+    software_token_provider_test = read_required(root, SOFTWARE_TOKEN_PROVIDER_TEST)
     cmake = read_required(root, Path("CMakeLists.txt"))
 
     for operation, content in (
@@ -169,6 +212,25 @@ def validate(root: Path) -> None:
             + "\n".join(missing_provider)
         )
 
+    missing_resolver = [token for token in REQUIRED_RESOLVER_TOKENS if token not in resolver]
+    if missing_resolver:
+        fail(
+            "single-provider resolver is missing required fail-closed semantics:\n"
+            + "\n".join(missing_resolver)
+        )
+
+    forbidden_resolver = [token for token in FORBIDDEN_RESOLVER_TOKENS if token in resolver]
+    if forbidden_resolver:
+        fail(
+            "single-provider resolver contains fallback/provider-specific coupling:\n"
+            + "\n".join(forbidden_resolver)
+        )
+
+    if "resolve_signing_key_with_provider" not in resolver_header:
+        fail("adapter-private single-provider resolver contract missing")
+    if "resolve_signing_key_with_provider" not in provider:
+        fail("FileKeyProvider operation wrappers bypass the single-provider resolver")
+
     missing_provider_tests = [
         token for token in REQUIRED_PROVIDER_TEST_TOKENS if token not in provider_test
     ]
@@ -187,6 +249,15 @@ def validate(root: Path) -> None:
             + "\n".join(missing_crl_provider_tests)
         )
 
+    missing_software_token_tests = [
+        token for token in REQUIRED_SOFTWARE_TOKEN_TEST_TOKENS if token not in software_token_provider_test
+    ]
+    if missing_software_token_tests:
+        fail(
+            "software-token provider contract tests are missing required coverage:\n"
+            + "\n".join(missing_software_token_tests)
+        )
+
     missing_ocsp_provider_tests = [
         token for token in REQUIRED_OCSP_PROVIDER_TEST_TOKENS if token not in ocsp_provider_test
     ]
@@ -202,18 +273,23 @@ def validate(root: Path) -> None:
         "class SigningKeyHandle",
         "ProviderMetadata",
         "RedactedProviderDiagnostics",
+        "software_token",
     ):
         if marker not in header:
             fail(f"adapter-private provider interface missing: {marker}")
 
     if "src/backends/openssl/key_providers/file_key_provider.cpp" not in cmake:
         fail("OpenSSL adapter target does not compile FileKeyProvider")
+    if "src/backends/openssl/key_providers/provider_resolver.cpp" not in cmake:
+        fail("OpenSSL adapter target does not compile the single-provider resolver")
     if "tests/file_key_provider_test.cpp" not in cmake:
         fail("CMake does not register FileKeyProvider tests")
     if "tests/crl_file_key_provider_test.cpp" not in cmake:
         fail("CMake does not register CRL FileKeyProvider tests")
     if "tests/ocsp_file_key_provider_test.cpp" not in cmake:
         fail("CMake does not register OCSP FileKeyProvider tests")
+    if "tests/software_token_key_provider_test.cpp" not in cmake:
+        fail("CMake does not register software-token provider contract tests")
 
     for relative_root in (Path("include"), Path("src/core")):
         scan_root = root / relative_root

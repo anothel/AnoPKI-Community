@@ -209,8 +209,8 @@ def check_key_provider_direction(root: Path) -> None:
     adr = (root / "docs/adr/0007-key-provider-signing-boundary.md").read_text(encoding="utf-8")
     semantics = (root / "docs/security/key-provider-semantics.md").read_text(encoding="utf-8")
     roadmap = (root / "docs/ROADMAP.md").read_text(encoding="utf-8")
-    adr_required = ["deliberately scoped hybrid", "FileKeyProvider", "Remote KMS"]
-    semantics_required = ["deliberately scoped hybrid", "provider.invalid_reference"]
+    adr_required = ["deliberately scoped hybrid", "FileKeyProvider", "Remote KMS", "test-only software-token"]
+    semantics_required = ["deliberately scoped hybrid", "provider.invalid_reference", "test-only software-token resolver contract"]
     missing = [text for text in adr_required if text not in adr]
     missing += [text for text in semantics_required if text not in semantics]
     if missing:
@@ -223,7 +223,11 @@ def check_key_provider_direction(root: Path) -> None:
     stale = [text for text in stale_roadmap if text in roadmap]
     if stale:
         fail("ROADMAP still lists the completed certificate FileKeyProvider slice:\n" + "\n".join(stale))
-    if "CRL" not in roadmap or "OCSP" not in roadmap or "mock/software-token" not in roadmap:
+    completed_roadmap = ["Add a mock/software-token provider", "Add a PKCS#11 mock or software-token test path"]
+    completed = [text for text in completed_roadmap if text in roadmap]
+    if completed:
+        fail("ROADMAP still lists completed software-token contract work:\n" + "\n".join(completed))
+    if "provider-result audit correlation" not in roadmap or "real local PKCS#11/HSM target" not in roadmap:
         fail("ROADMAP does not contain the remaining KeyProvider work")
 
 def should_scan_legacy_identifiers(path: Path, root: Path) -> bool:

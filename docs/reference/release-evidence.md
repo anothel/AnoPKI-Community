@@ -326,6 +326,8 @@ Evidence must include:
 - `file:` and bare-path success tests,
 - all required negative provider tests,
 - source-boundary validator and validator self-tests,
+- single-provider resolver and test-only software-token contract test,
+- evidence-mismatch and provider-failure no-fallback tests,
 - exact OpenSSL/compiler/platform metadata,
 - reviewed Community commit SHA.
 
@@ -338,7 +340,8 @@ Current scope statement:
 certificate issuance: FileKeyProvider implemented, exportable, local/dev only
 CRL signing: FileKeyProvider implemented, exportable, local/dev only
 OCSP response signing: FileKeyProvider implemented, exportable, local/dev only
-non-exportable provider: not implemented
+test-only software-token resolver contract: implemented; not a runtime provider
+real non-exportable provider: not implemented
 fallback_used: false
 production_ready: false for file-provider signing
 ```
