@@ -230,6 +230,18 @@ def test_missing_release_status_outage_evidence_fails(tmp_path: Path) -> None:
 
 
 
+def test_audit_replay_minimum_go_version_format_drift_fails(tmp_path: Path) -> None:
+    copy_release_evidence_inputs(tmp_path)
+    mutate(
+        tmp_path / "scripts/verify-audit-replay-drill.py",
+        "MINIMUM_GO_VERSION = (1, 25, 11)",
+        "MINIMUM_GO_VERSION=(1,25,11)",
+    )
+    result = run_validator(tmp_path)
+    assert result.returncode == 1
+    assert "MINIMUM_GO_VERSION = (1, 25, 11)" in result.stderr
+
+
 def test_missing_audit_replay_runner_fails(tmp_path: Path) -> None:
     copy_release_evidence_inputs(tmp_path)
     mutate(tmp_path / "scripts/verify-audit-replay-drill.py", "dead-letter-attempt-history-preserved")
@@ -265,6 +277,7 @@ def main() -> None:
         test_missing_release_recovery_evidence_fails,
         test_missing_status_outage_runner_fails,
         test_missing_release_status_outage_evidence_fails,
+        test_audit_replay_minimum_go_version_format_drift_fails,
         test_missing_audit_replay_runner_fails,
         test_missing_release_audit_replay_evidence_fails,
         test_missing_release_signing_evidence_fails,

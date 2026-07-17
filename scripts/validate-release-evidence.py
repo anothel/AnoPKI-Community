@@ -157,7 +157,7 @@ REQUIRED_STATUS_OUTAGE_RUNNER_TEXT = [
 ]
 
 REQUIRED_AUDIT_REPLAY_RUNNER_TEXT = [
-    "MINIMUM_GO_VERSION=(1,25,11)",
+    "MINIMUM_GO_VERSION = (1, 25, 11)",
     "community_audit_replay_drill",
     "TestRepairMissingIssuanceAuditEventsPreservesCurrentEvidenceAndIsIdempotent",
     "TestReplayDeadLetterOutboxMessagesPreservesHistoryAndCompletesAfterRecovery",
