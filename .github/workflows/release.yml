@@ -42,6 +42,13 @@ jobs:
       - name: Package Go verification evidence
         run: |
           tar -czf dist/anopki-go-verification.tar.gz -C .tmp/release-go-evidence go-verification.json go-verification.md logs
+      - name: Run SQLite recovery verification
+        run: |
+          python scripts/test_verify_recovery_drill.py
+          python scripts/verify-recovery-drill.py --out-dir .tmp/release-recovery-evidence --commit "${GITHUB_SHA}"
+      - name: Package recovery verification evidence
+        run: |
+          tar -czf dist/anopki-recovery-verification.tar.gz -C .tmp/release-recovery-evidence recovery-verification.json recovery-verification.md
       - name: Read release version
         run: |
           VERSION="$(cat VERSION)"

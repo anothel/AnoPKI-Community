@@ -35,7 +35,8 @@ Completed backend and FileKeyProvider work is intentionally omitted.
 ## P2 — Audit and recovery
 
 - Add policy-decision reason and validation-evidence references.
-- Expand issuer rotation, intermediate rollover, CRL/OCSP outage, audit repair, dead-letter, migration rollback and restore drill evidence.
+- Keep the executable SQLite backup/restore drill and release evidence contract current.
+- Expand issuer rotation, intermediate rollover, CRL/OCSP live-outage, audit-repair, dead-letter, PostgreSQL and multi-node recovery evidence.
 - Complete tamper-evident audit storage only after event-schema stability is sufficient.
 
 ## P2 — Refactor safety

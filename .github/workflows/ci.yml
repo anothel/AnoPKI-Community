@@ -88,6 +88,27 @@ jobs:
       - name: Validate release evidence
         run: python scripts/validate-release-evidence.py
 
+  recovery-drill:
+    name: SQLite recovery drill
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.x"
+      - name: Test recovery drill
+        run: python scripts/test_verify_recovery_drill.py
+      - name: Run recovery drill
+        run: >-
+          python scripts/verify-recovery-drill.py
+          --out-dir .tmp/recovery-evidence/ci
+          --commit "${GITHUB_SHA}"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: anopki-recovery-verification
+          path: .tmp/recovery-evidence/ci/
+          if-no-files-found: error
+
   secret-baseline:
     name: Secret baseline scan
     runs-on: ubuntu-latest

@@ -107,6 +107,18 @@ $steps = @(
         Command = @("python", "scripts\test_verify_go_release.py")
     },
     @{
+        Name = "recovery drill tests"
+        Dir = $RepoRoot
+        Display = "python scripts\test_verify_recovery_drill.py"
+        Command = @("python", "scripts\test_verify_recovery_drill.py")
+    },
+    @{
+        Name = "SQLite recovery drill"
+        Dir = $RepoRoot
+        Display = "python scripts\verify-recovery-drill.py --out-dir .tmp\recovery-evidence\verify-local"
+        Command = @("python", "scripts\verify-recovery-drill.py", "--out-dir", ".tmp\recovery-evidence\verify-local")
+    },
+    @{
         Name = "release artifact validator tests"
         Dir = $RepoRoot
         Display = "python scripts\test_validate_release_artifacts.py"

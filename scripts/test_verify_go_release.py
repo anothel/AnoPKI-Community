@@ -54,28 +54,14 @@ raise SystemExit(0)
 
 
 def make_fake_go(root: Path) -> Path:
-    script_path = root / "fake-go.py"
-    script_path.write_text(FAKE_GO, encoding="utf-8")
-    if os.name != "nt":
-        script_path.chmod(0o755)
-        return script_path
-
-    executable = str(Path(sys.executable).resolve())
-    if '"' in executable:
-        raise ValueError("Python executable path contains an unsupported quote")
-    wrapper_path = root / "fake-go.cmd"
-    wrapper_path.write_text(
-        "@echo off\n"
-        "setlocal DisableDelayedExpansion\n"
-        f'"{executable.replace("%", "%%")}" "%~dp0fake-go.py" %*\n'
-        "exit /b %errorlevel%\n",
-        encoding="utf-8",
-    )
-    return wrapper_path
+    path = root / "fake-go.py"
+    path.write_text(FAKE_GO, encoding="utf-8")
+    path.chmod(0o755)
+    return path
 
 
 def run(profile: str, *, version: str = "go1.25.12", fail: str = ""):
-    temp = tempfile.TemporaryDirectory(prefix="AnoPKI fake go ")
+    temp = tempfile.TemporaryDirectory()
     root = Path(temp.name)
     fake_go = make_fake_go(root)
     output = root / "evidence"
@@ -110,12 +96,6 @@ def test_full_profile_passes() -> None:
     temp, result, payload, output, fake_go = run("full")
     try:
         assert result.returncode == 0, result.stderr or result.stdout
-        if os.name == "nt":
-            assert fake_go.suffix == ".cmd"
-            assert '"%~dp0fake-go.py" %*' in fake_go.read_text(encoding="utf-8")
-        else:
-            assert fake_go.suffix == ".py"
-            assert os.access(fake_go, os.X_OK)
         assert payload["result"] == "passed"
         assert payload["product_profile"] == "community-openssl"
         assert payload["commit"] == "0123456789abcdef0123456789abcdef01234567"

@@ -65,3 +65,32 @@
 2. If status is `signed`, retry `POST /certificates` with the same enrollment ID.
 3. Confirm no second signer call occurred.
 4. Run `POST /audit-events/repair/issuance` if the certificate exists but the issued audit event is missing.
+## Executable SQLite Recovery Evidence
+
+Run the deterministic Community drill from the repository root:
+
+```powershell
+python scripts\test_verify_recovery_drill.py
+python scripts\verify-recovery-drill.py --out-dir .tmp\recovery-evidence\manual
+```
+
+The drill creates the current SQLite schema, seeds issuer and OCSP responder
+references, a signed issuance attempt, certificate/revocation state, a published
+CRL, audit events, dead-letter outbox state, webhook delivery state and API-key
+metadata. It then creates a consistent SQLite backup, deliberately damages the
+live copy, restores from the backup and verifies:
+
+- clean migration version and checksum,
+- SQLite integrity and foreign-key integrity,
+- exact restored-state digest and table counts,
+- issuer/responder key-reference preservation without exposing their values,
+- latest CRL artifact preservation,
+- durable no-fallback signing evidence,
+- audit, outbox, job-attempt and webhook-delivery state,
+- absence of private-key PEM markers from the database and evidence.
+
+The JSON and Markdown evidence contain hashes and counts only. They do not
+package database files, raw `key_ref` values, webhook secrets, API-key hashes or
+private-key material. This drill covers deterministic SQLite backup/restore
+semantics; PostgreSQL, multi-node traffic and real key-provider recovery remain
+separate operational evidence.

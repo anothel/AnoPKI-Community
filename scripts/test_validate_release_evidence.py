@@ -24,7 +24,8 @@ def require_release_workflow() -> None:
         "on:", "workflow_dispatch:", "tags:", "contents: read", "contents: write",
         "id-token: write", 'go-version: "1.25.12"',
         "python scripts/verify-go-release.py", "--profile full",
-        "anopki-go-verification.tar.gz",
+        "anopki-go-verification.tar.gz", "anopki-recovery-verification.tar.gz",
+        "python scripts/verify-recovery-drill.py",
         "cmake --build build-release --config Release", 'VERSION="$(cat VERSION)"',
         "go build -ldflags", "anopki-service-v${VERSION}-linux-amd64.tar.gz",
         "anopki-core-v${VERSION}-linux-amd64.tar.gz",
@@ -46,6 +47,7 @@ def copy_release_evidence_inputs(dst: Path) -> None:
         "docs/reference/release-evidence.md",
         "scripts/verify-local.ps1",
         "scripts/verify-go-release.py",
+        "scripts/verify-recovery-drill.py",
         ".github/workflows/ci.yml",
         ".github/workflows/release.yml",
     ]
@@ -190,6 +192,24 @@ def test_missing_compatibility_evidence_template_fails(tmp_path: Path) -> None:
     assert "release evidence compatibility template missing" in result.stderr
 
 
+
+
+def test_missing_recovery_runner_fails(tmp_path: Path) -> None:
+    copy_release_evidence_inputs(tmp_path)
+    mutate(tmp_path / "scripts/verify-recovery-drill.py", "private-key-exclusion")
+    result = run_validator(tmp_path)
+    assert result.returncode == 1
+    assert "private-key-exclusion" in result.stderr
+
+
+def test_missing_release_recovery_evidence_fails(tmp_path: Path) -> None:
+    copy_release_evidence_inputs(tmp_path)
+    mutate(tmp_path / ".github/workflows/release.yml", "anopki-recovery-verification.tar.gz")
+    result = run_validator(tmp_path)
+    assert result.returncode == 1
+    assert "anopki-recovery-verification.tar.gz" in result.stderr
+
+
 def main() -> None:
     result = run_validator(ROOT)
     if result.returncode != 0:
@@ -208,6 +228,8 @@ def main() -> None:
         test_missing_ci_go_evidence_upload_fails,
         test_missing_ci_fuzz_smoke_fails,
         test_missing_release_go_evidence_fails,
+        test_missing_recovery_runner_fails,
+        test_missing_release_recovery_evidence_fails,
         test_missing_release_signing_evidence_fails,
         test_missing_release_dry_run_gate_fails,
         test_release_evidence_placeholder_fails,

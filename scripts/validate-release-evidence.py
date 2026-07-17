@@ -17,10 +17,12 @@ REQUIRED_DOC_TEXT = [
     "## Tool Decisions",
     "## Release Artifacts",
     "## Compatibility Matrix",
+    "## SQLite Recovery Evidence Runner",
     "## Supported-Go Evidence Runner",
     "## Required Evidence Per Release Candidate",
     "verify-go-release.py",
     "anopki-go-verification.tar.gz",
+    "anopki-recovery-verification.tar.gz",
     "syft",
     "cosign",
     "govulncheck",
@@ -64,6 +66,9 @@ REQUIRED_CI_TEXT = [
     "python scripts/validate-version-metadata.py",
     "python scripts/test_generate_release_metadata.py",
     "python scripts/test_verify_go_release.py",
+    "python scripts/test_verify_recovery_drill.py",
+    "python scripts/verify-recovery-drill.py",
+    "anopki-recovery-verification",
     "python scripts/test_validate_release_artifacts.py",
     "python scripts/test_validate_release_evidence.py",
     "python scripts/validate-release-evidence.py",
@@ -114,6 +119,19 @@ REQUIRED_GO_RUNNER_TEXT = [
     "GITHUB_SHA",
 ]
 
+REQUIRED_RECOVERY_RUNNER_TEXT = [
+    "MIGRATION = Path",
+    "schema_migrations",
+    "certificate_issuance_attempts",
+    "crl_publications",
+    "webhook_deliveries",
+    "private-key-exclusion",
+    "recovery-verification.json",
+    "recovery-verification.md",
+    "resolve_commit",
+    "SENSITIVE_FIXTURES",
+]
+
 REQUIRED_RELEASE_TEXT = [
     "workflow_dispatch:",
     "tags:",
@@ -124,6 +142,8 @@ REQUIRED_RELEASE_TEXT = [
     "python scripts/verify-go-release.py",
     "--profile full",
     "anopki-go-verification.tar.gz",
+    "python scripts/verify-recovery-drill.py",
+    "anopki-recovery-verification.tar.gz",
     '--commit "${GITHUB_SHA}"',
     'VERSION="$(cat VERSION)"',
     "go build -ldflags",
@@ -224,6 +244,7 @@ def main() -> None:
     check_compatibility_evidence_template(doc)
     check_local_verification_evidence(root, doc)
     require_text(root / "scripts/verify-go-release.py", REQUIRED_GO_RUNNER_TEXT)
+    require_text(root / "scripts/verify-recovery-drill.py", REQUIRED_RECOVERY_RUNNER_TEXT)
     require_text(root / ".github/workflows/ci.yml", REQUIRED_CI_TEXT)
     require_text(root / ".github/workflows/release.yml", REQUIRED_RELEASE_TEXT)
     print("release evidence ok")

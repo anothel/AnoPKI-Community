@@ -111,6 +111,86 @@ def write_go_evidence_archive(
         if extra_member:
             archive.add(root / "unexpected.txt", arcname="unexpected.txt")
 
+
+
+def write_recovery_evidence_archive(
+    path: Path,
+    *,
+    result: str = "passed",
+    commit: str = "0123456789abcdef0123456789abcdef01234567",
+    extra_field: bool = False,
+    extra_member: bool = False,
+) -> None:
+    root = path.parent / "recovery-evidence"
+    if root.exists():
+        shutil.rmtree(root)
+    root.mkdir(parents=True, exist_ok=True)
+    check_names = [
+        "sqlite-integrity",
+        "foreign-key-integrity",
+        "schema-migration",
+        "restore-state-match",
+        "state-counts",
+        "key-reference-preservation",
+        "crl-artifact",
+        "issuance-attempt",
+        "outbox-and-webhook-state",
+        "audit-state",
+        "private-key-exclusion",
+    ]
+    evidence = {
+        "schema_version": 1,
+        "product": "AnoPKI",
+        "edition": "community",
+        "product_profile": "community-openssl",
+        "commit": commit,
+        "database_driver": "sqlite",
+        "migration_version": 1,
+        "migration_checksum": "1" * 64,
+        "started_at": "2026-07-17T01:00:00Z",
+        "completed_at": "2026-07-17T01:00:01Z",
+        "result": result,
+        "backup_sha256": "2" * 64,
+        "restored_state_sha256": "3" * 64,
+        "state_counts": {
+            "schema_migrations": 1,
+            "issuers": 1,
+            "ocsp_responders": 1,
+            "certificates": 1,
+            "certificate_issuance_attempts": 1,
+            "revocations": 1,
+            "crl_publications": 1,
+            "audit_events": 2,
+            "outbox_messages": 1,
+            "job_attempts": 1,
+            "notification_endpoints": 1,
+            "webhook_deliveries": 1,
+            "api_keys": 1,
+        },
+        "artifact_hashes": {
+            "certificate_pem": "sha256:" + "4" * 64,
+            "crl_pem": "sha256:" + "5" * 64,
+            "signing_evidence": "sha256:" + "6" * 64,
+        },
+        "checks": [{"name": name, "status": "passed"} for name in check_names],
+        "redaction": {
+            "private_key_markers_found": False,
+            "raw_key_references_in_evidence": False,
+            "sensitive_fixture_values_in_evidence": False,
+        },
+    }
+    if extra_field:
+        evidence["unexpected"] = "drift"
+    (root / "recovery-verification.json").write_text(json.dumps(evidence), encoding="utf-8")
+    (root / "recovery-verification.md").write_text("# Recovery evidence\n", encoding="utf-8")
+    if extra_member:
+        (root / "unexpected.txt").write_text("unexpected\n", encoding="utf-8")
+    with tarfile.open(path, "w:gz") as archive:
+        archive.add(root / "recovery-verification.json", arcname="recovery-verification.json")
+        archive.add(root / "recovery-verification.md", arcname="recovery-verification.md")
+        if extra_member:
+            archive.add(root / "unexpected.txt", arcname="unexpected.txt")
+
 def backend_info() -> dict[str, object]:
     return {
         "product_profile": "community-openssl",
@@ -188,6 +268,7 @@ def write_valid_dist(dist: Path) -> tuple[Path, Path]:
     write_archive(service, "anopki-service")
     write_archive(core, "anopki-core")
     write_go_evidence_archive(dist / "anopki-go-verification.tar.gz")
+    write_recovery_evidence_archive(dist / "anopki-recovery-verification.tar.gz")
     backend = backend_info()
     (dist / "anopki-backend-info.json").write_text(json.dumps(backend), encoding="utf-8")
     (dist / "anopki-release-metadata.json").write_text(json.dumps(release_metadata(backend)), encoding="utf-8")
@@ -456,6 +537,63 @@ def test_unknown_go_evidence_field_fails() -> None:
     assert result.returncode == 1
     assert "unknown fields" in result.stderr
 
+
+
+def test_missing_recovery_evidence_fails() -> None:
+    with tempfile.TemporaryDirectory() as tmp:
+        dist = Path(tmp)
+        write_valid_dist(dist)
+        (dist / "anopki-recovery-verification.tar.gz").unlink()
+        rewrite_checksums(dist)
+        result = run_validator(dist)
+    assert result.returncode == 1
+    assert "missing recovery verification evidence" in result.stderr
+
+
+def test_failed_recovery_evidence_fails() -> None:
+    with tempfile.TemporaryDirectory() as tmp:
+        dist = Path(tmp)
+        write_valid_dist(dist)
+        write_recovery_evidence_archive(dist / "anopki-recovery-verification.tar.gz", result="failed")
+        rewrite_checksums(dist)
+        result = run_validator(dist)
+    assert result.returncode == 1
+    assert "drill did not pass" in result.stderr
+
+
+def test_recovery_evidence_commit_mismatch_fails() -> None:
+    with tempfile.TemporaryDirectory() as tmp:
+        dist = Path(tmp)
+        write_valid_dist(dist)
+        write_recovery_evidence_archive(dist / "anopki-recovery-verification.tar.gz", commit="f" * 40)
+        rewrite_checksums(dist)
+        result = run_validator(dist)
+    assert result.returncode == 1
+    assert "recovery verification commit does not match" in result.stderr
+
+
+def test_unknown_recovery_evidence_field_fails() -> None:
+    with tempfile.TemporaryDirectory() as tmp:
+        dist = Path(tmp)
+        write_valid_dist(dist)
+        write_recovery_evidence_archive(dist / "anopki-recovery-verification.tar.gz", extra_field=True)
+        rewrite_checksums(dist)
+        result = run_validator(dist)
+    assert result.returncode == 1
+    assert "recovery verification evidence has unknown fields" in result.stderr
+
+
+def test_unexpected_recovery_evidence_member_fails() -> None:
+    with tempfile.TemporaryDirectory() as tmp:
+        dist = Path(tmp)
+        write_valid_dist(dist)
+        write_recovery_evidence_archive(dist / "anopki-recovery-verification.tar.gz", extra_member=True)
+        rewrite_checksums(dist)
+        result = run_validator(dist)
+    assert result.returncode == 1
+    assert "unexpected recovery evidence members" in result.stderr
+
+
 def main() -> None:
     test_valid_release_artifacts_pass()
     test_missing_release_archive_fails()
@@ -477,6 +615,11 @@ def main() -> None:
     test_go_evidence_commit_mismatch_fails()
     test_unexpected_go_evidence_member_fails()
     test_unknown_go_evidence_field_fails()
+    test_missing_recovery_evidence_fails()
+    test_failed_recovery_evidence_fails()
+    test_recovery_evidence_commit_mismatch_fails()
+    test_unknown_recovery_evidence_field_fails()
+    test_unexpected_recovery_evidence_member_fails()
     print("release artifact tests ok")
 
 

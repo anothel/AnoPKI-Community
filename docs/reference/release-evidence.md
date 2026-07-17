@@ -84,6 +84,18 @@ Copy this table into release notes for each release candidate and replace
 
 
 
+## SQLite Recovery Evidence Runner
+
+`scripts/verify-recovery-drill.py` creates a deterministic current-schema SQLite
+database, backs it up, damages the live copy, restores from the backup and
+verifies migration cleanliness, foreign keys, active issuer/responder key
+references, CRL artifacts, signed issuance evidence, audit events, outbox/job
+attempts and webhook delivery state. Evidence is written as strict redacted JSON
+and Markdown and is packaged as `anopki-recovery-verification.tar.gz`. Release
+validation requires `result=passed` and the exact same Community commit as
+`anopki-release-metadata.json`. Database files and raw sensitive values are not
+packaged.
+
 ## Supported-Go Evidence Runner
 
 `scripts/verify-go-release.py` is the maintained Community entry point for Go
@@ -216,6 +228,8 @@ evidence still needs release workflow artifacts containing archives,
 - `python scripts/validate-version-metadata.py`
 - `python scripts/test_generate_release_metadata.py`
 - `python scripts/test_verify_go_release.py`
+- `python scripts/test_verify_recovery_drill.py`
+- `python scripts/verify-recovery-drill.py --out-dir .tmp\recovery-evidence\verify-local`
 - `python scripts/test_validate_release_artifacts.py`
 - `python scripts/test_validate_service_contracts.py`
 - `python scripts/validate-service-contracts.py`

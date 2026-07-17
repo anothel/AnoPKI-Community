@@ -49,6 +49,8 @@ def main() -> None:
         'python scripts\\validate-version-metadata.py',
         'python scripts\\test_generate_release_metadata.py',
         'python scripts\\test_verify_go_release.py',
+        'python scripts\\test_verify_recovery_drill.py',
+        'python scripts\\verify-recovery-drill.py --out-dir .tmp\\recovery-evidence\\verify-local',
         'python scripts\\test_validate_release_artifacts.py',
         'python scripts\\test_validate_service_contracts.py',
         'python scripts\\validate-service-contracts.py',
@@ -79,6 +81,8 @@ def main() -> None:
         raise SystemExit("verify-local must not hard-code nested PowerShell executable")
     if "verify-go-release.py" not in script_text or ".tmp\\go-evidence" not in script_text:
         raise SystemExit("verify-local must run the supported-Go evidence wrapper under .tmp")
+    if "verify-recovery-drill.py" not in script_text or ".tmp\\recovery-evidence" not in script_text:
+        raise SystemExit("verify-local must run the SQLite recovery drill under .tmp")
     if "Resolve-OpenSSLRuntime" not in script_text or "libcrypto*.dll" not in script_text:
         raise SystemExit("verify-local must validate Windows OpenSSL runtime DLLs")
     if "$env:PATH = $previousPath" not in script_text:
