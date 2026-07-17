@@ -109,6 +109,33 @@ jobs:
           path: .tmp/recovery-evidence/ci/
           if-no-files-found: error
 
+  status-outage-drill:
+    name: CRL and OCSP outage drill
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.25.12"
+          cache-dependency-path: |
+            service/go.mod
+            service/go.sum
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.x"
+      - name: Test status outage drill
+        run: python scripts/test_verify_status_outage_drill.py
+      - name: Run status outage drill
+        run: >-
+          python scripts/verify-status-outage-drill.py
+          --out-dir .tmp/status-outage-evidence/ci
+          --commit "${GITHUB_SHA}"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: anopki-status-outage-verification
+          path: .tmp/status-outage-evidence/ci/
+          if-no-files-found: error
+
   secret-baseline:
     name: Secret baseline scan
     runs-on: ubuntu-latest

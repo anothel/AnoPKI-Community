@@ -1029,6 +1029,74 @@ func TestPublishCRLMapsCoreFailure(t *testing.T) {
 	}
 }
 
+func TestPublishCRLOutageRecoversWithoutPhantomPublication(t *testing.T) {
+	ctx := context.Background()
+	repo := store.NewMemoryStore()
+	coreClient := &fakeIssuer{crlErr: errors.New("crl signer unavailable")}
+	clock := fixedClock{now: time.Date(2026, time.January, 2, 3, 4, 5, 0, time.UTC)}
+	service := New(repo, coreClient, clock, &fakeIDGenerator{})
+
+	issuer, err := service.CreateIssuer(ctx, "admin", CreateIssuerRequest{
+		Name:           "intermediate-ca",
+		Kind:           domain.IssuerIntermediateCA,
+		CertificatePEM: "issuer-cert-pem",
+		KeyRef:         "issuer-key-ref",
+	})
+	if err != nil {
+		t.Fatalf("CreateIssuer returned error: %v", err)
+	}
+
+	request := PublishCRLRequest{
+		IssuerID:          issuer.ID,
+		DistributionPoint: "https://pki.example.test/intermediate.crl",
+		NextUpdate:        clock.now.Add(24 * time.Hour),
+	}
+	if _, err := service.PublishCRL(ctx, "operator", request); !errors.Is(err, domain.ErrCRLGenerationFailed) {
+		t.Fatalf("PublishCRL outage error = %v, want ErrCRLGenerationFailed", err)
+	}
+	publications, err := repo.ListCRLPublicationsByIssuer(ctx, issuer.ID)
+	if err != nil {
+		t.Fatalf("ListCRLPublicationsByIssuer returned error: %v", err)
+	}
+	if len(publications) != 0 {
+		t.Fatalf("CRL publications during outage = %#v, want none", publications)
+	}
+	for _, event := range mustListAuditEvents(t, service, ctx) {
+		if event.Action == "crl.published" {
+			t.Fatalf("success audit written during CRL outage: %#v", event)
+		}
+	}
+
+	coreClient.crlErr = nil
+	coreClient.crlResult = corecli.GenerateCRLResult{CRLPEM: "recovered-crl-pem"}
+	publication, err := service.PublishCRL(ctx, "operator", request)
+	if err != nil {
+		t.Fatalf("PublishCRL after recovery returned error: %v", err)
+	}
+	if publication.CRLNumber != 1 || publication.CRLPEM != "recovered-crl-pem" {
+		t.Fatalf("recovered CRL publication = %#v", publication)
+	}
+	publications, err = repo.ListCRLPublicationsByIssuer(ctx, issuer.ID)
+	if err != nil {
+		t.Fatalf("ListCRLPublicationsByIssuer after recovery returned error: %v", err)
+	}
+	if len(publications) != 1 || publications[0].CRLNumber != 1 {
+		t.Fatalf("CRL publications after recovery = %#v", publications)
+	}
+	publishedAudits := 0
+	for _, event := range mustListAuditEvents(t, service, ctx) {
+		if event.Action == "crl.published" {
+			publishedAudits++
+		}
+	}
+	if publishedAudits != 1 {
+		t.Fatalf("crl.published audit count = %d, want 1", publishedAudits)
+	}
+	if len(coreClient.crlRequests) != 2 {
+		t.Fatalf("CRL request count = %d, want 2", len(coreClient.crlRequests))
+	}
+}
+
 func TestPublishCRLRejectsReadinessWithoutCoreSigningEvidence(t *testing.T) {
 	ctx := context.Background()
 	repo := store.NewMemoryStore()
@@ -1267,6 +1335,66 @@ func TestRespondOCSPMapsResponseFailure(t *testing.T) {
 	}
 	if len(coreClient.ocspResponses) != 1 {
 		t.Fatalf("OCSP response request count = %d, want 1", len(coreClient.ocspResponses))
+	}
+}
+
+func TestRespondOCSPOutageRecoversWithoutSuccessAudit(t *testing.T) {
+	ctx := context.Background()
+	repo := store.NewMemoryStore()
+	coreClient := &fakeIssuer{
+		issuerOCSPInfo: corecli.OCSPIssuerInfo{IssuerNameHash: "name-hash", IssuerKeyHash: "key-hash"},
+		ocspInfo: corecli.OCSPRequestInfo{Certificates: []corecli.OCSPCertificateID{{
+			SerialNumber: "1001", IssuerNameHash: "name-hash", IssuerKeyHash: "key-hash",
+		}}},
+		ocspResponseErr: errors.New("ocsp signer unavailable"),
+	}
+	clock := fixedClock{now: time.Date(2026, time.January, 2, 3, 4, 5, 0, time.UTC)}
+	service := New(repo, coreClient, clock, &fakeIDGenerator{})
+
+	issuer, err := service.CreateIssuer(ctx, "admin", CreateIssuerRequest{
+		Name: "intermediate-ca", Kind: domain.IssuerIntermediateCA,
+		CertificatePEM: "issuer-cert-pem", KeyRef: "issuer-key-ref",
+	})
+	if err != nil {
+		t.Fatalf("CreateIssuer returned error: %v", err)
+	}
+	if err := repo.CreateCertificate(ctx, domain.Certificate{
+		ID: "cert-valid", IdentityID: "identity-1", IssuerID: issuer.ID,
+		SerialNumber: "1001", Status: domain.CertificateValid,
+		CreatedAt: clock.now, UpdatedAt: clock.now,
+	}); err != nil {
+		t.Fatalf("CreateCertificate returned error: %v", err)
+	}
+
+	if _, err := service.RespondOCSP(ctx, "ocsp-client", []byte("ocsp-request-der")); !errors.Is(err, domain.ErrOCSPResponseFailed) {
+		t.Fatalf("RespondOCSP outage error = %v, want ErrOCSPResponseFailed", err)
+	}
+	for _, event := range mustListAuditEvents(t, service, ctx) {
+		if event.Action == "ocsp.requested" {
+			t.Fatalf("success audit written during OCSP outage: %#v", event)
+		}
+	}
+
+	coreClient.ocspResponseErr = nil
+	coreClient.ocspResponseDER = []byte("recovered-ocsp-response")
+	response, err := service.RespondOCSP(ctx, "ocsp-client", []byte("ocsp-request-der"))
+	if err != nil {
+		t.Fatalf("RespondOCSP after recovery returned error: %v", err)
+	}
+	if string(response.ResponseDER) != "recovered-ocsp-response" {
+		t.Fatalf("recovered OCSP response = %q", response.ResponseDER)
+	}
+	successAudits := 0
+	for _, event := range mustListAuditEvents(t, service, ctx) {
+		if event.Action == "ocsp.requested" {
+			successAudits++
+		}
+	}
+	if successAudits != 1 {
+		t.Fatalf("ocsp.requested audit count = %d, want 1", successAudits)
+	}
+	if len(coreClient.ocspResponses) != 2 {
+		t.Fatalf("OCSP response request count = %d, want 2", len(coreClient.ocspResponses))
 	}
 }
 
@@ -5924,6 +6052,15 @@ type fakeIssuer struct {
 	crlSigningEvidence              *corecli.SigningEvidence
 	ocspSigningEvidence             *corecli.SigningEvidence
 	err                             error
+}
+
+func mustListAuditEvents(t *testing.T, service *Service, ctx context.Context) []domain.AuditEvent {
+	t.Helper()
+	events, err := service.ListAuditEvents(ctx)
+	if err != nil {
+		t.Fatalf("ListAuditEvents returned error: %v", err)
+	}
+	return events
 }
 
 func testSigningEvidence(operation string, algorithm string) corecli.SigningEvidence {

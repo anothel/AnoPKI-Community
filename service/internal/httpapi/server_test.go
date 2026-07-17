@@ -2820,6 +2820,49 @@ func TestPublishCRL(t *testing.T) {
 	}
 }
 
+func TestPublishCRLOutageReturnsBadGatewayAndRecovers(t *testing.T) {
+	api := newTestAPI(t)
+	certificate := api.createCertificate(t)
+
+	var revoked apiCertificate
+	status := api.doJSON(t, http.MethodPost, "/certificates/"+certificate.ID+"/revoke", "operator", map[string]string{
+		"reason": string(domain.RevocationKeyCompromise),
+	}, &revoked)
+	assertStatus(t, status, http.StatusOK)
+
+	api.issuer.crlErr = errors.New("crl signer unavailable")
+	var failure errorResponse
+	status = api.doJSON(t, http.MethodPost, "/crls", "operator", map[string]any{
+		"issuer_id":          certificate.IssuerID,
+		"distribution_point": "https://pki.example.test/outage.crl",
+		"next_update":        testNow.Add(24 * time.Hour),
+	}, &failure)
+	assertStatus(t, status, http.StatusBadGateway)
+	if failure.Error != domain.ErrCRLGenerationFailed.Error() {
+		t.Fatalf("CRL outage error = %q, want %q", failure.Error, domain.ErrCRLGenerationFailed.Error())
+	}
+	status, _, _ = api.doRaw(t, http.MethodGet, "/issuers/"+certificate.IssuerID+"/crl", "")
+	assertStatus(t, status, http.StatusNotFound)
+
+	api.issuer.crlErr = nil
+	api.issuer.crlPEM = "recovered-crl-pem"
+	var recovered apiCRLPublication
+	status = api.doJSON(t, http.MethodPost, "/crls", "operator", map[string]any{
+		"issuer_id":          certificate.IssuerID,
+		"distribution_point": "https://pki.example.test/outage.crl",
+		"next_update":        testNow.Add(24 * time.Hour),
+	}, &recovered)
+	assertStatus(t, status, http.StatusCreated)
+	if recovered.CRLNumber != 1 || recovered.CRLPEM != "recovered-crl-pem" {
+		t.Fatalf("recovered CRL = %#v", recovered)
+	}
+	status, body, _ := api.doRaw(t, http.MethodGet, "/issuers/"+certificate.IssuerID+"/crl", "")
+	assertStatus(t, status, http.StatusOK)
+	if string(body) != "recovered-crl-pem" {
+		t.Fatalf("recovered CRL body = %q", body)
+	}
+}
+
 func TestGetLatestIssuerCRLFiltersByDistributionPoint(t *testing.T) {
 	api := newTestAPI(t)
 	certificate := api.createCertificate(t)
@@ -2884,6 +2927,42 @@ func TestRespondOCSP(t *testing.T) {
 	}
 	if contentType != "application/ocsp-response" {
 		t.Fatalf("OCSP content type = %q", contentType)
+	}
+}
+
+func TestRespondOCSPOutageReturnsBadGatewayAndRecovers(t *testing.T) {
+	api := newTestAPI(t)
+	certificate := api.createCertificate(t)
+	api.issuer.ocspInfo = corecli.OCSPRequestInfo{Certificates: []corecli.OCSPCertificateID{{
+		SerialNumber: certificate.SerialNumber, IssuerNameHash: "name-hash", IssuerKeyHash: "key-hash",
+	}}}
+	api.issuer.ocspResponseErr = errors.New("ocsp signer unavailable")
+
+	status, _, _ := api.doBinary(t, http.MethodPost, "/ocsp", "operator", "application/ocsp-request", []byte("ocsp-request-der"))
+	assertStatus(t, status, http.StatusBadGateway)
+
+	api.issuer.ocspResponseErr = nil
+	api.issuer.ocspResponseDER = []byte("recovered-ocsp-response")
+	status, body, contentType := api.doBinary(t, http.MethodPost, "/ocsp", "operator", "application/ocsp-request", []byte("ocsp-request-der"))
+	assertStatus(t, status, http.StatusOK)
+	if string(body) != "recovered-ocsp-response" {
+		t.Fatalf("recovered OCSP body = %q", body)
+	}
+	if contentType != "application/ocsp-response" {
+		t.Fatalf("recovered OCSP content type = %q", contentType)
+	}
+
+	var events []apiAuditEvent
+	status = api.doJSON(t, http.MethodGet, "/audit-events", "", nil, &events)
+	assertStatus(t, status, http.StatusOK)
+	successAudits := 0
+	for _, event := range events {
+		if event.Action == "ocsp.requested" {
+			successAudits++
+		}
+	}
+	if successAudits != 1 {
+		t.Fatalf("ocsp.requested audit count = %d, want 1", successAudits)
 	}
 }
 
@@ -4427,13 +4506,25 @@ type fakeIssuer struct {
 	requests                          []corecli.IssueRequest
 	crlRequests                       []corecli.GenerateCRLRequest
 	err                               error
+	crlErr                            error
 	crlPEM                            string
 	ocspInfo                          corecli.OCSPRequestInfo
 	ocspResponses                     []corecli.GenerateOCSPResponseRequest
 	ocspResponseDER                   []byte
+	ocspResponseErr                   error
 	ocspResponderValidationRequests   []ocspResponderValidationRequest
 	ocspResponderValidationConfigured bool
 	ocspResponderValidationResult     corecli.ValidateOCSPResponderResult
+}
+
+func httpTestSigningEvidence(operation string, algorithm string) corecli.SigningEvidence {
+	return corecli.SigningEvidence{
+		SchemaVersion: 1, EvidenceSource: "core_signing", Operation: operation,
+		ProviderID: "openssl.file", ProviderClass: "file", ProviderReadiness: "ready",
+		ProviderExportability: "exportable", ReferenceClass: "file", KeyAlgorithm: "rsa",
+		RequestedSignatureAlgorithm: algorithm, IssuerBindingVerified: true,
+		FallbackUsed: false, ResultCode: "ok",
+	}
 }
 
 func (f *fakeIssuer) InspectCSR(ctx context.Context, csrPEM string) (corecli.CSRInfo, error) {
@@ -4450,16 +4541,20 @@ func (f *fakeIssuer) Issue(ctx context.Context, req corecli.IssueRequest) (corec
 		return corecli.IssueResult{}, f.err
 	}
 	return corecli.IssueResult{
-		CertificatePEM: "issued:" + req.CSRPEM,
-		SerialNumber:   "serial:" + req.Subject,
-		Subject:        req.Subject,
-		NotBefore:      req.NotBefore,
-		NotAfter:       req.NotAfter,
+		CertificatePEM:  "issued:" + req.CSRPEM,
+		SerialNumber:    "serial:" + req.Subject,
+		Subject:         req.Subject,
+		NotBefore:       req.NotBefore,
+		NotAfter:        req.NotAfter,
+		SigningEvidence: httpTestSigningEvidence("certificate_issue", req.SignatureAlgorithm),
 	}, nil
 }
 
 func (f *fakeIssuer) GenerateCRL(ctx context.Context, req corecli.GenerateCRLRequest) (corecli.GenerateCRLResult, error) {
 	f.crlRequests = append(f.crlRequests, req)
+	if f.crlErr != nil {
+		return corecli.GenerateCRLResult{}, f.crlErr
+	}
 	if f.err != nil {
 		return corecli.GenerateCRLResult{}, f.err
 	}
@@ -4467,7 +4562,10 @@ func (f *fakeIssuer) GenerateCRL(ctx context.Context, req corecli.GenerateCRLReq
 	if crlPEM == "" {
 		crlPEM = "crl-pem"
 	}
-	return corecli.GenerateCRLResult{CRLPEM: crlPEM}, nil
+	return corecli.GenerateCRLResult{
+		CRLPEM:          crlPEM,
+		SigningEvidence: httpTestSigningEvidence("crl_generate_sign", "sha256"),
+	}, nil
 }
 
 func (f *fakeIssuer) InspectOCSPIssuer(ctx context.Context, issuerCertificatePEM string, hashAlgorithm string) (corecli.OCSPIssuerInfo, error) {
@@ -4500,10 +4598,16 @@ func (f *fakeIssuer) InspectOCSP(ctx context.Context, requestDER []byte) (corecl
 
 func (f *fakeIssuer) GenerateOCSPResponse(ctx context.Context, req corecli.GenerateOCSPResponseRequest) (corecli.GenerateOCSPResponseResult, error) {
 	f.ocspResponses = append(f.ocspResponses, req)
+	if f.ocspResponseErr != nil {
+		return corecli.GenerateOCSPResponseResult{}, f.ocspResponseErr
+	}
 	if f.err != nil {
 		return corecli.GenerateOCSPResponseResult{}, f.err
 	}
-	return corecli.GenerateOCSPResponseResult{ResponseDER: f.ocspResponseDER}, nil
+	return corecli.GenerateOCSPResponseResult{
+		ResponseDER:     f.ocspResponseDER,
+		SigningEvidence: httpTestSigningEvidence("ocsp_response_sign", "sha256"),
+	}, nil
 }
 
 type fixedClock struct {

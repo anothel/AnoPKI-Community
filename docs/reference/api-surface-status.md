@@ -20,7 +20,7 @@ partial, planned, smoke-only, or not-production-stable.
 | --- | --- | --- | --- |
 | Identity, issuer, profile, enrollment, approval, issuance | Implemented, not-production-stable | Service README, OpenAPI, state transitions, Go/C++ boundary tests. | Public API compatibility freeze. |
 | Certificate inventory, renewal, reissue, revocation, suspension, expiration scan | Implemented, not-production-stable | Service README, state transitions, lifecycle tests. | Deployment-target automation remains planned. |
-| CRL publication and OCSP response | Implemented, not-production-stable | Service README, core CLI contract, CRL/OCSP tests. | HA deployment and outage drill evidence. |
+| CRL publication and OCSP response | Implemented, not-production-stable | Service README, core CLI contract, CRL/OCSP tests, and single-node signer outage/recovery evidence. | Multi-node HA deployment and traffic-shift outage evidence. |
 | Delegated OCSP responder registration and rotation | Implemented, not-production-stable | Service README, OpenAPI, lifecycle tests. | Production non-exportable provider support remains outside the current Community runtime scope. |
 | Audit events, outbox, webhook delivery | Partial, not-production-stable | Service README, webhook receiver reference, outbox tests, audit tamper-evidence plan, SIEM detection examples. | Tamper-evident hash-chain implementation and SIEM exporter integration. |
 | API key auth and operational probes | Implemented, not-production-stable | Service README, production startup guard tests, access model. | First-class role/ABAC enforcement waits for an operator directory. |

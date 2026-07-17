@@ -119,6 +119,18 @@ $steps = @(
         Command = @("python", "scripts\verify-recovery-drill.py", "--out-dir", ".tmp\recovery-evidence\verify-local")
     },
     @{
+        Name = "status outage drill tests"
+        Dir = $RepoRoot
+        Display = "python scripts\test_verify_status_outage_drill.py"
+        Command = @("python", "scripts\test_verify_status_outage_drill.py")
+    },
+    @{
+        Name = "CRL and OCSP outage drill"
+        Dir = $RepoRoot
+        Display = "python scripts\verify-status-outage-drill.py --out-dir .tmp\status-outage-evidence\verify-local"
+        Command = @("python", "scripts\verify-status-outage-drill.py", "--out-dir", ".tmp\status-outage-evidence\verify-local")
+    },
+    @{
         Name = "release artifact validator tests"
         Dir = $RepoRoot
         Display = "python scripts\test_validate_release_artifacts.py"

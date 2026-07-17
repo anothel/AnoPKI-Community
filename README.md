@@ -131,6 +131,12 @@ python scripts\test_verify_recovery_drill.py
 python scripts\verify-recovery-drill.py --out-dir .tmp\recovery-evidence\verify-local
 # recovery drill passed: 11 checks
 
+python scripts\test_verify_status_outage_drill.py
+# status outage drill tests passed: 5
+
+python scripts\verify-status-outage-drill.py --out-dir .tmp\status-outage-evidence\verify-local
+# requires Go 1.25.11+ and proves CRL/OCSP failure and recovery semantics
+
 python scripts\test_validate_release_artifacts.py
 # release artifact tests ok
 

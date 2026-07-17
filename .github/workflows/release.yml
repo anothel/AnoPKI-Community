@@ -49,6 +49,13 @@ jobs:
       - name: Package recovery verification evidence
         run: |
           tar -czf dist/anopki-recovery-verification.tar.gz -C .tmp/release-recovery-evidence recovery-verification.json recovery-verification.md
+      - name: Run CRL and OCSP outage verification
+        run: |
+          python scripts/test_verify_status_outage_drill.py
+          python scripts/verify-status-outage-drill.py --out-dir .tmp/release-status-outage-evidence --commit "${GITHUB_SHA}"
+      - name: Package status outage verification evidence
+        run: |
+          tar -czf dist/anopki-status-outage-verification.tar.gz -C .tmp/release-status-outage-evidence status-outage-verification.json status-outage-verification.md status-outage-test.log
       - name: Read release version
         run: |
           VERSION="$(cat VERSION)"

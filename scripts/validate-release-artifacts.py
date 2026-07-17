@@ -18,6 +18,7 @@ BACKEND_INFO_NAME = "anopki-backend-info.json"
 RELEASE_METADATA_NAME = "anopki-release-metadata.json"
 GO_EVIDENCE_NAME = "anopki-go-verification.tar.gz"
 RECOVERY_EVIDENCE_NAME = "anopki-recovery-verification.tar.gz"
+STATUS_OUTAGE_EVIDENCE_NAME = "anopki-status-outage-verification.tar.gz"
 
 
 def fail(message: str) -> None:
@@ -343,6 +344,143 @@ def require_recovery_evidence_archive(dist: Path) -> tuple[Path, dict[str, objec
         fail("recovery verification evidence contains private-key material")
     return path, evidence
 
+def require_status_outage_evidence_archive(dist: Path) -> tuple[Path, dict[str, object]]:
+    path = dist / STATUS_OUTAGE_EVIDENCE_NAME
+    if not path.is_file():
+        fail(f"missing status outage verification evidence archive: {path}")
+    if path.stat().st_size > 5 * 1024 * 1024:
+        fail(f"status outage verification evidence archive is unexpectedly large: {path.name}")
+    expected_files = {
+        "status-outage-verification.json",
+        "status-outage-verification.md",
+        "status-outage-test.log",
+    }
+    try:
+        with tarfile.open(path, "r:gz") as archive:
+            files: dict[str, tarfile.TarInfo] = {}
+            for member in archive.getmembers():
+                normalized = member.name.removeprefix("./")
+                posix = PurePosixPath(normalized)
+                if not normalized or posix.is_absolute() or ".." in posix.parts:
+                    fail(f"{path.name} contains unsafe archive member: {member.name}")
+                if not member.isfile():
+                    fail(f"{path.name} contains non-regular member: {member.name}")
+                if normalized in files:
+                    fail(f"{path.name} contains duplicate member: {normalized}")
+                files[normalized] = member
+            missing = sorted(expected_files - set(files))
+            extra = sorted(set(files) - expected_files)
+            if missing:
+                fail(f"{path.name} missing status outage evidence members:\n" + "\n".join(missing))
+            if extra:
+                fail(f"{path.name} has unexpected status outage evidence members:\n" + "\n".join(extra))
+            member = files["status-outage-verification.json"]
+            if member.size > 1024 * 1024:
+                fail("status outage verification JSON is unexpectedly large")
+            extracted = archive.extractfile(member)
+            if extracted is None:
+                fail(f"{path.name} cannot read status-outage-verification.json")
+            try:
+                evidence = json.loads(extracted.read().decode("utf-8"))
+            except (UnicodeDecodeError, json.JSONDecodeError) as exc:
+                fail(f"invalid status outage verification evidence: {exc}")
+    except tarfile.TarError as exc:
+        fail(f"invalid status outage verification evidence archive {path}: {exc}")
+
+    if not isinstance(evidence, dict):
+        fail("status outage verification evidence must be a JSON object")
+    expected_fields = {
+        "schema_version", "evidence_type", "product", "edition", "product_profile",
+        "commit", "minimum_go_version", "started_at", "completed_at", "result",
+        "go_version", "test_command", "tests", "checks", "redaction", "blocker",
+    }
+    missing_fields = sorted(expected_fields - set(evidence))
+    extra_fields = sorted(set(evidence) - expected_fields)
+    if missing_fields:
+        fail("status outage verification evidence missing fields:\n" + "\n".join(missing_fields))
+    if extra_fields:
+        fail("status outage verification evidence has unknown fields:\n" + "\n".join(extra_fields))
+    if evidence["schema_version"] != 1 or evidence["evidence_type"] != "community_status_outage_drill":
+        fail("status outage verification evidence identity is invalid")
+    if evidence["product"] != "AnoPKI" or evidence["edition"] != "community" or evidence["product_profile"] != "community-openssl":
+        fail("status outage verification evidence profile is invalid")
+    if evidence["result"] != "passed" or evidence["blocker"] != "":
+        fail("status outage verification drill did not pass")
+    if evidence["minimum_go_version"] != "1.25.11":
+        fail("status outage verification minimum Go version is invalid")
+    if not isinstance(evidence["commit"], str) or not re.fullmatch(r"[0-9a-f]{40}", evidence["commit"]):
+        fail("status outage verification commit is invalid")
+    if not isinstance(evidence["go_version"], str) or "go version go" not in evidence["go_version"]:
+        fail("status outage verification Go identity is invalid")
+    if parse_go_version(evidence["go_version"]) < (1, 25, 11):
+        fail("status outage verification used an unsupported Go toolchain")
+
+    expected_tests = [
+        ("github.com/anothel/anopki/service/internal/lifecycle", "TestPublishCRLOutageRecoversWithoutPhantomPublication"),
+        ("github.com/anothel/anopki/service/internal/lifecycle", "TestRespondOCSPOutageRecoversWithoutSuccessAudit"),
+        ("github.com/anothel/anopki/service/internal/httpapi", "TestPublishCRLOutageReturnsBadGatewayAndRecovers"),
+        ("github.com/anothel/anopki/service/internal/httpapi", "TestRespondOCSPOutageReturnsBadGatewayAndRecovers"),
+    ]
+    tests = evidence["tests"]
+    if not isinstance(tests, list) or len(tests) != len(expected_tests):
+        fail("status outage verification test set is invalid")
+    observed_tests: list[tuple[str, str]] = []
+    for test in tests:
+        if not isinstance(test, dict) or set(test) != {"package", "name", "status"}:
+            fail("status outage verification test fields are invalid")
+        observed_tests.append((str(test["package"]), str(test["name"])))
+        if test["status"] != "pass":
+            fail("status outage verification contains a failed test")
+    if observed_tests != expected_tests:
+        fail("status outage verification test order is invalid")
+
+    expected_checks = [
+        "crl-failure-maps-bad-gateway",
+        "crl-no-phantom-publication",
+        "crl-recovery-preserves-numbering",
+        "ocsp-failure-maps-bad-gateway",
+        "ocsp-no-success-audit-on-failure",
+        "ocsp-recovery-writes-one-success-audit",
+        "provider-evidence-required-after-recovery",
+        "sensitive-evidence-exclusion",
+    ]
+    checks = evidence["checks"]
+    if not isinstance(checks, list) or len(checks) != len(expected_checks):
+        fail("status outage verification check set is invalid")
+    names: list[str] = []
+    for check in checks:
+        if not isinstance(check, dict) or set(check) != {"name", "status"}:
+            fail("status outage verification check fields are invalid")
+        names.append(str(check["name"]))
+        if check["status"] != "passed":
+            fail("status outage verification contains a failed check")
+    if names != expected_checks:
+        fail("status outage verification check order is invalid")
+
+    command = evidence["test_command"]
+    if not isinstance(command, list) or not all(isinstance(item, str) for item in command):
+        fail("status outage verification test command is invalid")
+    command_text = " ".join(command)
+    for required in ("test -json", "./internal/lifecycle", "./internal/httpapi", "TestPublishCRLOutage", "TestRespondOCSPOutage"):
+        if required not in command_text:
+            fail(f"status outage verification command drift: missing {required}")
+
+    expected_redaction = {
+        "private_key_markers_found": False,
+        "raw_key_references_in_evidence": False,
+        "sensitive_values_in_evidence": False,
+    }
+    if evidence["redaction"] != expected_redaction:
+        fail("status outage verification redaction evidence is invalid")
+    serialized = json.dumps(evidence, sort_keys=True).lower()
+    for forbidden in ('"key_ref"', '"private_key"', '"password"', '"credential"', '"session_token"'):
+        if forbidden in serialized:
+            fail(f"status outage verification evidence contains forbidden sensitive field: {forbidden}")
+    if "-----begin private key-----" in serialized or "-----begin encrypted private key-----" in serialized:
+        fail("status outage verification evidence contains private-key material")
+    return path, evidence
+
+
 def read_checksums(path: Path) -> dict[str, str]:
     if not path.is_file():
         fail(f"missing checksum file: {path}")
@@ -502,6 +640,7 @@ def main() -> None:
     metadata_path = dist / RELEASE_METADATA_NAME
     go_evidence, go_evidence_value = require_go_evidence_archive(dist)
     recovery_evidence, recovery_evidence_value = require_recovery_evidence_archive(dist)
+    status_outage_evidence, status_outage_evidence_value = require_status_outage_evidence_archive(dist)
     backend = read_json_object(backend_path, "backend info")
     validate_backend_info(backend)
     metadata = read_json_object(metadata_path, "release metadata")
@@ -510,9 +649,11 @@ def main() -> None:
         fail("Go verification commit does not match release metadata")
     if recovery_evidence_value["commit"] != metadata["commit"]:
         fail("recovery verification commit does not match release metadata")
+    if status_outage_evidence_value["commit"] != metadata["commit"]:
+        fail("status outage verification commit does not match release metadata")
 
     checksums = read_checksums(dist / "SHA256SUMS")
-    artifacts = (service, core, go_evidence, recovery_evidence, backend_path, metadata_path)
+    artifacts = (service, core, go_evidence, recovery_evidence, status_outage_evidence, backend_path, metadata_path)
     expected_names = {artifact.name for artifact in artifacts}
     extra_names = sorted(set(checksums) - expected_names)
     missing_names = sorted(expected_names - set(checksums))

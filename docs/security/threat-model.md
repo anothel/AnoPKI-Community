@@ -19,7 +19,7 @@
 | Provider confusion or fallback | One selected provider is acquired once; resolver checks readiness, production exportability, provider/operation evidence, and `fallback_used=false`. Test-only software-token coverage exercises failure and mismatch paths. | Provider-result audit correlation is implemented for the Community file-provider path; a real non-exportable provider remains pending outside the Community runtime scope. |
 | Privilege abuse | API key scopes, access model, break-glass rules, and audit metadata. | First-class role/ABAC enforcement waits for an operator directory. |
 | Replay/duplicate issuance | Issuance attempts and ACME nonce handling. | More multi-node smoke coverage. |
-| Status outage | CRL/OCSP backed by service state. | HA deployment drills. |
+| Status outage | CRL/OCSP backed by service state plus fail-closed signer-outage and recovery regressions that prevent phantom publication and success audit. | Multi-node HA and traffic-shift drills. |
 | Supply chain compromise | CI builds/tests, secret baseline scan, govulncheck, SBOM, and release signing workflow. | Full SAST/SCA plus container/IaC scans after tool choices. |
 
 ## Review Triggers

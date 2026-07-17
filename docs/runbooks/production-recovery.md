@@ -65,13 +65,15 @@
 2. If status is `signed`, retry `POST /certificates` with the same enrollment ID.
 3. Confirm no second signer call occurred.
 4. Run `POST /audit-events/repair/issuance` if the certificate exists but the issued audit event is missing.
-## Executable SQLite Recovery Evidence
+## Executable Recovery And Status-Outage Evidence
 
 Run the deterministic Community drill from the repository root:
 
 ```powershell
 python scripts\test_verify_recovery_drill.py
 python scripts\verify-recovery-drill.py --out-dir .tmp\recovery-evidence\manual
+python scripts\test_verify_status_outage_drill.py
+python scripts\verify-status-outage-drill.py --out-dir .tmp\status-outage-evidence\manual
 ```
 
 The drill creates the current SQLite schema, seeds issuer and OCSP responder
@@ -89,8 +91,14 @@ live copy, restores from the backup and verifies:
 - audit, outbox, job-attempt and webhook-delivery state,
 - absence of private-key PEM markers from the database and evidence.
 
-The JSON and Markdown evidence contain hashes and counts only. They do not
-package database files, raw `key_ref` values, webhook secrets, API-key hashes or
-private-key material. This drill covers deterministic SQLite backup/restore
-semantics; PostgreSQL, multi-node traffic and real key-provider recovery remain
-separate operational evidence.
+The JSON and Markdown recovery evidence contain hashes and counts only. They do
+not package database files, raw `key_ref` values, webhook secrets, API-key hashes
+or private-key material. The separate status-outage drill executes the exact
+lifecycle and HTTP CRL/OCSP failure-and-recovery regressions. It proves no
+phantom CRL publication or success audit is created during signer failure, public
+failures map correctly, CRL numbering resumes without a skipped publication and
+recovered operations return through the normal signing-evidence contract.
+
+These drills cover deterministic SQLite backup/restore and single-node
+CRL/OCSP signer-outage semantics. PostgreSQL, multi-node traffic and real
+key-provider recovery remain separate operational evidence.

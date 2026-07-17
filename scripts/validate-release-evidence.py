@@ -18,11 +18,13 @@ REQUIRED_DOC_TEXT = [
     "## Release Artifacts",
     "## Compatibility Matrix",
     "## SQLite Recovery Evidence Runner",
+    "## CRL And OCSP Outage Evidence Runner",
     "## Supported-Go Evidence Runner",
     "## Required Evidence Per Release Candidate",
     "verify-go-release.py",
     "anopki-go-verification.tar.gz",
     "anopki-recovery-verification.tar.gz",
+    "anopki-status-outage-verification.tar.gz",
     "syft",
     "cosign",
     "govulncheck",
@@ -69,6 +71,9 @@ REQUIRED_CI_TEXT = [
     "python scripts/test_verify_recovery_drill.py",
     "python scripts/verify-recovery-drill.py",
     "anopki-recovery-verification",
+    "python scripts/test_verify_status_outage_drill.py",
+    "python scripts/verify-status-outage-drill.py",
+    "anopki-status-outage-verification",
     "python scripts/test_validate_release_artifacts.py",
     "python scripts/test_validate_release_evidence.py",
     "python scripts/validate-release-evidence.py",
@@ -132,6 +137,20 @@ REQUIRED_RECOVERY_RUNNER_TEXT = [
     "SENSITIVE_FIXTURES",
 ]
 
+REQUIRED_STATUS_OUTAGE_RUNNER_TEXT = [
+    "MINIMUM_GO_VERSION = (1, 25, 11)",
+    "community_status_outage_drill",
+    "TestPublishCRLOutageRecoversWithoutPhantomPublication",
+    "TestRespondOCSPOutageRecoversWithoutSuccessAudit",
+    "TestPublishCRLOutageReturnsBadGatewayAndRecovers",
+    "TestRespondOCSPOutageReturnsBadGatewayAndRecovers",
+    "status-outage-verification.json",
+    "status-outage-verification.md",
+    "status-outage-test.log",
+    "resolve_commit",
+    "sensitive-evidence-exclusion",
+]
+
 REQUIRED_RELEASE_TEXT = [
     "workflow_dispatch:",
     "tags:",
@@ -144,6 +163,8 @@ REQUIRED_RELEASE_TEXT = [
     "anopki-go-verification.tar.gz",
     "python scripts/verify-recovery-drill.py",
     "anopki-recovery-verification.tar.gz",
+    "python scripts/verify-status-outage-drill.py",
+    "anopki-status-outage-verification.tar.gz",
     '--commit "${GITHUB_SHA}"',
     'VERSION="$(cat VERSION)"',
     "go build -ldflags",
@@ -245,6 +266,7 @@ def main() -> None:
     check_local_verification_evidence(root, doc)
     require_text(root / "scripts/verify-go-release.py", REQUIRED_GO_RUNNER_TEXT)
     require_text(root / "scripts/verify-recovery-drill.py", REQUIRED_RECOVERY_RUNNER_TEXT)
+    require_text(root / "scripts/verify-status-outage-drill.py", REQUIRED_STATUS_OUTAGE_RUNNER_TEXT)
     require_text(root / ".github/workflows/ci.yml", REQUIRED_CI_TEXT)
     require_text(root / ".github/workflows/release.yml", REQUIRED_RELEASE_TEXT)
     print("release evidence ok")

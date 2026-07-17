@@ -96,6 +96,19 @@ validation requires `result=passed` and the exact same Community commit as
 `anopki-release-metadata.json`. Database files and raw sensitive values are not
 packaged.
 
+## CRL And OCSP Outage Evidence Runner
+
+`scripts/verify-status-outage-drill.py` runs exact lifecycle and HTTP regression
+tests for CRL and OCSP signer outages. The drill proves that failures map to
+fail-closed service errors, no phantom CRL publication or success audit is
+written, recovery preserves CRL numbering, and recovered responses carry the
+normal completed signing-evidence contract. Evidence is strict redacted JSON,
+Markdown and one test log, packaged as
+`anopki-status-outage-verification.tar.gz`. Release validation requires all four
+tests and eight named checks to pass on the exact same Community commit as
+`anopki-release-metadata.json`. Raw key references, private-key material and
+credentials are prohibited.
+
 ## Supported-Go Evidence Runner
 
 `scripts/verify-go-release.py` is the maintained Community entry point for Go
@@ -230,6 +243,8 @@ evidence still needs release workflow artifacts containing archives,
 - `python scripts/test_verify_go_release.py`
 - `python scripts/test_verify_recovery_drill.py`
 - `python scripts/verify-recovery-drill.py --out-dir .tmp\recovery-evidence\verify-local`
+- `python scripts/test_verify_status_outage_drill.py`
+- `python scripts/verify-status-outage-drill.py --out-dir .tmp\status-outage-evidence\verify-local`
 - `python scripts/test_validate_release_artifacts.py`
 - `python scripts/test_validate_service_contracts.py`
 - `python scripts/validate-service-contracts.py`
