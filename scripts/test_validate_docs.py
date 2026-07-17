@@ -76,6 +76,21 @@ def test_missing_required_doc_fails(tmp_path: Path) -> None:
     assert "missing required docs" in result.stderr
 
 
+def test_non_community_readme_focus_fails(tmp_path: Path) -> None:
+    copy_docs_inputs(tmp_path)
+    readme = tmp_path / "README.md"
+    readme.write_text(
+        readme.read_text(encoding="utf-8")
+        + "\nCurrent execution focus: external AnoCrypto-C capability parity.\n",
+        encoding="utf-8",
+    )
+
+    result = run_validator(tmp_path)
+
+    assert result.returncode == 1
+    assert "non-Community execution focus" in result.stderr
+
+
 def test_missing_acme_compatibility_doc_fails(tmp_path: Path) -> None:
     copy_docs_inputs(tmp_path)
     (tmp_path / "docs" / "acme-client-compatibility.md").unlink()
@@ -165,18 +180,37 @@ def test_missing_software_token_contract_wording_fails(tmp_path: Path) -> None:
 
 
 
-def test_missing_remaining_key_provider_work_fails(tmp_path: Path) -> None:
+def test_missing_remaining_key_provider_scope_rule_fails(tmp_path: Path) -> None:
     copy_docs_inputs(tmp_path)
     roadmap = tmp_path / "docs" / "ROADMAP.md"
     roadmap.write_text(
-        roadmap.read_text(encoding="utf-8").replace("real local PKCS#11/HSM target", "future provider target", 1),
+        roadmap.read_text(encoding="utf-8").replace(
+            "Do not introduce a runtime software-token, PKCS#11, HSM or KMS provider in Community without a new scope decision.",
+            "Future provider scope decision.",
+            1,
+        ),
         encoding="utf-8",
     )
 
     result = run_validator(tmp_path)
 
     assert result.returncode == 1
-    assert "ROADMAP does not contain the remaining KeyProvider work" in result.stderr
+    assert "ROADMAP does not contain the remaining KeyProvider scope rule" in result.stderr
+
+
+def test_completed_whole_repository_warning_cleanup_fails(tmp_path: Path) -> None:
+    copy_docs_inputs(tmp_path)
+    roadmap = tmp_path / "docs" / "ROADMAP.md"
+    roadmap.write_text(
+        roadmap.read_text(encoding="utf-8")
+        + "\n- Remove known warnings that prevent a clean whole-repository warning-as-error build.\n",
+        encoding="utf-8",
+    )
+
+    result = run_validator(tmp_path)
+
+    assert result.returncode == 1
+    assert "completed whole-repository warning cleanup" in result.stderr
 
 
 def test_completed_provider_result_correlation_roadmap_item_fails(tmp_path: Path) -> None:
@@ -324,6 +358,8 @@ def main() -> None:
     with tempfile.TemporaryDirectory() as dirname:
         test_missing_required_doc_fails(Path(dirname))
     with tempfile.TemporaryDirectory() as dirname:
+        test_non_community_readme_focus_fails(Path(dirname))
+    with tempfile.TemporaryDirectory() as dirname:
         test_missing_acme_compatibility_doc_fails(Path(dirname))
     with tempfile.TemporaryDirectory() as dirname:
         test_missing_audit_tamper_evidence_doc_fails(Path(dirname))
@@ -352,6 +388,8 @@ def main() -> None:
     with tempfile.TemporaryDirectory() as dirname:
         test_ci_missing_docs_validator_tests_fails(Path(dirname))
     with tempfile.TemporaryDirectory() as dirname:
+        test_generated_build_tree_headers_are_ignored(Path(dirname))
+    with tempfile.TemporaryDirectory() as dirname:
         test_missing_source_file_header_fails(Path(dirname))
     with tempfile.TemporaryDirectory() as dirname:
         test_ignored_go_module_cache_headers_pass(Path(dirname))
@@ -359,6 +397,8 @@ def main() -> None:
         test_missing_anocrypto_strategy_doc_fails(Path(dirname))
     with tempfile.TemporaryDirectory() as dirname:
         test_anocrypto_direction_removed_from_roadmap_fails(Path(dirname))
+    with tempfile.TemporaryDirectory() as dirname:
+        test_separate_project_adapter_execution_in_roadmap_fails(Path(dirname))
     with tempfile.TemporaryDirectory() as dirname:
         test_legacy_identifiers_outside_migration_context_fail(Path(dirname))
     with tempfile.TemporaryDirectory() as dirname:
@@ -370,11 +410,25 @@ def main() -> None:
     with tempfile.TemporaryDirectory() as dirname:
         test_missing_software_token_contract_wording_fails(Path(dirname))
     with tempfile.TemporaryDirectory() as dirname:
-        test_missing_remaining_key_provider_work_fails(Path(dirname))
+        test_missing_remaining_key_provider_scope_rule_fails(Path(dirname))
+    with tempfile.TemporaryDirectory() as dirname:
+        test_completed_whole_repository_warning_cleanup_fails(Path(dirname))
     with tempfile.TemporaryDirectory() as dirname:
         test_completed_provider_result_correlation_roadmap_item_fails(Path(dirname))
+    with tempfile.TemporaryDirectory() as dirname:
         test_completed_service_release_profile_metadata_roadmap_item_fails(Path(dirname))
     print("docs validator tests ok")
+
+
+def test_generated_build_tree_headers_are_ignored(tmp_path: Path) -> None:
+    copy_docs_inputs(tmp_path)
+    generated = tmp_path / "build-werror-full" / "generated" / "anopki" / "version_config.hpp"
+    generated.parent.mkdir(parents=True, exist_ok=True)
+    generated.write_text("#pragma once\n", encoding="utf-8")
+
+    result = run_validator(tmp_path)
+
+    assert result.returncode == 0, result.stderr + result.stdout
 
 
 def test_missing_source_file_header_fails(tmp_path: Path) -> None:
@@ -421,6 +475,21 @@ def test_anocrypto_direction_removed_from_roadmap_fails(tmp_path: Path) -> None:
 
     assert result.returncode == 1
     assert "ROADMAP does not mention the external AnoCrypto-C adapter direction" in result.stderr
+
+
+def test_separate_project_adapter_execution_in_roadmap_fails(tmp_path: Path) -> None:
+    copy_docs_inputs(tmp_path)
+    roadmap = tmp_path / "docs" / "ROADMAP.md"
+    roadmap.write_text(
+        roadmap.read_text(encoding="utf-8")
+        + "\n- Pin a real immutable AnoCrypto-C SDK artifact in Community CI.\n",
+        encoding="utf-8",
+    )
+
+    result = run_validator(tmp_path)
+
+    assert result.returncode == 1
+    assert "separate-project adapter execution work" in result.stderr
 
 
 def test_legacy_identifiers_outside_migration_context_fail(tmp_path: Path) -> None:

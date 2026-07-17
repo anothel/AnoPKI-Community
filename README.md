@@ -245,7 +245,7 @@ Most-used docs:
 - [Release evidence](docs/reference/release-evidence.md): artifact, SBOM, signing, scan, compatibility, and backend evidence baseline.
 - [Documentation governance](docs/reference/documentation-governance.md): what belongs in Git, what belongs in internal/GPT project sources, and how to retire stale docs.
 
-Current execution focus: reviewing release profile/provider-policy evidence, selecting a real local provider only after deployment and key-ceremony requirements are known, and external AnoCrypto-C capability parity. Public TLS issuance fails closed unless the configured lint hook accepts the CSR/profile before signing; external lint tool selection and fixtures remain future work.
+Current execution focus: close Community release evidence with a supported Go toolchain and the real repository, keep provider/golden/no-fallback validators stable, and continue ACME, recovery, audit-integrity, and release-reproducibility work. Public TLS issuance fails closed unless the configured lint hook accepts the CSR/profile before signing; external lint tool selection and fixtures remain future work.
 
 ## License
 

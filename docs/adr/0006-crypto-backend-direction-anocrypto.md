@@ -1,69 +1,54 @@
-# ADR 0006: Backend-Neutral Core And External AnoCrypto-C Adapter
+# ADR 0006: Backend-Neutral Core And External Adapter Boundary
 
 ## Status
 
-Accepted revised direction; Community/OpenSSL extraction implemented, profile and parity work pending.
+Accepted. Community/OpenSSL extraction, explicit profile selection, backend
+metadata, capability/readiness checks, and no-fallback controls are implemented.
+External adapter implementation and product execution are outside this Community
+project.
 
 ## Context
 
-AnoPKI Community now has a backend-neutral operation dispatch layer and a physically separate OpenSSL adapter for CSR inspection, certificate issuance, CRL generation, and OCSP processing. AnoCrypto-C is a
-separate C99 project and SDK. It is not developed inside the Community or
-Enterprise AnoPKI repositories.
-
-Earlier planning described AnoCrypto as if it would be implemented inside the
-Enterprise repository or used with automatic OpenSSL fallback. That is not the
-selected design.
+AnoPKI Community uses a backend-neutral operation dispatch layer and a physically
+separate OpenSSL adapter for CSR inspection, certificate issuance, CRL generation,
+and OCSP processing. AnoCrypto-C is a separate external project and SDK; it is
+not implemented, bundled, or validated by the Community repository.
 
 ## Decision
 
-AnoPKI will use a backend-neutral core with explicit adapter composition.
+Community assembles exactly one runtime profile:
 
 ```text
-AnoPKI Core
-  |- OpenSSL adapter -----> OpenSSL::Crypto
-  `- AnoCrypto-C adapter -> AnoCryptoC::AnoCryptoC
+AnoPKI Core -> Community OpenSSL adapter -> OpenSSL::Crypto
 ```
+
+The Core contract remains backend-neutral so a separate product may implement an
+external adapter without importing proprietary or external SDK code into
+Community. Backend selection is explicit. Missing capability or adapter failure
+must fail closed and must not invoke another backend automatically.
 
 Repository ownership is:
 
-- Community owns the backend-neutral core contract and OpenSSL adapter.
-- Enterprise reuses Community and owns the AnoCrypto-C adapter and Enterprise
-  layer.
-- AnoCrypto-C owns its cryptographic algorithms, module lifecycle, self-tests,
-  secure memory behavior, and validation evidence.
-
-The supported product targets are:
-
-- Community/OpenSSL: core + OpenSSL adapter.
-- Enterprise/OpenSSL: core + OpenSSL adapter + Enterprise layer.
-- Enterprise/AnoCrypto-C: core + AnoCrypto-C adapter + Enterprise layer.
-
-Backend selection must be explicit. An AnoCrypto-C profile must return a stable
-capability-unavailable error or fail startup when a required capability is
-missing. It must not silently call OpenSSL.
+- Community owns backend-neutral Core, the OpenSSL adapter, the Go service,
+  public contracts, golden tests, and Community release evidence.
+- External adapters and SDK integration remain outside the Community repository.
+- Shared generic contract changes are implemented and reviewed Community-first.
 
 ## Consequences
 
-- Community/OpenSSL remains the complete public and releaseable baseline.
-- Enterprise/OpenSSL covers all Community functions but must not be marketed as
-  AnoCrypto-backed or KCMVP-related.
-- Enterprise/AnoCrypto-C remains a development/integration profile until all
-  required Community operation parity and release gates pass.
-- OpenSSL compatibility is a separately selected product profile, not a runtime
-  fallback path.
-- Release and audit evidence must identify edition, adapter, backend dependency,
-  version, capabilities, and whether fallback was used.
-- Crypto adapter work remains separate from HSM/KMS/PKCS#11 key-provider work.
+- `community-openssl` is the only runtime profile managed here.
+- Community release metadata reports OpenSSL, its exact version, capabilities,
+  readiness, ABI/build fingerprint, and `fallback_enabled=false`.
+- Community does not claim AnoCrypto-C support, KCMVP status, external SDK
+  evidence, or Enterprise product readiness.
+- Backend selection remains separate from KeyProvider selection.
+- Public API and Core CLI JSON contracts remain stable across internal refactors.
 
 ## Follow-Up Work
 
-- Extend the backend contract with identity, version, capability, readiness, and stable error metadata.
-- Keep all Community/OpenSSL golden fixtures passing through the separated OpenSSL adapter.
-- Add explicit build targets for Community/OpenSSL, Enterprise/OpenSSL, and
-  Enterprise/AnoCrypto-C.
-- Implement the Enterprise adapter only against supported external AnoCrypto-C
-  APIs; do not reimplement AnoCrypto-C inside AnoPKI.
-- Add capability discovery, stable unsupported errors, and negative tests that
-  prove OpenSSL is not called from the AnoCrypto-C profile.
-- Keep Enterprise/AnoCrypto-C production release blocked until required parity
-  and exact-module evidence are complete.
+- Keep Community/OpenSSL golden, CLI-contract, provider-boundary, and
+  failure-mode tests passing.
+- Keep external adapter code, SDK artifacts, credentials, product plans, and
+  private evidence out of Community.
+- Make future shared contract changes in Community before any separate product
+  synchronizes them.

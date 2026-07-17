@@ -1,141 +1,41 @@
-# Target Architecture
-
-This document describes the intended service and product boundaries. It mirrors
-current behavior where possible. Community/OpenSSL adapter separation and explicit build-time product-profile assembly are implemented.
+# AnoPKI Community Target Architecture
 
 ## Components
 
-### RA/API
-
-The Go HTTP API is the registration authority boundary. It authenticates
-operator requests, validates payloads, applies production-mode request safety,
-records audit metadata, and calls lifecycle services. Public distribution
-endpoints expose CRLs, OCSP, health, readiness, version, and ACME resources.
-
-### Policy Engine
-
-Policy currently runs inside the lifecycle service. It validates profile
-validity, X.509 extension policy, public TLS restrictions, identity DNS/IP
-allow-lists, ownership completeness, and production webhook safety.
-
-### Lifecycle Service
-
-The lifecycle service owns identities, issuers, profiles, enrollments,
-certificates, revocations, ACME state, notifications, API keys, CRLs, OCSP
-responders, expiration scans, and audit repair. It owns lifecycle audit events.
-
-### Core Runner
-
-The Go service invokes the C++ `anopki-core` CLI. The runner maps core failures
-to stable domain errors and does not expose dependency-specific errors as the
-public API contract.
-
-### AnoPKI Core
-
-AnoPKI Core owns backend-neutral operation contracts for CSR inspection,
-certificate issuance, CRL, OCSP, responder validation, capability reporting,
-and stable error semantics.
-
-Backend-neutral core code under `src/core` does not include OpenSSL or AnoCrypto-C APIs. Dependency-specific calls are compiled in adapter targets.
-
-### Backend Adapters
-
 ```text
-                         +-> OpenSSL adapter -----> OpenSSL::Crypto
-AnoPKI Core ------------|
-                         `-> AnoCrypto-C adapter -> AnoCryptoC::AnoCryptoC
+Operator or ACME client
+        |
+        v
+Go lifecycle service
+  - API/auth/policy/state/audit
+        |
+        v
+anopki-core CLI
+        |
+        v
+backend-neutral Core
+        |
+        v
+Community OpenSSL adapter
+        |
+        +-- adapter-private FileKeyProvider (local/dev only)
+        |
+        v
+OpenSSL::Crypto
 ```
 
-- Community owns the OpenSSL adapter under `src/backends/openssl`, and only that production adapter target links `OpenSSL::Crypto`.
-- Enterprise owns the AnoCrypto-C adapter.
-- AnoCrypto-C is an external SDK and separate repository.
-- Adapter selection is explicit; there is no automatic runtime fallback.
+## Rules
 
-### Backend Control Metadata
+- Go owns lifecycle, persistence, policy, API behavior and audit.
+- C++ Core owns backend-neutral PKI operation dispatch and stable operation errors.
+- OpenSSL-specific types remain under `src/backends/openssl`.
+- Certificate, CRL and OCSP signing resolve one provider exactly once.
+- Production rejects the exportable file provider before opening the key.
+- Actual signing evidence is produced only after the cryptographic operation succeeds.
+- Go readiness preflight cannot substitute for signing evidence.
+- No automatic provider, backend or product-profile fallback exists.
+- Public lifecycle and Core CLI JSON contracts remain stable.
 
-Each selected adapter reports identity, dependency version, readiness, ABI/build
-metadata, and operation capabilities. Core dispatch returns stable
-`backend.capability_unavailable` errors before invoking unsupported operations.
-`anopki-core backend info` exposes the selected immutable profile and confirms
-that automatic fallback is disabled. The Go service consumes that exact control
-record at startup and returns it from `/version` together with the Community
-KeyProvider policy. Release metadata stores the same facts without key refs or
-per-operation secret material.
+## Current production limitation
 
-### Enterprise Layer
-
-The Enterprise layer adds commercial capabilities such as enterprise access
-control, operational UI, deployment adapters, enhanced audit/reporting,
-provider integrations, packaging, and support evidence. It does not replace or
-fork the Community lifecycle contracts unnecessarily.
-
-### Key Providers
-
-Issuer and responder keys are addressed by `key_ref`. ADR 0007 selects a
-deliberately scoped hybrid provider architecture.
-
-- Community/OpenSSL first uses an in-process adapter-compatible provider seam.
-- File providers are local/dev only and preserve current synchronous operation behavior.
-- PKCS#11/local HSM may later provide non-exportable OpenSSL-compatible handles.
-- Remote KMS requires a separately approved Enterprise protocol or provider implementation.
-- Key-provider selection remains separate from backend-adapter selection.
-- OpenSSL/provider native types never cross the backend-neutral Core or public API boundary.
-
-### Deploy Adapters
-
-Deploy adapters consume issued-certificate lifecycle events or operator APIs.
-They must not bypass lifecycle state, audit, or revocation policy.
-
-### Audit
-
-Audit events are append-only operational records with structured metadata.
-Mutating APIs record lifecycle changes and failed requests. Backend and provider
-metadata must be recorded without exposing private keys, credentials, or raw
-sensitive dependency errors.
-
-### CRL And OCSP
-
-The service owns CRL publication and OCSP status decisions. The selected core
-adapter performs the required artifact operation. Unsupported operations in an
-AnoCrypto-C profile fail explicitly and never invoke OpenSSL automatically.
-
-## Product Assembly
-
-```text
-Community/OpenSSL
-  = AnoPKI Core + OpenSSL adapter
-
-Enterprise/OpenSSL
-  = AnoPKI Core + OpenSSL adapter + Enterprise layer
-
-Enterprise/AnoCrypto-C
-  = AnoPKI Core + AnoCrypto-C adapter + Enterprise layer
-```
-
-Community/OpenSSL and Enterprise/OpenSSL are full-function profiles when their
-normal release evidence passes. Enterprise/AnoCrypto-C remains a partial
-development profile until all required Community operation parity is complete.
-
-## Data Flow
-
-1. Operator or ACME client sends a request.
-2. HTTP layer authenticates, rate-limits, decodes input, and calls lifecycle
-   services.
-3. Lifecycle service validates state and policy against SQL-backed data.
-4. Signing/status operations call `anopki-core` through the core runner.
-5. AnoPKI Core dispatches to the adapter selected by the product profile.
-6. A signing operation resolves the provider compatible with that adapter and
-   key reference; provider failure does not trigger another provider or backend.
-7. The adapter either completes the operation or returns a stable explicit
-   backend/provider error.
-8. Lifecycle service persists state changes and audit records.
-9. Workers process expiration scans and outbox delivery.
-
-## Production Shape
-
-- Multiple service nodes share one SQL database.
-- ACME nonce storage is SQL-backed in production.
-- Issuer/responder private keys live outside the database.
-- Product profile and adapter identity are immutable release metadata.
-- Restore drills verify schema, audit, key references, CRL artifacts, OCSP
-  responder state, outbox state, and lifecycle jobs before traffic returns.
+Community has no production non-exportable signing provider. Production-like operation requiring issuer signing remains blocked unless a separately approved provider implementation exists outside the current Community runtime scope.

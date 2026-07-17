@@ -154,12 +154,20 @@ def check_license_state(root: Path) -> None:
         fail("LICENSE is not MPL-2.0 text")
 
 
+def is_generated_or_ignored_path(path: Path, root: Path) -> bool:
+    parts = path.relative_to(root).parts
+    return any(
+        part in SOURCE_HEADER_SKIP_DIRS or part.startswith("build-")
+        for part in parts
+    )
+
+
 def first_party_source_files(root: Path) -> list[Path]:
     files = []
     for path in root.rglob("*"):
         if not path.is_file():
             continue
-        if any(part in SOURCE_HEADER_SKIP_DIRS for part in path.relative_to(root).parts):
+        if is_generated_or_ignored_path(path, root):
             continue
         if path.name == "CMakeLists.txt" or path.suffix in SOURCE_HEADER_EXTENSIONS:
             files.append(path)
@@ -189,7 +197,13 @@ def check_readme_current_execution_state(root: Path) -> None:
     readme = (root / "README.md").read_text(encoding="utf-8")
     if "unless public TLS issuance enables a linting hook" in readme:
         fail("README still treats public TLS lint hook as future work")
-
+    stale_scope = [
+        "external AnoCrypto-C capability parity",
+        "selecting a real local provider only after deployment",
+    ]
+    stale = [text for text in stale_scope if text in readme]
+    if stale:
+        fail("README still contains non-Community execution focus:\n" + "\n".join(stale))
 
 
 def check_anocrypto_direction(root: Path) -> None:
@@ -199,10 +213,19 @@ def check_anocrypto_direction(root: Path) -> None:
     required = ["AnoCrypto-C", "OpenSSL", "backend-neutral"]
     missing = [text for text in required if text not in strategy + adr]
     if missing:
-        fail("AnoCrypto backend direction docs missing required wording:\n" + "\n".join(missing))
-    if "AnoCrypto-C" not in roadmap:
+        fail("External adapter boundary docs missing required wording:\n" + "\n".join(missing))
+    separate_project_rule = "Enterprise/OpenSSL and Enterprise/AnoCrypto-C profiles: Enterprise project."
+    if separate_project_rule not in roadmap:
         fail("ROADMAP does not mention the external AnoCrypto-C adapter direction")
-
+    stale_execution = [
+        "Pin a real immutable AnoCrypto-C SDK artifact",
+        "Expand the external AnoCrypto-C adapter",
+        "Keep Enterprise/AnoCrypto-C production release blocked",
+        "Add negative tests proving that unsupported AnoCrypto-C operations",
+    ]
+    stale = [text for text in stale_execution if text in roadmap]
+    if stale:
+        fail("ROADMAP still contains separate-project adapter execution work:\n" + "\n".join(stale))
 
 
 def check_key_provider_direction(root: Path) -> None:
@@ -237,12 +260,15 @@ def check_key_provider_direction(root: Path) -> None:
         fail("ROADMAP still lists completed provider-result audit correlation work")
     if "Expose selected product profile and backend metadata through the Go service/version and release manifests" in roadmap:
         fail("ROADMAP still lists completed service/release profile metadata work")
-    if "real local PKCS#11/HSM target" not in roadmap:
-        fail("ROADMAP does not contain the remaining KeyProvider work")
+    remaining_scope = "Do not introduce a runtime software-token, PKCS#11, HSM or KMS provider in Community without a new scope decision."
+    if remaining_scope not in roadmap:
+        fail("ROADMAP does not contain the remaining KeyProvider scope rule")
+    if "Remove known warnings that prevent a clean whole-repository warning-as-error build." in roadmap:
+        fail("ROADMAP still lists completed whole-repository warning cleanup")
 
 def should_scan_legacy_identifiers(path: Path, root: Path) -> bool:
     rel = path.relative_to(root)
-    if any(part in SOURCE_HEADER_SKIP_DIRS for part in rel.parts):
+    if is_generated_or_ignored_path(path, root):
         return False
     if str(rel).replace("\\", "/") in LEGACY_IDENTIFIER_ALLOWED_PATHS:
         return False

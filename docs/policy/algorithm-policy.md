@@ -9,39 +9,28 @@
 - Certificate profiles can allow-list CSR public key algorithms, require a
   minimum key size, and select allowed signing algorithms.
 
-## Backend And Algorithm Direction
+## Community Backend And Algorithm Direction
 
-Community/OpenSSL is the current complete public profile.
+Community/OpenSSL is the only runtime profile managed in this project.
+Algorithm policy and capability reporting are evaluated against the exact
+OpenSSL version and immutable `community-openssl` artifact metadata.
 
-AnoCrypto-C is a separate external C99 module consumed only through the
-Enterprise AnoCrypto-C adapter. AnoPKI must not reimplement AnoCrypto-C
-algorithms or describe an adapter skeleton as algorithm support.
+Backend selection is explicit. Missing capability, provider failure, or
+algorithm incompatibility fails closed and never switches to another provider,
+backend, or product profile.
 
-Backend selection is explicit:
+External adapters such as AnoCrypto-C, their SDK evidence, and KCMVP claims are
+outside the Community project. Community must not implement those algorithms,
+bundle external SDK material, or describe an external adapter skeleton as
+algorithm support.
 
-- OpenSSL profile: OpenSSL is selected and reported from startup.
-- AnoCrypto-C profile: only proven AnoCrypto-C capabilities are available.
-- Missing capability fails explicitly; OpenSSL is not called automatically.
+## Migration Expectations
 
-Algorithm policy and capability reporting must be evaluated for the selected
-product profile and exact backend version.
-
-## Required Before Enterprise/AnoCrypto-C Production Expansion
-
-- Complete required Community operation parity.
-- Inventory fields for key algorithm, signature algorithm, adapter, backend
-  dependency, provider, and relying-party compatibility.
-- Stable capability-unavailable and dependency-failure errors.
-- Tests proving that unsupported AnoCrypto-C operations do not invoke OpenSSL.
-- Migration plans for RSA/ECDSA policy changes.
-- Exact release evidence for the AnoCrypto-C SDK version, build, platform, and
-  supported algorithms.
-
-## KCMVP Position
-
-KCMVP claims apply only to the exact AnoCrypto-C module shape and evidence, not
-automatically to AnoPKI Enterprise as a whole. Until evidence exists, use
-`not_validated` and prohibit validation or certified-product claims.
+- Maintain inventory fields for key and signature algorithms.
+- Keep RSA/ECDSA policy-change plans and relying-party compatibility evidence.
+- Add negative fixtures when an allowed algorithm or key-size policy changes.
+- Record the exact OpenSSL version, capability set, and build fingerprint for
+  every release candidate.
 
 ## PQC Position
 

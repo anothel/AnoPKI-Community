@@ -18,7 +18,7 @@ This index is the public entry point for repository documentation. Keep it short
 | Document | Purpose |
 | --- | --- |
 | [PKI context](architecture/pki-context.md) | Overview of CA hierarchy, trust boundary, issuance, renewal, and revocation flows. |
-| [Target architecture](reference/target-architecture.md) | Component boundaries and product assembly for backend-neutral core, OpenSSL/AnoCrypto-C adapters, Enterprise layer, providers, audit, CRL, and OCSP. |
+| [Target architecture](reference/target-architecture.md) | Community service, backend-neutral Core, OpenSSL adapter, FileKeyProvider, audit, CRL, and OCSP boundaries. |
 | [CA hierarchy](architecture/ca-hierarchy.md) | Trust anchor, intermediate, and issuer structure. |
 | [Issuance flow](architecture/issuance-flow.md) | Enrollment and signing path. |
 | [Renewal flow](architecture/renewal-flow.md) | Renewal and reissue behavior. |
@@ -44,7 +44,7 @@ This index is the public entry point for repository documentation. Keep it short
 | --- | --- |
 | [Certificate profiles](policy/certificate-profiles.md) | Profile-as-code policy fields and remaining profile gaps. |
 | [Algorithm policy](policy/algorithm-policy.md) | Current algorithm baseline, PQC stance, and algorithm migration expectations. |
-| [Crypto backend strategy](reference/crypto-backend-strategy.md) | Community OpenSSL baseline, external Enterprise AnoCrypto-C adapter, explicit profile selection, and no-fallback gates. |
+| [Crypto backend strategy](reference/crypto-backend-strategy.md) | Community/OpenSSL baseline, explicit profile selection, provider separation, and no-fallback rules. |
 | [Crypto backend parity](reference/crypto-backend-parity.md) | Shared fixture format, parity result states, commands, and release evidence. |
 | [Key provider semantics](security/key-provider-semantics.md) | Signing key reference, selected hybrid provider boundary, non-exportability, and audit semantics. |
 | [Threat model](security/threat-model.md) | Main assets, threats, current controls, and gaps. |
@@ -99,7 +99,7 @@ This index is the public entry point for repository documentation. Keep it short
 | [0003](adr/0003-hsm-kms-strategy.md) | HSM/KMS strategy. |
 | [0004](adr/0004-license-change-to-mpl-2.0.md) | MPL-2.0 license change. |
 | [0005](adr/0005-project-rename-to-anopki.md) | Project rename to AnoPKI. |
-| [0006](adr/0006-crypto-backend-direction-anocrypto.md) | Backend-neutral core with Community OpenSSL and external Enterprise AnoCrypto-C adapters. |
+| [0006](adr/0006-crypto-backend-direction-anocrypto.md) | Backend-neutral Core, Community/OpenSSL ownership, and external-adapter repository boundary. |
 | [0007](adr/0007-key-provider-signing-boundary.md) | Deliberately scoped hybrid key-provider signing boundary. |
 
 ## Internal Or Archived Material

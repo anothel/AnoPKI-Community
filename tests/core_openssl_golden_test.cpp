@@ -128,7 +128,7 @@ void begin_operation(const std::map<std::string, std::string> &fixture, const st
 	exact_der_verified = false;
 }
 
-void expect_exact_der(std::string_view expected, std::string_view actual)
+[[maybe_unused]] void expect_exact_der(std::string_view expected, std::string_view actual)
 {
 	require(current_comparison == "exact_der", "exact_der_mode_required");
 	require(expected == actual, "exact_der_mismatch");
@@ -150,7 +150,7 @@ void report_pending(
     const std::string &reason)
 {
 	current_backend = backend;
-	for (const std::string &operation : {"csr_parse", "certificate_issue", "crl_generate_sign", "ocsp_decode", "ocsp_response_sign"})
+	for (const char *operation : {"csr_parse", "certificate_issue", "crl_generate_sign", "ocsp_decode", "ocsp_response_sign"})
 	{
 		begin_operation(fixture, operation);
 		std::cout << "PARITY backend=" << current_backend

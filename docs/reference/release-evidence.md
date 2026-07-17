@@ -230,60 +230,41 @@ Run `govulncheck` with a patched Go toolchain. WSL Go `1.26.0` reports
 standard-library findings fixed in Go `1.26.4`; Windows Go `1.26.4` returns
 `No vulnerabilities found.` for the current tree.
 
-## Product Profile Evidence
+## Community Product Profile Evidence
 
-Every release candidate records the assembled target, not only a dependency
-name.
+Every Community release candidate records the assembled target, not only a
+dependency name.
 
 | Profile | Required evidence | Release rule |
 | --- | --- | --- |
-| Community/OpenSSL | Community commit, OpenSSL version, full contract/golden tests, artifact evidence | Public release candidate allowed when the standard checklist passes. |
-| Enterprise/OpenSSL | Community baseline commit, Enterprise overlay version, OpenSSL version, Community plus Enterprise tests | Commercial release candidate allowed; AnoCrypto/KCMVP claims prohibited. |
-| Enterprise/AnoCrypto-C | Community baseline, Enterprise overlay, exact AnoCrypto-C SDK version/build/fingerprint, capability matrix, no-fallback tests, parity evidence | Production release blocked until all required Community operations are supported. |
+| Community/OpenSSL | Exact Community commit, OpenSSL version, full contract/golden tests, provider policy, and artifact evidence | Public release candidate allowed only when the Community checklist passes. |
 
 Required profile metadata:
 
-- edition,
-- product profile,
-- selected adapter,
+- `edition=community`,
+- `product_profile=community-openssl`,
+- `selected_backend=openssl`,
 - backend dependency and exact version,
 - supported capability set,
 - supported key-provider classes and exportability/production policy,
-- `fallback_enabled` and `fallback_used`,
-- production-readiness status,
-- KCMVP status and evidence pointer when applicable.
+- `fallback_enabled=false` and `fallback_used=false`,
+- `production_ready=false` while the exportable file provider is the only
+  Community signing provider,
+- `kcmvp_status=not_applicable`.
 
-`fallback_used` should normally be `false`. An AnoCrypto-C operation must not
-silently execute through OpenSSL. OpenSSL compatibility is a separately built
-or configured Enterprise/OpenSSL profile.
+External product-profile, SDK, commercial, and validation evidence is maintained
+outside this Community repository and must not be presented as Community release
+evidence.
 
 ## Current Community Backend Evidence
-
-Current expected Community entry:
 
 | Field | Current value | Evidence |
 | --- | --- | --- |
 | Product profile | Community/OpenSSL | Build configuration and version metadata. |
-| Selected adapter | OpenSSL adapter/current OpenSSL-backed implementation | CMake configure output, OpenSSL version, CTest, core CLI contracts. |
-| AnoCrypto-C used | No | Community boundary validation. |
+| Selected adapter | Community OpenSSL adapter | CMake configure output, OpenSSL version, CTest, and Core CLI contracts. |
+| External adapter used | No | Community boundary validation. |
 | Fallback used | No | Configuration and negative boundary tests. |
-| KeyProvider policy | File provider only; exportable; production use rejected; core signing evidence required | `/version`, `anopki-release-metadata.json`, provider boundary tests. |
-
-Community documents may describe the backend-neutral core refactor and external
-Enterprise AnoCrypto-C direction, but must not mark AnoCrypto-C as active in a
-Community release.
-
-## Enterprise/AnoCrypto-C Evidence Gate
-
-Do not mark Enterprise/AnoCrypto-C production-ready until:
-
-- the real external `AnoCryptoC::AnoCryptoC` SDK is consumed,
-- the exact SDK artifact and build identity are pinned,
-- required CSR, issuance, CRL, and OCSP operations pass positive and negative
-  parity tests,
-- unsupported-capability tests prove OpenSSL is not called,
-- all required product capabilities are declared available,
-- KCMVP wording, if used, points to exact valid evidence.
+| KeyProvider policy | File provider only; exportable; production use rejected; core signing evidence required | `/version`, `anopki-release-metadata.json`, and provider-boundary tests. |
 
 ## Backend Control Evidence
 
@@ -299,14 +280,14 @@ capabilities, ABI version, and build fingerprint. The Go service parses this
 strictly at startup and exposes it under `GET /version`. The release workflow
 also stores the raw control output as `anopki-backend-info.json` and generates
 `anopki-release-metadata.json` with exact version/commit, provider policy,
-`fallback_used=false`, `production_ready=false`, and `kcmvp_status=not_applicable`
-for Community. The OpenSSL build fingerprint is a deterministic `sha256:` value derived from
+`fallback_used=false`, `production_ready=false`, and
+`kcmvp_status=not_applicable`.
+
+The OpenSSL build fingerprint is a deterministic `sha256:` value derived from
 product profile, edition, backend ABI, AnoPKI version, compiler identity/version,
 and configured OpenSSL version. These release/configuration records do not
-replace per-operation `core_signing` evidence. Community/OpenSSL and
-Enterprise/OpenSSL require the complete operation capability set.
-Enterprise/AnoCrypto-C remains pending and reports no operation-level capabilities and
-remains a development/integration profile.
+replace per-operation `core_signing` evidence. Community/OpenSSL requires the
+complete Community operation capability set.
 
 
 ## Key Provider Evidence
@@ -369,3 +350,18 @@ real non-exportable provider: not implemented
 fallback_used: false
 production_ready: false for file-provider signing
 ```
+
+
+## Whole-Repository Warning-As-Error Evidence — 2026-07-17
+
+The latest cumulative Community source was configured with:
+
+```text
+-DCMAKE_CXX_FLAGS=-Wall -Wextra -Wpedantic -Werror
+```
+
+The complete C++ target set built successfully and the resulting CTest run
+passed 14/14 tests, including certificate, CRL, OCSP, backend-profile,
+FileKeyProvider, software-token contract, Core CLI, and source-boundary tests.
+This closes the previously recorded local warning blocker. Supported-Go and
+remote candidate evidence remain separate pending gates.

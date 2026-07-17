@@ -58,8 +58,8 @@ ceremony, or artifact signing API exists yet.
 - External Account Binding before a real subscriber/account integration
   requires it.
 - UI, self-service portals, and human approval workflows beyond current APIs.
-- HSM/KMS/PKCS#11 production provider implementation until key-boundary design
-  is selected.
+- Production non-exportable HSM/KMS/PKCS#11 provider implementation in the
+  current Community runtime scope.
 - Certificate Transparency log submission.
 - Code-signing timestamp authority.
 
