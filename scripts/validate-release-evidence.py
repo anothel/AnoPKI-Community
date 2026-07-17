@@ -26,6 +26,8 @@ REQUIRED_DOC_TEXT = [
     "staticcheck",
     "gosec",
     "Clang/libFuzzer",
+    "anopki-backend-info.json",
+    "anopki-release-metadata.json",
 ]
 
 REQUIRED_COMPATIBILITY_ROWS = [
@@ -63,6 +65,7 @@ REQUIRED_COMPATIBILITY_TEMPLATE_TEXT = [
 REQUIRED_CI_TEXT = [
     "python scripts/test_validate_version_metadata.py",
     "python scripts/validate-version-metadata.py",
+    "python scripts/test_generate_release_metadata.py",
     "python scripts/test_validate_release_artifacts.py",
     "python scripts/test_validate_release_evidence.py",
     "python scripts/validate-release-evidence.py",
@@ -100,6 +103,10 @@ REQUIRED_RELEASE_TEXT = [
     "cmake --build build-release --config Release",
     "anopki-service-v${VERSION}-linux-amd64.tar.gz",
     "anopki-core-v${VERSION}-linux-amd64.tar.gz",
+    "./dist/anopki-core backend info > dist/anopki-backend-info.json",
+    "python scripts/generate-release-metadata.py",
+    "anopki-release-metadata.json",
+    "sha256sum dist/*.tar.gz dist/anopki-backend-info.json dist/anopki-release-metadata.json",
     "python scripts/validate-release-artifacts.py dist",
     "syft scan dir:dist",
     "cosign sign-blob",

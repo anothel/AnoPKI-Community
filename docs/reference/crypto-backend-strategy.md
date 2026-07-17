@@ -164,6 +164,11 @@ Enterprise: ANOPKI_PRODUCT_PROFILE=enterprise-anocrypto-c
 ```
 
 The CLI command `anopki-core backend info` exposes the selected profile and
-backend metadata for release evidence. `fallback_enabled` is always false.
+backend metadata for release evidence. The Community OpenSSL adapter reports
+ABI version `1` and a deterministic `sha256:` build fingerprint derived from
+profile, edition, AnoPKI version, compiler identity/version, and configured
+OpenSSL version. The Go service strictly parses the same command at startup and
+exposes it under `/version`; release automation stores matching backend and
+provider-policy JSON artifacts. `fallback_enabled` is always false.
 Enterprise/AnoCrypto-C builds require the real external CMake package and do not
 link OpenSSL. Missing SDK configuration fails at CMake configure time.

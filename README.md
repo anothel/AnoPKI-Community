@@ -116,6 +116,9 @@ python scripts\test_validate_version_metadata.py
 python scripts\validate-version-metadata.py
 # version metadata ok
 
+python scripts\test_generate_release_metadata.py
+# release metadata generator tests ok
+
 python scripts\test_validate_release_artifacts.py
 # release artifact tests ok
 
@@ -242,7 +245,7 @@ Most-used docs:
 - [Release evidence](docs/reference/release-evidence.md): artifact, SBOM, signing, scan, compatibility, and backend evidence baseline.
 - [Documentation governance](docs/reference/documentation-governance.md): what belongs in Git, what belongs in internal/GPT project sources, and how to retire stale docs.
 
-Current execution focus: release evidence, actual provider-result audit correlation, selecting a real local provider only after deployment requirements are known, and external AnoCrypto-C capability parity. Public TLS issuance fails closed unless the configured lint hook accepts the CSR/profile before signing; external lint tool selection and fixtures remain future work.
+Current execution focus: reviewing release profile/provider-policy evidence, selecting a real local provider only after deployment and key-ceremony requirements are known, and external AnoCrypto-C capability parity. Public TLS issuance fails closed unless the configured lint hook accepts the CSR/profile before signing; external lint tool selection and fixtures remain future work.
 
 ## License
 

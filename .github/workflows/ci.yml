@@ -77,6 +77,8 @@ jobs:
         run: python scripts/test_validate_version_metadata.py
       - name: Validate version metadata
         run: python scripts/validate-version-metadata.py
+      - name: Test release metadata generator
+        run: python scripts/test_generate_release_metadata.py
       - name: Test release artifact validator
         run: python scripts/test_validate_release_artifacts.py
       - name: Test release evidence validator

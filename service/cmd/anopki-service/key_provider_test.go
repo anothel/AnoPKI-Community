@@ -40,3 +40,16 @@ func TestKeyRefProviderTreatsWindowsAbsolutePathAsFile(t *testing.T) {
 		t.Fatalf("keyRefProvider = %q, want %q", got, keyProviderFile)
 	}
 }
+
+func TestCommunityKeyProviderPolicyMetadata(t *testing.T) {
+	metadata := communityKeyProviderPolicyMetadata()
+	if len(metadata.SupportedClasses) != 1 || metadata.SupportedClasses[0] != "file" {
+		t.Fatalf("SupportedClasses = %#v", metadata.SupportedClasses)
+	}
+	if metadata.FileProviderExportability != "exportable" || metadata.FileProviderAllowedProduction {
+		t.Fatalf("file provider policy = %#v", metadata)
+	}
+	if !metadata.CoreSigningEvidenceRequired || metadata.AutomaticProviderFallback {
+		t.Fatalf("signing/fallback policy = %#v", metadata)
+	}
+}

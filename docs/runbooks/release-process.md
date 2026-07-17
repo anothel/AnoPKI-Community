@@ -95,8 +95,10 @@ Certbot smoke requires Linux/WSL or elevated Windows with certbot installed.
    mapping, docs validation, and secret baseline scan evidence from CI.
 12. Manually dispatch `.github/workflows/release.yml` from the candidate commit.
    Attach its run URL and versioned `anopki-release-<run-id>` artifact containing
-   validated service/core archives, `SHA256SUMS`, CycloneDX SBOM, and
-   `SIGNING-STATUS.txt`. Manual runs are dry-runs: they have read-only repository
+   validated service/core archives, `anopki-backend-info.json`,
+   `anopki-release-metadata.json`, `SHA256SUMS`, CycloneDX SBOM, and
+   `SIGNING-STATUS.txt`. The profile metadata must match the built Core and
+   report the Community file-provider policy without any raw `key_ref`. Manual runs are dry-runs: they have read-only repository
    permission and cannot sign, tag, publish packages, or create a GitHub Release.
 13. Copy and complete the compatibility evidence template from
    [Release evidence](../reference/release-evidence.md).

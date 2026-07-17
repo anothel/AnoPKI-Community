@@ -95,6 +95,12 @@ $steps = @(
         Command = @("python", "scripts\validate-version-metadata.py")
     },
     @{
+        Name = "release metadata generator tests"
+        Dir = $RepoRoot
+        Display = "python scripts\test_generate_release_metadata.py"
+        Command = @("python", "scripts\test_generate_release_metadata.py")
+    },
+    @{
         Name = "release artifact validator tests"
         Dir = $RepoRoot
         Display = "python scripts\test_validate_release_artifacts.py"

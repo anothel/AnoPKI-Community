@@ -16,6 +16,25 @@ endif()
 
 find_package(OpenSSL REQUIRED COMPONENTS Crypto)
 
+set(ANOPKI_OPENSSL_BACKEND_ABI_VERSION 1)
+if(DEFINED OpenSSL_VERSION)
+    set(ANOPKI_OPENSSL_CONFIG_VERSION "${OpenSSL_VERSION}")
+elseif(DEFINED OPENSSL_VERSION)
+    set(ANOPKI_OPENSSL_CONFIG_VERSION "${OPENSSL_VERSION}")
+else()
+    set(ANOPKI_OPENSSL_CONFIG_VERSION "unknown")
+endif()
+set(ANOPKI_OPENSSL_BACKEND_FINGERPRINT_INPUT
+    "profile=${ANOPKI_PRODUCT_PROFILE}|edition=community|backend=openssl|abi=${ANOPKI_OPENSSL_BACKEND_ABI_VERSION}|anopki=${ANOPKI_VERSION}|compiler=${CMAKE_CXX_COMPILER_ID}-${CMAKE_CXX_COMPILER_VERSION}|openssl=${ANOPKI_OPENSSL_CONFIG_VERSION}"
+)
+string(SHA256 ANOPKI_OPENSSL_BACKEND_BUILD_FINGERPRINT_HASH "${ANOPKI_OPENSSL_BACKEND_FINGERPRINT_INPUT}")
+set(ANOPKI_OPENSSL_BACKEND_BUILD_FINGERPRINT "sha256:${ANOPKI_OPENSSL_BACKEND_BUILD_FINGERPRINT_HASH}")
+configure_file(
+    src/backends/openssl/openssl_backend_config.hpp.in
+    generated/anopki/openssl_backend_config.hpp
+    @ONLY
+)
+
 option(ANOPKI_ENABLE_FUZZING "Build local libFuzzer parser targets" OFF)
 
 add_library(anopki_core
@@ -72,6 +91,7 @@ target_include_directories(anopki_openssl_adapter
     PRIVATE
         ${CMAKE_CURRENT_SOURCE_DIR}/include
         ${CMAKE_CURRENT_SOURCE_DIR}/src/backends/openssl
+        ${CMAKE_CURRENT_BINARY_DIR}/generated
 )
 target_link_libraries(anopki_openssl_adapter
     PRIVATE

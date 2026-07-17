@@ -210,7 +210,13 @@ def check_key_provider_direction(root: Path) -> None:
     semantics = (root / "docs/security/key-provider-semantics.md").read_text(encoding="utf-8")
     roadmap = (root / "docs/ROADMAP.md").read_text(encoding="utf-8")
     adr_required = ["deliberately scoped hybrid", "FileKeyProvider", "Remote KMS", "test-only software-token"]
-    semantics_required = ["deliberately scoped hybrid", "provider.invalid_reference", "test-only software-token resolver contract"]
+    semantics_required = [
+        "deliberately scoped hybrid",
+        "provider.invalid_reference",
+        "test-only software-token resolver contract",
+        "GET /version",
+        "anopki-release-metadata.json",
+    ]
     missing = [text for text in adr_required if text not in adr]
     missing += [text for text in semantics_required if text not in semantics]
     if missing:
@@ -229,6 +235,8 @@ def check_key_provider_direction(root: Path) -> None:
         fail("ROADMAP still lists completed software-token contract work:\n" + "\n".join(completed))
     if "provider-result audit correlation" in roadmap:
         fail("ROADMAP still lists completed provider-result audit correlation work")
+    if "Expose selected product profile and backend metadata through the Go service/version and release manifests" in roadmap:
+        fail("ROADMAP still lists completed service/release profile metadata work")
     if "real local PKCS#11/HSM target" not in roadmap:
         fail("ROADMAP does not contain the remaining KeyProvider work")
 

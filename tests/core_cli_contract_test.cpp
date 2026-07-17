@@ -398,6 +398,8 @@ void assert_cli_backend_info(const std::filesystem::path &cli_path, const std::f
 	         std::string{"\"fallback_enabled\":false"},
 	         std::string{"\"backend_id\":\"openssl\""},
 	         std::string{"\"backend_readiness\":\"ready\""},
+	         std::string{"\"backend_abi_version\":1"},
+	         std::string{"\"backend_build_fingerprint\":\"sha256:"},
 	         std::string{"\"certificate_issue\""},
 	     })
 	{

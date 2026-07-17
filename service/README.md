@@ -140,7 +140,7 @@ Operational probes are public:
 
 - `GET /healthz` returns process liveness.
 - `GET /readyz` checks database reachability.
-- `GET /version` returns service build metadata.
+- `GET /version` returns service build metadata plus the immutable Core product profile/backend control metadata and Community KeyProvider policy. It reports supported provider classes and production/exportability policy, not a per-operation signing success claim or any raw `key_ref`.
 
 API keys are managed by operator-scoped keys:
 

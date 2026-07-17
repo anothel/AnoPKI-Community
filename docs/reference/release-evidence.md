@@ -28,6 +28,9 @@ Pre-1.0 releases distribute archives, not installers or container images:
 - source archive from the signed tag,
 - `anopki-service` binary archive,
 - `anopki-core` CLI binary archive,
+- `anopki-backend-info.json` from the built Core artifact,
+- `anopki-release-metadata.json` binding version/commit, product profile,
+  backend evidence, and Community KeyProvider policy,
 - `SHA256SUMS`,
 - CycloneDX SBOM JSON,
 - cosign signatures and transparency-log references for archives, checksums,
@@ -35,7 +38,9 @@ Pre-1.0 releases distribute archives, not installers or container images:
 
 The manually dispatched release workflow runs with read-only repository
 permissions. It builds Linux amd64 service/core archives with the repository
-version in their filenames, writes `SHA256SUMS`, validates archive contents,
+version in their filenames, records `anopki-core backend info`, generates
+`anopki-release-metadata.json`, writes checksums for archives and both profile
+metadata files, validates their exact schema and cross-file consistency,
 generates a CycloneDX SBOM with `syft`, records signing as skipped, and uploads
 the `dist/` directory only to the workflow run.
 
@@ -184,6 +189,7 @@ evidence still needs release workflow artifacts containing archives,
 - `python scripts/test_verify_local.py`
 - `python scripts/test_validate_version_metadata.py`
 - `python scripts/validate-version-metadata.py`
+- `python scripts/test_generate_release_metadata.py`
 - `python scripts/test_validate_release_artifacts.py`
 - `python scripts/test_validate_service_contracts.py`
 - `python scripts/validate-service-contracts.py`
@@ -242,8 +248,8 @@ Required profile metadata:
 - selected adapter,
 - backend dependency and exact version,
 - supported capability set,
-- key-provider class,
-- `fallback_used`,
+- supported key-provider classes and exportability/production policy,
+- `fallback_enabled` and `fallback_used`,
 - production-readiness status,
 - KCMVP status and evidence pointer when applicable.
 
@@ -261,6 +267,7 @@ Current expected Community entry:
 | Selected adapter | OpenSSL adapter/current OpenSSL-backed implementation | CMake configure output, OpenSSL version, CTest, core CLI contracts. |
 | AnoCrypto-C used | No | Community boundary validation. |
 | Fallback used | No | Configuration and negative boundary tests. |
+| KeyProvider policy | File provider only; exportable; production use rejected; core signing evidence required | `/version`, `anopki-release-metadata.json`, provider boundary tests. |
 
 Community documents may describe the backend-neutral core refactor and external
 Enterprise AnoCrypto-C direction, but must not mark AnoCrypto-C as active in a
@@ -288,7 +295,15 @@ anopki-core backend info
 
 The JSON must match the assembled artifact and includes `product_profile`,
 `edition`, `selected_backend`, `fallback_enabled`, dependency/version, readiness,
-capabilities, ABI version, and build fingerprint. Community/OpenSSL and
+capabilities, ABI version, and build fingerprint. The Go service parses this
+strictly at startup and exposes it under `GET /version`. The release workflow
+also stores the raw control output as `anopki-backend-info.json` and generates
+`anopki-release-metadata.json` with exact version/commit, provider policy,
+`fallback_used=false`, `production_ready=false`, and `kcmvp_status=not_applicable`
+for Community. The OpenSSL build fingerprint is a deterministic `sha256:` value derived from
+product profile, edition, backend ABI, AnoPKI version, compiler identity/version,
+and configured OpenSSL version. These release/configuration records do not
+replace per-operation `core_signing` evidence. Community/OpenSSL and
 Enterprise/OpenSSL require the complete operation capability set.
 Enterprise/AnoCrypto-C remains pending and reports no operation-level capabilities and
 remains a development/integration profile.

@@ -136,7 +136,8 @@ payloads at the process boundary.
 
 ### backend info result
 
-- Direction: C++ core CLI to operator/release tooling, `backend info`.
+- Direction: C++ core CLI to Go service/operator/release tooling, `backend info`.
+- Go source: `BackendInfo` and `Runner.BackendInfo`.
 - `product_profile`
 - `edition`
 - `selected_backend`

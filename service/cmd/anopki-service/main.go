@@ -63,6 +63,7 @@ const (
 	defaultServiceCommit            = "unknown"
 	defaultServiceBuildTime         = "unknown"
 	defaultShutdownTimeout          = 10 * time.Second
+	defaultCoreMetadataTimeout      = 5 * time.Second
 )
 
 var (
@@ -117,11 +118,13 @@ type authConfig struct {
 }
 
 type operationalConfig struct {
-	Version   string
-	Commit    string
-	BuildTime string
-	StartedAt time.Time
-	Ready     func(context.Context) error
+	Version           string
+	Commit            string
+	BuildTime         string
+	StartedAt         time.Time
+	Ready             func(context.Context) error
+	Backend           corecli.BackendInfo
+	KeyProviderPolicy keyProviderPolicyMetadata
 }
 
 func main() {
@@ -162,6 +165,14 @@ func main() {
 		log.Fatalf("load public TLS config: %v", err)
 	}
 
+	coreRunner := corecli.Runner{Bin: coreBin}
+	metadataCtx, cancelMetadata := context.WithTimeout(rootCtx, defaultCoreMetadataTimeout)
+	backendInfo, err := coreRunner.BackendInfo(metadataCtx)
+	cancelMetadata()
+	if err != nil {
+		log.Fatalf("load core backend metadata: %v", err)
+	}
+
 	db, err := sql.Open(dbDriver, dbDSN)
 	if err != nil {
 		log.Fatalf("open database: %v", err)
@@ -179,7 +190,7 @@ func main() {
 	if err != nil {
 		log.Fatalf("create ACME HTTP-01 verifier: %v", err)
 	}
-	svc := lifecycle.NewWithACMEHTTP01VerifierAndAPIKeyPepper(repo, corecli.Runner{Bin: coreBin}, lifecycle.RealClock{}, lifecycle.UUIDGenerator{}, acmeHTTP01Verifier, authCfg.APIKeyPepper)
+	svc := lifecycle.NewWithACMEHTTP01VerifierAndAPIKeyPepper(repo, coreRunner, lifecycle.RealClock{}, lifecycle.UUIDGenerator{}, acmeHTTP01Verifier, authCfg.APIKeyPepper)
 	if isProductionEnv(os.Getenv("ANOPKI_ENV")) {
 		svc.EnableProductionPolicy()
 	}
@@ -252,11 +263,13 @@ func main() {
 		})
 	}
 	handler := newOperationalHandler(server, operationalConfig{
-		Version:   serviceVersion,
-		Commit:    serviceCommit,
-		BuildTime: serviceBuildTime,
-		StartedAt: startedAt,
-		Ready:     newServiceReadinessCheck(db, dbDriver, repo, coreBin),
+		Version:           serviceVersion,
+		Commit:            serviceCommit,
+		BuildTime:         serviceBuildTime,
+		StartedAt:         startedAt,
+		Ready:             newServiceReadinessCheck(db, dbDriver, repo, coreBin),
+		Backend:           backendInfo,
+		KeyProviderPolicy: communityKeyProviderPolicyMetadata(),
 	})
 
 	logStructured(log.Printf, "service.listening", map[string]any{"addr": addr})
@@ -462,10 +475,12 @@ func newOperationalHandler(next http.Handler, cfg operationalConfig) http.Handle
 	})
 	mux.HandleFunc("GET /version", func(w http.ResponseWriter, r *http.Request) {
 		writeOperationalJSON(w, http.StatusOK, map[string]any{
-			"service":    "anopki-service",
-			"version":    cfg.Version,
-			"commit":     cfg.Commit,
-			"build_time": cfg.BuildTime,
+			"service":             "anopki-service",
+			"version":             cfg.Version,
+			"commit":              cfg.Commit,
+			"build_time":          cfg.BuildTime,
+			"backend":             cfg.Backend,
+			"key_provider_policy": cfg.KeyProviderPolicy,
 		})
 	})
 	mux.Handle("/", next)

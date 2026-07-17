@@ -52,6 +52,7 @@ CONTRACTS = {
         "cpp_parser": "ocsp_response_request_from_json",
     },
     "backend info result": {
+        "go": "BackendInfo",
         "cpp_emitter": "backend_info_to_json",
     },
     "command error": {
@@ -112,7 +113,12 @@ def documented_fields(doc_source: str) -> dict[str, set[str]]:
 
 
 def check_contracts(root: Path) -> None:
-    go_source = read_text(root, "service/internal/corecli/runner.go")
+    corecli_dir = root / "service" / "internal" / "corecli"
+    go_source = "\n".join(
+        path.read_text(encoding="utf-8")
+        for path in sorted(corecli_dir.glob("*.go"))
+        if not path.name.endswith("_test.go")
+    )
     cpp_source = read_text(root, "src/cli/main.cpp")
     doc_source = read_text(root, "docs/reference/core-cli-contract.md")
     docs = documented_fields(doc_source)

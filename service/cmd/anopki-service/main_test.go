@@ -5,6 +5,7 @@ import (
 	"context"
 	"crypto/x509"
 	"database/sql"
+	"encoding/json"
 	"encoding/pem"
 	"errors"
 	"fmt"
@@ -17,6 +18,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/anothel/anopki/service/internal/corecli"
 	"github.com/anothel/anopki/service/internal/domain"
 	"github.com/anothel/anopki/service/internal/httpapi"
 	"github.com/anothel/anopki/service/internal/observability"
@@ -430,10 +432,25 @@ func TestLoadAuthConfigAllowsStrongProductionBootstrapKey(t *testing.T) {
 }
 
 func TestOperationalHandlerExposesHealthReadyAndVersion(t *testing.T) {
+	backend := corecli.BackendInfo{
+		ProductProfile:          "community-openssl",
+		Edition:                 "community",
+		SelectedBackend:         "openssl",
+		FallbackEnabled:         false,
+		BackendID:               "openssl",
+		BackendDependency:       "OpenSSL",
+		BackendVersion:          "3.5.5",
+		BackendReadiness:        "ready",
+		BackendCapabilities:     []string{"certificate_issue"},
+		BackendABIVersion:       1,
+		BackendBuildFingerprint: "test-build",
+	}
 	handler := newOperationalHandler(http.NotFoundHandler(), operationalConfig{
-		Version:   "test-version",
-		Ready:     func(context.Context) error { return nil },
-		StartedAt: time.Date(2026, time.January, 2, 3, 4, 5, 0, time.UTC),
+		Version:           "test-version",
+		Ready:             func(context.Context) error { return nil },
+		StartedAt:         time.Date(2026, time.January, 2, 3, 4, 5, 0, time.UTC),
+		Backend:           backend,
+		KeyProviderPolicy: communityKeyProviderPolicyMetadata(),
 	})
 
 	for _, path := range []string{"/healthz", "/readyz", "/version"} {
@@ -444,8 +461,29 @@ func TestOperationalHandlerExposesHealthReadyAndVersion(t *testing.T) {
 			t.Fatalf("%s status = %d, want 200 body=%s", path, rec.Code, rec.Body.String())
 		}
 	}
-	if body := httptestResponseBody(t, handler, "/version"); !strings.Contains(body, "test-version") {
-		t.Fatalf("/version response = %s, want version", body)
+
+	var version struct {
+		Version string              `json:"version"`
+		Backend corecli.BackendInfo `json:"backend"`
+		Policy  struct {
+			SupportedClasses            []string `json:"supported_classes"`
+			FileAllowedInProduction     bool     `json:"file_provider_allowed_in_production"`
+			CoreSigningEvidenceRequired bool     `json:"core_signing_evidence_required"`
+			AutomaticProviderFallback   bool     `json:"automatic_provider_fallback"`
+		} `json:"key_provider_policy"`
+	}
+	req := httptest.NewRequest(http.MethodGet, "/version", nil)
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+	if err := json.NewDecoder(rec.Body).Decode(&version); err != nil {
+		t.Fatalf("decode /version response: %v", err)
+	}
+	if version.Version != "test-version" || version.Backend.ProductProfile != "community-openssl" || version.Backend.FallbackEnabled {
+		t.Fatalf("/version response = %#v", version)
+	}
+	if len(version.Policy.SupportedClasses) != 1 || version.Policy.SupportedClasses[0] != "file" ||
+		version.Policy.FileAllowedInProduction || !version.Policy.CoreSigningEvidenceRequired || version.Policy.AutomaticProviderFallback {
+		t.Fatalf("/version key provider policy = %#v", version.Policy)
 	}
 }
 

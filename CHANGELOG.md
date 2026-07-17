@@ -9,6 +9,9 @@ commands and known gaps before tagging.
 
 ### Added
 
+- Strict Go parsing of `anopki-core backend info`, additive `/version` backend
+  and KeyProvider policy metadata, and release artifacts that bind the exact
+  Community/OpenSSL profile to backend capabilities without exposing key refs.
 - ADR 0007 deliberately scoped hybrid signing boundary and Community/OpenSSL certificate-issuance, CRL-signing, and OCSP-response-signing `FileKeyProvider` vertical slices.
 - Adapter-private file-provider tests and a source-boundary validator covering certificate/CRL/OCSP direct key loading, production rejection, algorithm/binding failures, and no fallback.
 - A generic single-provider resolver plus a test-only software-token provider contract covering one-time acquisition, non-exportable policy shape, provider failure propagation, evidence mismatch rejection, and `fallback_used=false`.

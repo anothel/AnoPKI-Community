@@ -2,6 +2,7 @@
 #include "openssl_backend.hpp"
 
 #include "anopki/crypto/runtime.hpp"
+#include "anopki/openssl_backend_config.hpp"
 
 #include <openssl/crypto.h>
 #include <openssl/err.h>
@@ -15,6 +16,8 @@ OpenSSLBackend::OpenSSLBackend()
     info_.dependency = "OpenSSL";
     const char *version = OpenSSL_version(OPENSSL_VERSION);
     info_.dependency_version = version == nullptr ? "unknown" : version;
+    info_.abi_version = ANOPKI_OPENSSL_BACKEND_ABI_VERSION;
+    info_.build_fingerprint = ANOPKI_OPENSSL_BACKEND_BUILD_FINGERPRINT;
     info_.readiness = crypto::BackendReadiness::ready;
     info_.capabilities = {
         crypto::BackendCapability::csr_inspect,

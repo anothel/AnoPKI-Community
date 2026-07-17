@@ -40,15 +40,25 @@ jobs:
             echo "RELEASE_MODE=dry-run" >> "$GITHUB_ENV"
           fi
           echo "VERSION=$VERSION" >> "$GITHUB_ENV"
-      - run: go build -ldflags "-X main.serviceVersion=${VERSION} -X main.serviceCommit=${GITHUB_SHA} -X main.serviceBuildTime=$(date -u +%Y-%m-%dT%H:%M:%SZ)" -o ../dist/anopki-service ./cmd/anopki-service
+          echo "BUILD_TIME=$(date -u +%Y-%m-%dT%H:%M:%SZ)" >> "$GITHUB_ENV"
+      - run: go build -ldflags "-X main.serviceVersion=${VERSION} -X main.serviceCommit=${GITHUB_SHA} -X main.serviceBuildTime=${BUILD_TIME}" -o ../dist/anopki-service ./cmd/anopki-service
         working-directory: service
       - run: cmake -S . -B build-release -DCMAKE_BUILD_TYPE=Release
       - run: cmake --build build-release --config Release
       - run: cp build-release/anopki-core dist/anopki-core
+      - name: Record backend and provider policy metadata
+        run: |
+          ./dist/anopki-core backend info > dist/anopki-backend-info.json
+          python scripts/generate-release-metadata.py \
+            --backend-info dist/anopki-backend-info.json \
+            --out dist/anopki-release-metadata.json \
+            --version "$VERSION" \
+            --commit "$GITHUB_SHA" \
+            --build-time "$BUILD_TIME"
       - run: tar -czf "dist/anopki-service-v${VERSION}-linux-amd64.tar.gz" -C dist anopki-service
       - run: tar -czf "dist/anopki-core-v${VERSION}-linux-amd64.tar.gz" -C dist anopki-core
       - run: rm dist/anopki-service dist/anopki-core
-      - run: sha256sum dist/*.tar.gz > dist/SHA256SUMS
+      - run: sha256sum dist/*.tar.gz dist/anopki-backend-info.json dist/anopki-release-metadata.json > dist/SHA256SUMS
       - run: python scripts/validate-release-artifacts.py dist
       - run: syft scan dir:dist -o cyclonedx-json=dist/anopki.sbom.cdx.json
       - name: Record signing status

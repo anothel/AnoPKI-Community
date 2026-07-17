@@ -57,7 +57,10 @@ Each selected adapter reports identity, dependency version, readiness, ABI/build
 metadata, and operation capabilities. Core dispatch returns stable
 `backend.capability_unavailable` errors before invoking unsupported operations.
 `anopki-core backend info` exposes the selected immutable profile and confirms
-that automatic fallback is disabled.
+that automatic fallback is disabled. The Go service consumes that exact control
+record at startup and returns it from `/version` together with the Community
+KeyProvider policy. Release metadata stores the same facts without key refs or
+per-operation secret material.
 
 ### Enterprise Layer
 

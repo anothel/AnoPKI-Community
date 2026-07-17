@@ -64,6 +64,9 @@ def main() -> None:
             "-X main.serviceVersion=${VERSION}",
             "anopki-service-v${VERSION}-linux-amd64.tar.gz",
             "anopki-core-v${VERSION}-linux-amd64.tar.gz",
+            "anopki-backend-info.json",
+            "anopki-release-metadata.json",
+            "scripts/generate-release-metadata.py",
         ],
     )
     print("version metadata ok")

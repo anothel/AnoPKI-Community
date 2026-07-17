@@ -39,3 +39,21 @@ func keyRefProvider(keyRef string) keyProviderClass {
 func fileKeyRefPath(keyRef string) string {
 	return keyref.FilePath(keyRef)
 }
+
+type keyProviderPolicyMetadata struct {
+	SupportedClasses              []string `json:"supported_classes"`
+	FileProviderExportability     string   `json:"file_provider_exportability"`
+	FileProviderAllowedProduction bool     `json:"file_provider_allowed_in_production"`
+	CoreSigningEvidenceRequired   bool     `json:"core_signing_evidence_required"`
+	AutomaticProviderFallback     bool     `json:"automatic_provider_fallback"`
+}
+
+func communityKeyProviderPolicyMetadata() keyProviderPolicyMetadata {
+	return keyProviderPolicyMetadata{
+		SupportedClasses:              []string{string(keyProviderFile)},
+		FileProviderExportability:     string(keyref.ExportabilityExportable),
+		FileProviderAllowedProduction: false,
+		CoreSigningEvidenceRequired:   true,
+		AutomaticProviderFallback:     false,
+	}
+}

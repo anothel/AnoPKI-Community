@@ -27,6 +27,7 @@ def run_validator(root: Path) -> subprocess.CompletedProcess[str]:
 def copy_contract_inputs(dst: Path) -> None:
     for name in [
         "service/internal/corecli/runner.go",
+        "service/internal/corecli/backend_info.go",
         "src/cli/main.cpp",
         "src/backends/openssl/openssl_backend.cpp",
         "docs/reference/core-cli-contract.md",

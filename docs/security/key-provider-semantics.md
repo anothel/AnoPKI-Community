@@ -146,6 +146,10 @@ is opened.
   sidecar for certificate issuance, CRL signing, and OCSP response signing.
 - Certificate evidence persistence: implemented on the durable issuance attempt.
 - Legacy issuance rows without evidence remain explicitly unproven.
+- `GET /version` and `anopki-release-metadata.json` report immutable product
+  profile, backend, and Community provider-policy metadata. They are
+  release/configuration evidence only, not per-operation signing proof, and
+  never contain a raw `key_ref` or filesystem path.
 - Real non-exportable provider: not implemented.
 - Remote KMS prepare/sign/finalize: not implemented.
 - Enterprise/AnoCrypto-C provider compatibility: not implemented.

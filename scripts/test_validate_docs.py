@@ -192,6 +192,22 @@ def test_completed_provider_result_correlation_roadmap_item_fails(tmp_path: Path
     assert result.returncode == 1
     assert "completed provider-result audit correlation" in result.stderr
 
+
+def test_completed_service_release_profile_metadata_roadmap_item_fails(tmp_path: Path) -> None:
+    copy_docs_inputs(tmp_path)
+    roadmap = tmp_path / "docs" / "ROADMAP.md"
+    roadmap.write_text(
+        roadmap.read_text(encoding="utf-8")
+        + "\n- Expose selected product profile and backend metadata through the Go service/version and release manifests.\n",
+        encoding="utf-8",
+    )
+
+    result = run_validator(tmp_path)
+
+    assert result.returncode == 1
+    assert "completed service/release profile metadata work" in result.stderr
+
+
 def test_missing_wsl_certbot_compatibility_row_fails(tmp_path: Path) -> None:
     copy_docs_inputs(tmp_path)
     compatibility = tmp_path / "docs" / "acme-client-compatibility.md"
@@ -357,6 +373,7 @@ def main() -> None:
         test_missing_remaining_key_provider_work_fails(Path(dirname))
     with tempfile.TemporaryDirectory() as dirname:
         test_completed_provider_result_correlation_roadmap_item_fails(Path(dirname))
+        test_completed_service_release_profile_metadata_roadmap_item_fails(Path(dirname))
     print("docs validator tests ok")
 
 
