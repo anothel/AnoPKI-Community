@@ -364,6 +364,7 @@ void test_success_and_golden_equivalence(const TempDirectory &temp)
 	    "file:" + key_path.string(), "rsa_with_sha256", issuer.get(), ProviderPolicy{});
 	require(file_handle.native_handle() != nullptr, "file reference did not return a key handle");
 	require(file_handle.evidence().provider.id == "file", "file provider evidence missing");
+	require(file_handle.evidence().operation == "certificate_issue", "certificate operation evidence mismatch");
 	require(file_handle.evidence().provider.exportable, "file provider evidence must be exportable");
 	require(file_handle.evidence().issuer_binding_verified, "issuer binding evidence missing");
 	require(!file_handle.evidence().fallback_used, "fallback evidence must be false");
@@ -373,6 +374,14 @@ void test_success_and_golden_equivalence(const TempDirectory &temp)
 	    key_path.string(), "sha256", issuer.get(), ProviderPolicy{});
 	require(bare_handle.native_handle() != nullptr, "bare path did not return a key handle");
 	require(!bare_handle.evidence().fallback_used, "bare path must not use fallback");
+
+	SigningKeyHandle crl_handle = resolve_crl_signing_key(
+	    "file:" + key_path.string(), issuer.get(), ProviderPolicy{});
+	require(crl_handle.native_handle() != nullptr, "CRL resolver did not return a key handle");
+	require(crl_handle.evidence().operation == "crl_generate_sign", "CRL operation evidence mismatch");
+	require(crl_handle.evidence().requested_signature_algorithm == "sha256", "CRL signature algorithm evidence mismatch");
+	require(crl_handle.evidence().issuer_binding_verified, "CRL issuer binding evidence missing");
+	require(!crl_handle.evidence().fallback_used, "CRL resolver must not use fallback");
 
 	X509Ptr direct = make_unsigned_leaf(issuer.get(), subject_key.get());
 	X509Ptr through_provider = make_unsigned_leaf(issuer.get(), subject_key.get());

@@ -303,7 +303,7 @@ Required fields:
 
 | Field | Required value/evidence for this slice |
 | --- | --- |
-| operation | `certificate_issue` |
+| operation | `certificate_issue` or `crl_generate_sign` |
 | product profile | `community-openssl` |
 | selected backend | `openssl` |
 | provider ID/class | `file` / `file` |
@@ -313,16 +313,16 @@ Required fields:
 | requested signature algorithm | tested request value |
 | key algorithm compatibility | pass or stable `provider.algorithm_mismatch` |
 | issuer binding | pass or stable `provider.key_binding_mismatch` |
-| signing result | `X509_sign` success or stable `provider.sign_failed` |
+| signing result | `X509_sign`/`X509_CRL_sign` success or stable `provider.sign_failed` |
 | fallback used | `false` |
 | production policy | exportable file provider rejected |
-| golden result | existing certificate golden fixture unchanged |
-| boundary result | `issue.cpp` contains no direct file open/PEM private-key read |
+| golden result | existing certificate and CRL golden fixtures unchanged |
+| boundary result | `issue.cpp` and `crl.cpp` contain no direct issuer-key file open/PEM private-key read |
 
 Evidence must include:
 
 - full Community CTest result from the reviewed repository commit,
-- certificate OpenSSL golden fixture result,
+- certificate and CRL OpenSSL golden fixture results,
 - `file:` and bare-path success tests,
 - all required negative provider tests,
 - source-boundary validator and validator self-tests,
@@ -336,7 +336,7 @@ Current scope statement:
 
 ```text
 certificate issuance: FileKeyProvider implemented, exportable, local/dev only
-CRL signing: not migrated
+CRL signing: FileKeyProvider implemented, exportable, local/dev only
 OCSP signing: not migrated
 non-exportable provider: not implemented
 fallback_used: false

@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: MPL-2.0
 #include "anopki/core/crl.hpp"
 #include "openssl_backend.hpp"
+#include "key_providers/file_key_provider.hpp"
 
 #include <openssl/asn1.h>
 #include <openssl/bio.h>
@@ -12,7 +13,6 @@
 #include <openssl/x509v3.h>
 
 #include <cctype>
-#include <fstream>
 #include <limits>
 #include <memory>
 #include <stdexcept>
@@ -26,7 +26,6 @@ namespace
 
 constexpr const char *kCRLCreateFailed = "crl.create_failed";
 constexpr const char *kCRLIssuerParseFailed = "crl.issuer_parse_failed";
-constexpr const char *kCRLKeyReadFailed = "crl.key_read_failed";
 constexpr const char *kCRLInvalidTime = "crl.invalid_time";
 constexpr const char *kCRLParseFailed = "crl.parse_failed";
 
@@ -57,7 +56,6 @@ struct OpenSslFreeDeleter
 
 using BioPtr = std::unique_ptr<BIO, BioDeleter>;
 using BignumPtr = std::unique_ptr<BIGNUM, OpenSslDeleter<BIGNUM, BN_free>>;
-using EvpPkeyPtr = std::unique_ptr<EVP_PKEY, OpenSslDeleter<EVP_PKEY, EVP_PKEY_free>>;
 using X509Ptr = std::unique_ptr<X509, OpenSslDeleter<X509, X509_free>>;
 using X509CrlPtr = std::unique_ptr<X509_CRL, OpenSslDeleter<X509_CRL, X509_CRL_free>>;
 using X509RevokedPtr = std::unique_ptr<X509_REVOKED, OpenSslDeleter<X509_REVOKED, X509_REVOKED_free>>;
@@ -70,21 +68,6 @@ using OpenSslStringPtr = std::unique_ptr<char, OpenSslFreeDeleter>;
 [[noreturn]] void throw_error(const char *code)
 {
 	throw std::runtime_error{code};
-}
-
-std::string read_file(const std::string &path)
-{
-	std::ifstream input{path, std::ios::binary};
-	if (!input)
-	{
-		throw_error(kCRLKeyReadFailed);
-	}
-	std::string contents{std::istreambuf_iterator<char>{input}, std::istreambuf_iterator<char>{}};
-	if (input.bad())
-	{
-		throw_error(kCRLKeyReadFailed);
-	}
-	return contents;
 }
 
 X509Ptr parse_certificate(std::string_view pem)
@@ -191,21 +174,6 @@ CRLInfo inspect_crl(X509_CRL *crl)
 	info.revoked_certificate_count = revoked == nullptr ? 0 : sk_X509_REVOKED_num(revoked);
 	info.crl_number = crl_number(crl);
 	return info;
-}
-
-EvpPkeyPtr parse_private_key(std::string_view pem)
-{
-	BioPtr bio{BIO_new_mem_buf(pem.data(), static_cast<int>(pem.size()))};
-	if (!bio)
-	{
-		throw_error(kCRLKeyReadFailed);
-	}
-	EvpPkeyPtr key{PEM_read_bio_PrivateKey(bio.get(), nullptr, nullptr, nullptr)};
-	if (!key)
-	{
-		throw_error(kCRLKeyReadFailed);
-	}
-	return key;
 }
 
 bool all_digits(std::string_view value)
@@ -385,7 +353,11 @@ std::string crl_to_pem(X509_CRL *crl)
 GenerateCRLResult OpenSSLBackend::generate_crl(const GenerateCRLRequest &request) const
 {
 	X509Ptr issuer = parse_certificate(request.issuer_certificate_pem);
-	EvpPkeyPtr issuer_key = parse_private_key(read_file(request.issuer_key_ref));
+	openssl_key_providers::SigningKeyHandle issuer_key =
+	    openssl_key_providers::resolve_crl_signing_key(
+	        request.issuer_key_ref,
+	        issuer.get(),
+	        openssl_key_providers::provider_policy_from_environment());
 
 	X509CrlPtr crl{X509_CRL_new()};
 	if (!crl || X509_CRL_set_version(crl.get(), 1) != 1 ||
@@ -405,9 +377,13 @@ GenerateCRLResult OpenSSLBackend::generate_crl(const GenerateCRLRequest &request
 	{
 		add_revoked_entry(crl.get(), entry);
 	}
-	if (X509_CRL_sort(crl.get()) != 1 || X509_CRL_sign(crl.get(), issuer_key.get(), EVP_sha256()) <= 0)
+	if (X509_CRL_sort(crl.get()) != 1)
 	{
 		throw_error(kCRLCreateFailed);
+	}
+	if (X509_CRL_sign(crl.get(), issuer_key.native_handle(), EVP_sha256()) <= 0)
+	{
+		openssl_key_providers::throw_provider_sign_failed(issuer_key);
 	}
 
 	GenerateCRLResult result;

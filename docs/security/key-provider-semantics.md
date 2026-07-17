@@ -19,14 +19,14 @@ All signing keys are addressed by `key_ref`.
 
 | Class | Intended use | Exportability | Current implementation |
 | --- | --- | --- | --- |
-| File | Local development and smoke | Exportable | Certificate issuance only |
+| File | Local development and smoke | Exportable | Certificate issuance and CRL generation |
 | PKCS#11/local HSM | Future production signing | Non-exportable | Not implemented |
 | Cloud KMS | Future Enterprise remote signing | Non-exportable | Not implemented |
 
-## Implemented Certificate-Issuance Path
+## Implemented Certificate And CRL Paths
 
-Community/OpenSSL certificate issuance resolves a single adapter-private
-`FileKeyProvider`.
+Community/OpenSSL certificate issuance and CRL generation each resolve a
+single adapter-private `FileKeyProvider`.
 
 The provider:
 
@@ -41,9 +41,13 @@ The provider:
 - reports `fallback_used=false`,
 - emits stable, redacted `provider.*` failures.
 
-`src/backends/openssl/issue.cpp` does not open the key file or invoke a PEM
-private-key reader. `X509_sign` remains in the OpenSSL adapter to preserve the
-one-operation CLI contract and existing certificate result.
+`src/backends/openssl/issue.cpp` and `src/backends/openssl/crl.cpp` do not open
+issuer key files or invoke PEM private-key readers. `X509_sign` and
+`X509_CRL_sign` remain in the OpenSSL adapter to preserve the one-operation CLI
+contract and existing certificate/CRL results.
+
+The provider evidence identifies `certificate_issue` and `crl_generate_sign`
+separately. A successful result for one operation is not evidence for another.
 
 ## Go And C++ Evidence Responsibilities
 
@@ -103,7 +107,7 @@ return `provider.exportability_violation` before the key file is opened.
 ## Current Scope Limits
 
 - Certificate issuance: provider-isolated through `FileKeyProvider`.
-- CRL signing: unchanged; direct file-key path remains.
+- CRL signing: provider-isolated through `FileKeyProvider`.
 - OCSP signing: unchanged; direct file-key path remains.
 - Non-exportable provider: not implemented.
 - Remote KMS prepare/sign/finalize: not implemented.

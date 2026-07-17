@@ -64,7 +64,7 @@ If a secret is committed or exposed, assume compromise. Remove it from active us
 
 The following areas are not complete yet:
 
-- No HSM or PKCS#11 signing boundary.
+- No production non-exportable HSM or PKCS#11 provider; current file-provider signing is local/development only.
 - Certbot live coverage still has a known local Windows non-admin gap.
 - DNS-01 and External Account Binding are planned later.
 

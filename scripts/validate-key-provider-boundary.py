@@ -10,9 +10,11 @@ from pathlib import Path
 PROVIDER_HEADER = Path("src/backends/openssl/key_providers/file_key_provider.hpp")
 PROVIDER_SOURCE = Path("src/backends/openssl/key_providers/file_key_provider.cpp")
 ISSUE_SOURCE = Path("src/backends/openssl/issue.cpp")
+CRL_SOURCE = Path("src/backends/openssl/crl.cpp")
 PROVIDER_TEST = Path("tests/file_key_provider_test.cpp")
+CRL_PROVIDER_TEST = Path("tests/crl_file_key_provider_test.cpp")
 
-FORBIDDEN_ISSUE_TOKENS = (
+FORBIDDEN_SIGNING_PATH_TOKENS = (
     "BIO_new_file",
     "PEM_read_bio_PrivateKey",
     "PEM_read_PrivateKey",
@@ -25,6 +27,14 @@ FORBIDDEN_ISSUE_TOKENS = (
 REQUIRED_ISSUE_TOKENS = (
     '#include "key_providers/file_key_provider.hpp"',
     "resolve_certificate_signing_key",
+    "provider_policy_from_environment",
+    ".native_handle()",
+    "throw_provider_sign_failed",
+)
+
+REQUIRED_CRL_TOKENS = (
+    '#include "key_providers/file_key_provider.hpp"',
+    "resolve_crl_signing_key",
     "provider_policy_from_environment",
     ".native_handle()",
     "throw_provider_sign_failed",
@@ -45,6 +55,7 @@ REQUIRED_PROVIDER_TOKENS = (
     "X509_check_private_key",
     "reject_private_key_password",
     "PEM_read_bio_PrivateKey(bio.get(), nullptr, reject_private_key_password, nullptr)",
+    "crl_generate_sign",
 )
 
 REQUIRED_PROVIDER_TEST_TOKENS = (
@@ -52,6 +63,19 @@ REQUIRED_PROVIDER_TEST_TOKENS = (
     "EVP_aes_256_cbc",
     "encrypted.pem",
     "test-only-password",
+    "resolve_crl_signing_key",
+    "crl_generate_sign",
+)
+
+REQUIRED_CRL_PROVIDER_TEST_TOKENS = (
+    "file:",
+    "kms:",
+    "provider.key_not_found",
+    "provider.key_parse_failed",
+    "provider.key_binding_mismatch",
+    "provider.exportability_violation",
+    "X509_CRL_verify",
+    "deterministic CRL DER",
 )
 
 
@@ -70,21 +94,33 @@ def validate(root: Path) -> None:
     header = read_required(root, PROVIDER_HEADER)
     provider = read_required(root, PROVIDER_SOURCE)
     issue = read_required(root, ISSUE_SOURCE)
+    crl = read_required(root, CRL_SOURCE)
     provider_test = read_required(root, PROVIDER_TEST)
+    crl_provider_test = read_required(root, CRL_PROVIDER_TEST)
     cmake = read_required(root, Path("CMakeLists.txt"))
 
-    forbidden_hits = [token for token in FORBIDDEN_ISSUE_TOKENS if token in issue]
-    if forbidden_hits:
-        fail(
-            "certificate issuance directly loads a private key:\n"
-            + "\n".join(forbidden_hits)
-        )
+    for operation, content in (("certificate issuance", issue), ("CRL signing", crl)):
+        forbidden_hits = [
+            token for token in FORBIDDEN_SIGNING_PATH_TOKENS if token in content
+        ]
+        if forbidden_hits:
+            fail(
+                f"{operation} directly loads a private key:\n"
+                + "\n".join(forbidden_hits)
+            )
 
     missing_issue = [token for token in REQUIRED_ISSUE_TOKENS if token not in issue]
     if missing_issue:
         fail(
             "certificate issuance does not use the FileKeyProvider boundary:\n"
             + "\n".join(missing_issue)
+        )
+
+    missing_crl = [token for token in REQUIRED_CRL_TOKENS if token not in crl]
+    if missing_crl:
+        fail(
+            "CRL signing does not use the FileKeyProvider boundary:\n"
+            + "\n".join(missing_crl)
         )
 
     missing_provider = [token for token in REQUIRED_PROVIDER_TOKENS if token not in provider]
@@ -103,6 +139,15 @@ def validate(root: Path) -> None:
             + "\n".join(missing_provider_tests)
         )
 
+    missing_crl_provider_tests = [
+        token for token in REQUIRED_CRL_PROVIDER_TEST_TOKENS if token not in crl_provider_test
+    ]
+    if missing_crl_provider_tests:
+        fail(
+            "CRL FileKeyProvider tests are missing required coverage:\n"
+            + "\n".join(missing_crl_provider_tests)
+        )
+
     for marker in (
         "class SigningKeyProvider",
         "class FileKeyProvider",
@@ -117,6 +162,8 @@ def validate(root: Path) -> None:
         fail("OpenSSL adapter target does not compile FileKeyProvider")
     if "tests/file_key_provider_test.cpp" not in cmake:
         fail("CMake does not register FileKeyProvider tests")
+    if "tests/crl_file_key_provider_test.cpp" not in cmake:
+        fail("CMake does not register CRL FileKeyProvider tests")
 
     for relative_root in (Path("include"), Path("src/core")):
         scan_root = root / relative_root

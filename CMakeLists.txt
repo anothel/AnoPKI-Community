@@ -186,6 +186,20 @@ if(BUILD_TESTING)
     target_link_libraries(anopki_backend_profile_test PRIVATE anopki::core anopki::openssl_adapter)
     add_test(NAME anopki.backend_profile COMMAND anopki_backend_profile_test)
 
+    add_executable(anopki_crl_file_key_provider_test
+        tests/crl_file_key_provider_test.cpp
+    )
+    target_link_libraries(anopki_crl_file_key_provider_test
+        PRIVATE
+            anopki::core
+            anopki::openssl_adapter
+            OpenSSL::Crypto
+    )
+    add_test(
+        NAME anopki.crl_file_key_provider
+        COMMAND anopki_crl_file_key_provider_test ${CMAKE_CURRENT_BINARY_DIR}
+    )
+
     add_executable(anopki_file_key_provider_test
         tests/file_key_provider_test.cpp
     )

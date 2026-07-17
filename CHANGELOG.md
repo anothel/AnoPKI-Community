@@ -9,9 +9,8 @@ commands and known gaps before tagging.
 
 ### Added
 
-- ADR 0007 deliberately scoped hybrid signing boundary and the first Community/OpenSSL certificate-issuance `FileKeyProvider` vertical slice.
-- Adapter-private file-provider tests and a source-boundary validator covering direct key loading, production rejection, algorithm/binding failures, and no fallback.
-- ADR 0007 selecting a deliberately scoped hybrid KeyProvider signing boundary and certificate-issuance file-provider first slice.
+- ADR 0007 deliberately scoped hybrid signing boundary and Community/OpenSSL certificate-issuance and CRL-signing `FileKeyProvider` vertical slices.
+- Adapter-private file-provider tests and a source-boundary validator covering certificate/CRL direct key loading, production rejection, algorithm/binding failures, and no fallback.
 - Backend identity, capability, readiness, stable error, and explicit product-profile metadata with `anopki-core backend info`.
 - CI workflow for docs validation, service contract parity, secret baseline
   scan, Go service tests/build, PostgreSQL migration integration, and C++
@@ -46,10 +45,7 @@ commands and known gaps before tagging.
 
 ### Changed
 
-- FileKeyProvider rejects encrypted private-key PEM without prompting on stdin
-  or a process terminal; the current provider contract has no password-input
-  channel.
-- `src/backends/openssl/issue.cpp` no longer opens or parses issuer private-key files directly; it resolves one adapter-private provider and signs through the returned handle without changing the Core CLI JSON contract.
+- `src/backends/openssl/issue.cpp` and `src/backends/openssl/crl.cpp` no longer open or parse issuer private-key files directly; each resolves one adapter-private provider and signs through the returned handle without changing the Core CLI JSON contract.
 - Go `keyref.Provider.CheckReady` remains readiness preflight and is not described as actual cryptographic signing evidence.
 - Roadmap is future-only; completed work belongs in reference docs, runbooks,
   or this changelog.
@@ -71,5 +67,5 @@ commands and known gaps before tagging.
 - Git working-tree status, GitHub Actions CI URLs, tagged release artifacts,
   SBOM output, cosign signatures, and Go lint/security scanner evidence must be
   recorded from the real repository before tagging a release candidate.
-- Full compatibility evidence, HSM/KMS provider boundary, tamper-evident audit
+- Full compatibility evidence, production non-exportable HSM/KMS provider, tamper-evident audit
   storage, EAB, and DNS-01 remain future work.

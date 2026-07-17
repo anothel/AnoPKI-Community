@@ -85,7 +85,7 @@ Community/OpenSSL baseline and keeping key providers separate.
   issuance, CRL, and OCSP parity is complete.
 - Add negative tests proving that unsupported AnoCrypto-C operations never call
   OpenSSL.
-- Extend the proven provider contract to CRL signing and then OCSP signing.
+- Extend the proven provider contract to OCSP signing.
 - Add a mock/software-token provider before selecting a real PKCS#11/HSM implementation.
 - Define actual C++ provider-result audit correlation without treating Go `CheckReady` as cryptographic proof.
 - Prototype and separately approve remote KMS retry/idempotency and signing semantics before adding a vendor SDK.

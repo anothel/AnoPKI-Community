@@ -60,6 +60,7 @@ struct ProviderPolicy
 struct SigningKeyEvidence
 {
 	ProviderMetadata provider;
+	std::string operation;
 	std::string key_algorithm;
 	std::string requested_signature_algorithm;
 	bool issuer_binding_verified{false};
@@ -104,6 +105,7 @@ private:
 
 struct SigningKeyRequest
 {
+	std::string operation;
 	std::string key_ref;
 	std::string signature_algorithm;
 	X509 *issuer_certificate{nullptr};
@@ -141,6 +143,11 @@ private:
 [[nodiscard]] SigningKeyHandle resolve_certificate_signing_key(
     const std::string &key_ref,
     const std::string &signature_algorithm,
+    X509 *issuer_certificate,
+    ProviderPolicy policy);
+
+[[nodiscard]] SigningKeyHandle resolve_crl_signing_key(
+    const std::string &key_ref,
     X509 *issuer_certificate,
     ProviderPolicy policy);
 

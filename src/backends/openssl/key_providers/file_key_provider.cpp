@@ -423,6 +423,7 @@ SigningKeyHandle FileKeyProvider::acquire(const SigningKeyRequest &request) cons
 
 	SigningKeyEvidence evidence;
 	evidence.provider = metadata_;
+	evidence.operation = request.operation;
 	evidence.key_algorithm = key_algorithm(key);
 	evidence.requested_signature_algorithm = request.signature_algorithm;
 	evidence.issuer_binding_verified = true;
@@ -448,7 +449,11 @@ ProviderPolicy provider_policy_from_environment() noexcept
 	return policy;
 }
 
-SigningKeyHandle resolve_certificate_signing_key(
+namespace
+{
+
+SigningKeyHandle resolve_signing_key(
+    std::string operation,
     const std::string &key_ref,
     const std::string &signature_algorithm,
     X509 *issuer_certificate,
@@ -463,7 +468,29 @@ SigningKeyHandle resolve_certificate_signing_key(
 		}
 		fail(ProviderErrorCode::unavailable, "resolve");
 	}
-	return provider.acquire(SigningKeyRequest{key_ref, signature_algorithm, issuer_certificate, policy});
+	return provider.acquire(SigningKeyRequest{
+	    std::move(operation), key_ref, signature_algorithm, issuer_certificate, policy});
+}
+
+} // namespace
+
+SigningKeyHandle resolve_certificate_signing_key(
+    const std::string &key_ref,
+    const std::string &signature_algorithm,
+    X509 *issuer_certificate,
+    ProviderPolicy policy)
+{
+	return resolve_signing_key(
+	    "certificate_issue", key_ref, signature_algorithm, issuer_certificate, policy);
+}
+
+SigningKeyHandle resolve_crl_signing_key(
+    const std::string &key_ref,
+    X509 *issuer_certificate,
+    ProviderPolicy policy)
+{
+	return resolve_signing_key(
+	    "crl_generate_sign", key_ref, "sha256", issuer_certificate, policy);
 }
 
 void throw_provider_sign_failed(const SigningKeyHandle &handle)

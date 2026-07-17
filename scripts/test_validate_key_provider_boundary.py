@@ -42,6 +42,7 @@ fallback_used = false
 X509_check_private_key
 int reject_private_key_password(char *, int, int, void *) noexcept
 PEM_read_bio_PrivateKey(bio.get(), nullptr, reject_private_key_password, nullptr)
+crl_generate_sign
 """,
     )
     write(
@@ -55,11 +56,35 @@ throw_provider_sign_failed(key);
     )
     write(
         root,
+        "src/backends/openssl/crl.cpp",
+        """#include "key_providers/file_key_provider.hpp"
+auto key = resolve_crl_signing_key(ref, cert, provider_policy_from_environment());
+X509_CRL_sign(crl, key.native_handle(), EVP_sha256());
+throw_provider_sign_failed(key);
+""",
+    )
+    write(
+        root,
         "tests/file_key_provider_test.cpp",
         """write_encrypted_private_key
 EVP_aes_256_cbc
 encrypted.pem
 test-only-password
+resolve_crl_signing_key
+crl_generate_sign
+""",
+    )
+    write(
+        root,
+        "tests/crl_file_key_provider_test.cpp",
+        """file:
+kms:
+provider.key_not_found
+provider.key_parse_failed
+provider.key_binding_mismatch
+provider.exportability_violation
+X509_CRL_verify
+deterministic CRL DER
 """,
     )
     write(
@@ -68,6 +93,7 @@ test-only-password
         """add_library(adapter
 src/backends/openssl/key_providers/file_key_provider.cpp)
 add_executable(test tests/file_key_provider_test.cpp)
+add_executable(crl_test tests/crl_file_key_provider_test.cpp)
 """,
     )
     write(root, "include/anopki/core.hpp", "// neutral\n")
@@ -106,6 +132,42 @@ def test_direct_pem_read_fails() -> None:
         issue = root / "src/backends/openssl/issue.cpp"
         issue.write_text(issue.read_text(encoding="utf-8") + "PEM_read_bio_PrivateKey(bio, 0, 0, 0);\n", encoding="utf-8")
         expect_failure(root, "directly loads a private key")
+
+
+def test_crl_direct_bio_open_fails() -> None:
+    with tempfile.TemporaryDirectory() as dirname:
+        root = Path(dirname)
+        clean_fixture(root)
+        crl = root / "src/backends/openssl/crl.cpp"
+        crl.write_text(crl.read_text(encoding="utf-8") + 'BIO_new_file(path, "rb");\n', encoding="utf-8")
+        expect_failure(root, "CRL signing directly loads a private key")
+
+
+def test_crl_direct_pem_read_fails() -> None:
+    with tempfile.TemporaryDirectory() as dirname:
+        root = Path(dirname)
+        clean_fixture(root)
+        crl = root / "src/backends/openssl/crl.cpp"
+        crl.write_text(crl.read_text(encoding="utf-8") + "PEM_read_bio_PrivateKey(bio, 0, 0, 0);\n", encoding="utf-8")
+        expect_failure(root, "CRL signing directly loads a private key")
+
+
+def test_missing_crl_resolution_fails() -> None:
+    with tempfile.TemporaryDirectory() as dirname:
+        root = Path(dirname)
+        clean_fixture(root)
+        crl = root / "src/backends/openssl/crl.cpp"
+        crl.write_text(crl.read_text(encoding="utf-8").replace("resolve_crl_signing_key", "legacy_crl_key_loader"), encoding="utf-8")
+        expect_failure(root, "CRL signing does not use the FileKeyProvider boundary")
+
+
+def test_missing_crl_provider_test_fails() -> None:
+    with tempfile.TemporaryDirectory() as dirname:
+        root = Path(dirname)
+        clean_fixture(root)
+        test = root / "tests/crl_file_key_provider_test.cpp"
+        test.write_text(test.read_text(encoding="utf-8").replace("provider.exportability_violation", "missing"), encoding="utf-8")
+        expect_failure(root, "CRL FileKeyProvider tests are missing required coverage")
 
 
 def test_interactive_password_callback_fails() -> None:
@@ -154,6 +216,15 @@ def test_missing_cmake_source_fails() -> None:
         expect_failure(root, "does not compile FileKeyProvider")
 
 
+def test_missing_crl_cmake_test_fails() -> None:
+    with tempfile.TemporaryDirectory() as dirname:
+        root = Path(dirname)
+        clean_fixture(root)
+        cmake = root / "CMakeLists.txt"
+        cmake.write_text(cmake.read_text(encoding="utf-8").replace("tests/crl_file_key_provider_test.cpp", ""), encoding="utf-8")
+        expect_failure(root, "does not register CRL FileKeyProvider tests")
+
+
 def test_openssl_type_escape_fails() -> None:
     with tempfile.TemporaryDirectory() as dirname:
         root = Path(dirname)
@@ -166,10 +237,15 @@ def main() -> None:
     test_clean_fixture_passes()
     test_direct_bio_open_fails()
     test_direct_pem_read_fails()
+    test_crl_direct_bio_open_fails()
+    test_crl_direct_pem_read_fails()
+    test_missing_crl_resolution_fails()
+    test_missing_crl_provider_test_fails()
     test_interactive_password_callback_fails()
     test_missing_encrypted_pem_rejection_test_fails()
     test_missing_resolution_fails()
     test_missing_cmake_source_fails()
+    test_missing_crl_cmake_test_fails()
     test_openssl_type_escape_fails()
     print("key provider boundary validator tests ok")
 
