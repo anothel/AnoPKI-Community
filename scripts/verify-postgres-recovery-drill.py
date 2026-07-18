@@ -48,6 +48,7 @@ EXPECTED_CHECKS = (
     "key-reference-hashes-preserved",
     "signing-and-crl-artifacts-preserved",
     "audit-outbox-webhook-state-preserved",
+    "audit-hash-chain-preserved",
     "sensitive-evidence-exclusion",
 )
 SELECTED_TABLES = (
@@ -64,6 +65,8 @@ SELECTED_TABLES = (
     "crl_publications",
     "crl_generation_claims",
     "audit_events",
+    "audit_chain_state",
+    "audit_chain_checkpoints",
     "outbox_messages",
     "job_attempts",
     "webhook_deliveries",
@@ -97,6 +100,24 @@ def sha256_bytes(value: bytes) -> str:
 
 def sha256_text(value: str) -> str:
     return sha256_bytes(value.encode("utf-8"))
+
+
+def audit_event_hash(previous_hash: str, chain_index: int, event: dict[str, str]) -> str:
+    metadata = json.loads(event["metadata_json"])
+    payload = {
+        "algorithm": "sha256-v1",
+        "chain_index": chain_index,
+        "previous_event_hash": previous_hash,
+        "id": event["id"],
+        "actor": event["actor"],
+        "action": event["action"],
+        "resource_type": event["resource_type"],
+        "resource_id": event["resource_id"],
+        "metadata": metadata,
+        "created_at": event["created_at"],
+    }
+    canonical = json.dumps(payload, separators=(",", ":"), ensure_ascii=False)
+    return sha256_text("AnoPKI-Audit-Event-sha256-v1\x00" + canonical)
 
 
 def resolve_commit(root: Path, explicit: str) -> str:
@@ -316,6 +337,28 @@ def seed_sql() -> str:
         separators=(",", ":"),
         sort_keys=True,
     ).replace("'", "''")
+    audit_events = [
+        {
+            "id": "audit-pg-recovery-1",
+            "actor": "operator",
+            "action": "certificate.issued",
+            "resource_type": "certificate",
+            "resource_id": "certificate-pg-recovery-1",
+            "metadata_json": audit_metadata.replace("''", "'"),
+            "created_at": "2026-07-18T00:00:02Z",
+        },
+        {
+            "id": "audit-pg-recovery-2",
+            "actor": "operator",
+            "action": "crl.published",
+            "resource_type": "crl",
+            "resource_id": "crl-pg-recovery-1",
+            "metadata_json": '{"result":"ok"}',
+            "created_at": "2026-07-18T00:10:00Z",
+        },
+    ]
+    first_hash = audit_event_hash("", 1, audit_events[0])
+    second_hash = audit_event_hash(first_hash, 2, audit_events[1])
     return f"""
 BEGIN;
 INSERT INTO identities (
@@ -403,12 +446,20 @@ INSERT INTO crl_publications (
     '2026-07-18T00:10:00Z', '2026-07-18T00:10:00Z'
 );
 INSERT INTO audit_events (
-    id, actor, action, resource_type, resource_id, metadata_json, created_at
+    id, actor, action, resource_type, resource_id, metadata_json,
+    chain_index, hash_algorithm, previous_event_hash, event_hash, created_at
 ) VALUES
     ('audit-pg-recovery-1', 'operator', 'certificate.issued', 'certificate',
-     'certificate-pg-recovery-1', '{audit_metadata}', '2026-07-18T00:00:02Z'),
+     'certificate-pg-recovery-1', '{audit_metadata}', 1, 'sha256-v1', '', '{first_hash}',
+     '2026-07-18T00:00:02Z'),
     ('audit-pg-recovery-2', 'operator', 'crl.published', 'crl',
-     'crl-pg-recovery-1', '{{"result":"ok"}}', '2026-07-18T00:10:00Z');
+     'crl-pg-recovery-1', '{{"result":"ok"}}', 2, 'sha256-v1', '{first_hash}', '{second_hash}',
+     '2026-07-18T00:10:00Z');
+UPDATE audit_chain_state
+SET tail_chain_index = 2, tail_event_id = 'audit-pg-recovery-2',
+    tail_event_hash = '{second_hash}', total_event_count = 2,
+    updated_at = '2026-07-18T00:10:00Z'
+WHERE id = 1;
 INSERT INTO outbox_messages (
     id, type, payload_json, status, available_at, processing_deadline_at,
     attempt_count, max_attempts, last_error, created_at, updated_at
@@ -446,7 +497,7 @@ def snapshot_sql() -> str:
     )
     return f"""
 SELECT json_build_object(
-    'migration', (SELECT json_build_object('version', version, 'checksum', checksum, 'dirty', dirty) FROM schema_migrations WHERE version = 1),
+    'migrations', (SELECT json_agg(json_build_object('version', version, 'checksum', checksum, 'dirty', dirty) ORDER BY version) FROM schema_migrations),
     'counts', json_build_object({count_pairs}),
     'issuer_key_ref', (SELECT key_ref FROM issuers WHERE id = 'issuer-pg-recovery-1'),
     'responder_key_ref', (SELECT key_ref FROM ocsp_responders WHERE id = 'responder-pg-recovery-1'),
@@ -454,6 +505,10 @@ SELECT json_build_object(
     'signing_evidence_json', (SELECT signing_evidence_json FROM certificate_issuance_attempts WHERE enrollment_id = 'enrollment-pg-recovery-1'),
     'crl_pem', (SELECT crl_pem FROM crl_publications WHERE id = 'crl-pg-recovery-1'),
     'audit_metadata_json', (SELECT metadata_json FROM audit_events WHERE id = 'audit-pg-recovery-1'),
+    'audit_chain', (SELECT json_build_object(
+        'events', (SELECT json_agg(json_build_object('id', id, 'chain_index', chain_index, 'hash_algorithm', hash_algorithm, 'previous_event_hash', previous_event_hash, 'event_hash', event_hash) ORDER BY chain_index) FROM audit_events),
+        'state', (SELECT json_build_object('tail_chain_index', tail_chain_index, 'tail_event_id', tail_event_id, 'tail_event_hash', tail_event_hash, 'total_event_count', total_event_count) FROM audit_chain_state WHERE id = 1)
+    )),
     'outbox_payload_json', (SELECT payload_json FROM outbox_messages WHERE id = 'outbox-pg-recovery-1'),
     'endpoint_secret', (SELECT secret FROM notification_endpoints WHERE id = 'endpoint-pg-recovery-1'),
     'api_token_hash', (SELECT token_hash FROM api_keys WHERE id = 'api-key-pg-recovery-1'),
@@ -469,15 +524,17 @@ SELECT json_build_object(
 
 
 def safe_snapshot(raw: dict[str, Any]) -> dict[str, Any]:
-    migration = raw.get("migration")
+    migrations = raw.get("migrations")
     counts = raw.get("counts")
     statuses = raw.get("statuses")
-    if not isinstance(migration, dict) or not isinstance(counts, dict) or not isinstance(statuses, dict):
+    audit_chain = raw.get("audit_chain")
+    if not isinstance(migrations, list) or not isinstance(counts, dict) or not isinstance(statuses, dict) or not isinstance(audit_chain, dict):
         raise DrillFailure("PostgreSQL recovery snapshot shape is invalid")
     safe = {
-        "migration": migration,
+        "migrations": migrations,
         "counts": counts,
         "statuses": statuses,
+        "audit_chain": audit_chain,
         "key_reference_hashes": {
             "issuer": sha256_text(str(raw.get("issuer_key_ref", ""))),
             "responder": sha256_text(str(raw.get("responder_key_ref", ""))),
@@ -666,10 +723,24 @@ def run_drill(
 
         run_psql(source_uri, seed_sql(), tools=tools, env=environment, cwd=root, timeout=240)
         before = load_snapshot(source_uri, tools=tools, env=environment, cwd=root)
-        expected_checksum = sha256_bytes((root / "service/internal/store/migrations/0001_init.sql").read_bytes())
-        migration = before["migration"]
-        if migration.get("dirty") is not False or migration.get("checksum") != expected_checksum:
-            raise DrillFailure("current PostgreSQL migration is dirty or has a checksum mismatch")
+        migration_paths = (
+            root / "service/internal/store/migrations/0001_init.sql",
+            root / "service/internal/store/migrations/0002_audit_hash_chain.sql",
+        )
+        expected_migrations = [
+            {"version": version, "checksum": sha256_bytes(path.read_bytes()), "dirty": False}
+            for version, path in enumerate(migration_paths, start=1)
+        ]
+        if before["migrations"] != expected_migrations:
+            raise DrillFailure("current PostgreSQL migrations are dirty or checksum-mismatched")
+        expected_checksum = sha256_bytes(b"\x00".join(path.read_bytes() for path in migration_paths))
+        audit_chain = before.get("audit_chain", {})
+        state = audit_chain.get("state") if isinstance(audit_chain, dict) else None
+        events = audit_chain.get("events") if isinstance(audit_chain, dict) else None
+        if not isinstance(state, dict) or not isinstance(events, list) or len(events) != 2:
+            raise DrillFailure("PostgreSQL audit hash chain fixture is incomplete")
+        if state.get("tail_chain_index") != 2 or state.get("tail_event_id") != "audit-pg-recovery-2" or state.get("tail_event_hash") != events[-1].get("event_hash"):
+            raise DrillFailure("PostgreSQL audit hash chain state is invalid")
 
         work_dir = Path(tempfile.mkdtemp(prefix="anopki-postgres-recovery-"))
         dump_path = work_dir / "postgres-recovery.dump"
@@ -696,7 +767,7 @@ def run_drill(
             source_uri,
             """
 BEGIN;
-UPDATE schema_migrations SET dirty = TRUE WHERE version = 1;
+UPDATE schema_migrations SET dirty = TRUE WHERE version = 2;
 UPDATE issuers SET key_ref = 'file:/damaged-postgres-recovery.key' WHERE id = 'issuer-pg-recovery-1';
 UPDATE certificate_issuance_attempts SET signing_evidence_json = '' WHERE enrollment_id = 'enrollment-pg-recovery-1';
 DELETE FROM webhook_deliveries WHERE outbox_message_id = 'outbox-pg-recovery-1';

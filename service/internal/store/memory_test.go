@@ -202,16 +202,19 @@ func TestMemoryStoreAuditEventHashChain(t *testing.T) {
 			t.Fatalf("CreateAuditEvent(%s) returned error: %v", event.ID, err)
 		}
 	}
-
 	events, err := repo.ListAuditEvents(ctx)
 	if err != nil {
-		t.Fatalf("ListAuditEvents returned error: %v", err)
+		t.Fatal(err)
 	}
-	if events[0].PreviousEventHash != "" || events[0].EventHash != auditEventHash("", first) {
+	if events[0].ChainIndex != 1 || events[0].PreviousEventHash != "" || events[0].EventHash == "" {
 		t.Fatalf("first event hashes = %#v", events[0])
 	}
-	if events[1].PreviousEventHash != events[0].EventHash || events[1].EventHash != auditEventHash(events[0].EventHash, second) {
-		t.Fatalf("second event hashes = %#v after %#v", events[1], events[0])
+	if events[1].ChainIndex != 2 || events[1].PreviousEventHash != events[0].EventHash || events[1].EventHash == "" {
+		t.Fatalf("second event hashes = %#v", events[1])
+	}
+	verification, err := repo.VerifyAuditChain(ctx)
+	if err != nil || !verification.Verified {
+		t.Fatalf("VerifyAuditChain = %#v, %v", verification, err)
 	}
 }
 

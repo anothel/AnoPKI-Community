@@ -156,6 +156,18 @@ Community release commit. This is deterministic contract evidence; real
 PostgreSQL multi-node failover and traffic-shift drills remain separate pending
 evidence.
 
+## Audit Hash-Chain Evidence Runner
+
+`scripts/verify-audit-hash-chain.py` runs exact store and HTTP regressions for
+migration backfill, canonical `sha256-v1` hashing, monotonic chain indexes,
+tamper detection, retention checkpoints, tail-state verification, invalid
+metadata rejection and the operator integrity endpoint. Evidence is strict
+redacted JSON, Markdown and one test log, packaged as
+`anopki-audit-chain-verification.tar.gz`. Release validation requires all tests
+and named checks to pass on the exact same Community commit as release metadata.
+Raw metadata payloads, credentials, key references and private-key material are
+not evidence fields.
+
 ## Supported-Go Evidence Runner
 
 `scripts/verify-go-release.py` is the maintained Community entry point for Go
@@ -300,6 +312,8 @@ evidence still needs release workflow artifacts containing archives,
 - `python scripts/verify-postgres-recovery-drill.py --out-dir .tmp\postgres-recovery-evidence\verify-local`
 - `python scripts/test_verify_multi_node_reliability.py`
 - `python scripts/verify-multi-node-reliability.py --out-dir .tmp\multi-node-evidence\verify-local`
+- `python scripts/test_verify_audit_hash_chain.py`
+- `python scripts/verify-audit-hash-chain.py --out-dir .tmp\audit-chain-evidence\verify-local`
 - `python scripts/test_validate_release_artifacts.py`
 - `python scripts/test_validate_service_contracts.py`
 - `python scripts/validate-service-contracts.py`

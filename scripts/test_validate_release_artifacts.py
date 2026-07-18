@@ -136,6 +136,7 @@ def write_recovery_evidence_archive(
         "issuance-attempt",
         "outbox-and-webhook-state",
         "audit-state",
+        "audit-hash-chain",
         "private-key-exclusion",
     ]
     evidence = {
@@ -145,7 +146,7 @@ def write_recovery_evidence_archive(
         "product_profile": "community-openssl",
         "commit": commit,
         "database_driver": "sqlite",
-        "migration_version": 1,
+        "migration_version": 2,
         "migration_checksum": "1" * 64,
         "started_at": "2026-07-17T01:00:00Z",
         "completed_at": "2026-07-17T01:00:01Z",
@@ -153,14 +154,17 @@ def write_recovery_evidence_archive(
         "backup_sha256": "2" * 64,
         "restored_state_sha256": "3" * 64,
         "state_counts": {
-            "schema_migrations": 1,
+            "schema_migrations": 2,
             "issuers": 1,
             "ocsp_responders": 1,
             "certificates": 1,
             "certificate_issuance_attempts": 1,
             "revocations": 1,
             "crl_publications": 1,
+            "crl_generation_claims": 0,
             "audit_events": 2,
+            "audit_chain_state": 1,
+            "audit_chain_checkpoints": 0,
             "outbox_messages": 1,
             "job_attempts": 1,
             "notification_endpoints": 1,
@@ -448,7 +452,7 @@ def write_multi_node_evidence_archive(
     if extra_field:
         evidence["unexpected"] = "drift"
     (root / "multi-node-verification.json").write_text(json.dumps(evidence), encoding="utf-8")
-    (root / "multi-node-verification.md").write_text("# Multi-node reliability evidence\n", encoding="utf-8")
+    (root / "multi-node-verification.md").write_text("# Audit hash-chain evidence\n", encoding="utf-8")
     (root / "multi-node-test.log").write_text("pass\n", encoding="utf-8")
     if extra_member:
         (root / "unexpected.txt").write_text("unexpected\n", encoding="utf-8")
@@ -456,6 +460,75 @@ def write_multi_node_evidence_archive(
         archive.add(root / "multi-node-verification.json", arcname="multi-node-verification.json")
         archive.add(root / "multi-node-verification.md", arcname="multi-node-verification.md")
         archive.add(root / "multi-node-test.log", arcname="multi-node-test.log")
+        if extra_member:
+            archive.add(root / "unexpected.txt", arcname="unexpected.txt")
+
+def write_audit_chain_evidence_archive(
+    path: Path,
+    *,
+    result: str = "passed",
+    commit: str = "0123456789abcdef0123456789abcdef01234567",
+    extra_field: bool = False,
+    extra_member: bool = False,
+) -> None:
+    root = path.parent / "audit-chain-evidence"
+    if root.exists():
+        shutil.rmtree(root)
+    root.mkdir(parents=True, exist_ok=True)
+    tests = [
+        ("github.com/anothel/anopki/service/internal/store", "TestApplyInitialMigrationBackfillsAuditHashChain"),
+        ("github.com/anothel/anopki/service/internal/store", "TestAuditChainAppendAndVerifyAcrossStores"),
+        ("github.com/anothel/anopki/service/internal/store", "TestAuditChainTamperingDetected"),
+        ("github.com/anothel/anopki/service/internal/store", "TestAuditChainPruneCheckpointPreservesVerification"),
+        ("github.com/anothel/anopki/service/internal/store", "TestAuditChainRejectsInvalidMetadata"),
+        ("github.com/anothel/anopki/service/internal/httpapi", "TestAuditIntegrityEndpoint"),
+    ]
+    checks = [
+        "audit-migration-backfill",
+        "audit-chain-monotonic-index",
+        "audit-chain-canonical-sha256",
+        "audit-chain-tamper-detection",
+        "audit-retention-checkpoint",
+        "audit-tail-state-verification",
+        "audit-invalid-metadata-rejected",
+        "audit-integrity-endpoint",
+        "audit-hash-no-in-place-repair",
+        "sensitive-evidence-exclusion",
+    ]
+    regex = "^(" + "|".join(name for _, name in tests) + ")$"
+    evidence = {
+        "schema_version": 1,
+        "evidence_type": "community_audit_hash_chain_drill",
+        "product": "AnoPKI",
+        "edition": "community",
+        "product_profile": "community-openssl",
+        "commit": commit,
+        "minimum_go_version": "1.25.11",
+        "started_at": "2026-07-17T01:00:00Z",
+        "completed_at": "2026-07-17T01:00:01Z",
+        "result": result,
+        "go_version": "go version go1.25.12 linux/amd64",
+        "test_command": ["go", "test", "-json", "-count=1", "-run", regex, "./internal/store", "./internal/httpapi"],
+        "tests": [{"package": package, "name": name, "status": "pass"} for package, name in tests],
+        "checks": [{"name": name, "status": "passed"} for name in checks],
+        "redaction": {
+            "private_key_markers_found": False,
+            "raw_key_references_in_evidence": False,
+            "sensitive_values_in_evidence": False,
+        },
+        "blocker": "" if result == "passed" else "test failure",
+    }
+    if extra_field:
+        evidence["unexpected"] = "drift"
+    (root / "audit-chain-verification.json").write_text(json.dumps(evidence), encoding="utf-8")
+    (root / "audit-chain-verification.md").write_text("# Multi-node reliability evidence\n", encoding="utf-8")
+    (root / "audit-chain-test.log").write_text("pass\n", encoding="utf-8")
+    if extra_member:
+        (root / "unexpected.txt").write_text("unexpected\n", encoding="utf-8")
+    with tarfile.open(path, "w:gz") as archive:
+        archive.add(root / "audit-chain-verification.json", arcname="audit-chain-verification.json")
+        archive.add(root / "audit-chain-verification.md", arcname="audit-chain-verification.md")
+        archive.add(root / "audit-chain-test.log", arcname="audit-chain-test.log")
         if extra_member:
             archive.add(root / "unexpected.txt", arcname="unexpected.txt")
 
@@ -489,10 +562,11 @@ def write_postgres_recovery_evidence_archive(
         "key-reference-hashes-preserved",
         "signing-and-crl-artifacts-preserved",
         "audit-outbox-webhook-state-preserved",
+        "audit-hash-chain-preserved",
         "sensitive-evidence-exclusion",
     ]
     counts = {
-        "schema_migrations": 1,
+        "schema_migrations": 2,
         "identities": 1,
         "issuers": 1,
         "ocsp_responders": 1,
@@ -503,7 +577,10 @@ def write_postgres_recovery_evidence_archive(
         "certificate_issuance_attempts": 1,
         "revocations": 1,
         "crl_publications": 1,
+        "crl_generation_claims": 0,
         "audit_events": 2,
+        "audit_chain_state": 1,
+        "audit_chain_checkpoints": 0,
         "outbox_messages": 1,
         "job_attempts": 1,
         "webhook_deliveries": 1,
@@ -655,6 +732,7 @@ def write_valid_dist(dist: Path) -> tuple[Path, Path]:
     write_issuer_rollover_evidence_archive(dist / "anopki-issuer-rollover-verification.tar.gz")
     write_postgres_recovery_evidence_archive(dist / "anopki-postgres-recovery-verification.tar.gz")
     write_multi_node_evidence_archive(dist / "anopki-multi-node-verification.tar.gz")
+    write_audit_chain_evidence_archive(dist / "anopki-audit-chain-verification.tar.gz")
     backend = backend_info()
     (dist / "anopki-backend-info.json").write_text(json.dumps(backend), encoding="utf-8")
     (dist / "anopki-release-metadata.json").write_text(json.dumps(release_metadata(backend)), encoding="utf-8")
@@ -1198,6 +1276,60 @@ def test_unexpected_multi_node_member_fails() -> None:
     assert result.returncode == 1
     assert "unexpected multi-node evidence members" in result.stderr
 
+def test_missing_audit_chain_evidence_fails() -> None:
+    with tempfile.TemporaryDirectory() as tmp:
+        dist = Path(tmp)
+        write_valid_dist(dist)
+        (dist / "anopki-audit-chain-verification.tar.gz").unlink()
+        rewrite_checksums(dist)
+        result = run_validator(dist)
+    assert result.returncode == 1
+    assert "missing audit-chain verification evidence" in result.stderr
+
+
+def test_failed_audit_chain_evidence_fails() -> None:
+    with tempfile.TemporaryDirectory() as tmp:
+        dist = Path(tmp)
+        write_valid_dist(dist)
+        write_audit_chain_evidence_archive(dist / "anopki-audit-chain-verification.tar.gz", result="failed")
+        rewrite_checksums(dist)
+        result = run_validator(dist)
+    assert result.returncode == 1
+    assert "audit-chain verification drill did not pass" in result.stderr
+
+
+def test_audit_chain_commit_mismatch_fails() -> None:
+    with tempfile.TemporaryDirectory() as tmp:
+        dist = Path(tmp)
+        write_valid_dist(dist)
+        write_audit_chain_evidence_archive(dist / "anopki-audit-chain-verification.tar.gz", commit="f" * 40)
+        rewrite_checksums(dist)
+        result = run_validator(dist)
+    assert result.returncode == 1
+    assert "audit-chain verification commit does not match" in result.stderr
+
+
+def test_unknown_audit_chain_field_fails() -> None:
+    with tempfile.TemporaryDirectory() as tmp:
+        dist = Path(tmp)
+        write_valid_dist(dist)
+        write_audit_chain_evidence_archive(dist / "anopki-audit-chain-verification.tar.gz", extra_field=True)
+        rewrite_checksums(dist)
+        result = run_validator(dist)
+    assert result.returncode == 1
+    assert "audit-chain verification evidence has unknown fields" in result.stderr
+
+
+def test_unexpected_audit_chain_member_fails() -> None:
+    with tempfile.TemporaryDirectory() as tmp:
+        dist = Path(tmp)
+        write_valid_dist(dist)
+        write_audit_chain_evidence_archive(dist / "anopki-audit-chain-verification.tar.gz", extra_member=True)
+        rewrite_checksums(dist)
+        result = run_validator(dist)
+    assert result.returncode == 1
+    assert "unexpected audit-chain evidence members" in result.stderr
+
 
 def test_missing_postgres_recovery_evidence_fails() -> None:
     with tempfile.TemporaryDirectory() as tmp:
@@ -1321,6 +1453,11 @@ def main() -> None:
     test_multi_node_commit_mismatch_fails()
     test_unknown_multi_node_field_fails()
     test_unexpected_multi_node_member_fails()
+    test_missing_audit_chain_evidence_fails()
+    test_failed_audit_chain_evidence_fails()
+    test_audit_chain_commit_mismatch_fails()
+    test_unknown_audit_chain_field_fails()
+    test_unexpected_audit_chain_member_fails()
     test_missing_postgres_recovery_evidence_fails()
     test_failed_postgres_recovery_evidence_fails()
     test_postgres_recovery_commit_mismatch_fails()

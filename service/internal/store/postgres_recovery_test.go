@@ -51,7 +51,7 @@ func TestPostgresRecoveryDrillMigrationRollbackIntegration(t *testing.T) {
 	if err != nil {
 		t.Fatalf("beginPostgresMigrationTx returned error: %v", err)
 	}
-	if err := insertSchemaMigration(ctx, tx, "pgx", 2, "rollback-probe", true); err != nil {
+	if err := insertSchemaMigration(ctx, tx, "pgx", 3, "rollback-probe", true); err != nil {
 		t.Fatalf("insertSchemaMigration returned error: %v", err)
 	}
 	if _, err := tx.ExecContext(ctx, `CREATE TABLE postgres_recovery_rollback_probe (id INTEGER PRIMARY KEY)`); err != nil {
@@ -70,7 +70,7 @@ func TestPostgresRecoveryDrillMigrationRollbackIntegration(t *testing.T) {
 		t.Fatalf("rollback probe table survived failed transaction: %q", probeName.String)
 	}
 	var versionCount int
-	if err := db.QueryRowContext(ctx, `SELECT COUNT(*) FROM schema_migrations WHERE version = 2`).Scan(&versionCount); err != nil {
+	if err := db.QueryRowContext(ctx, `SELECT COUNT(*) FROM schema_migrations WHERE version = 3`).Scan(&versionCount); err != nil {
 		t.Fatalf("query rollback migration row: %v", err)
 	}
 	if versionCount != 0 {

@@ -365,9 +365,33 @@ type AuditEvent struct {
 	ResourceType      string
 	ResourceID        string
 	MetadataJSON      string
+	ChainIndex        int64
+	HashAlgorithm     string
 	PreviousEventHash string
 	EventHash         string
 	CreatedAt         time.Time
+}
+
+type AuditChainCheckpoint struct {
+	ID                string
+	ThroughChainIndex int64
+	ThroughEventID    string
+	ThroughEventHash  string
+	RetentionCutoff   time.Time
+	CreatedAt         time.Time
+}
+
+type AuditChainVerification struct {
+	Verified           bool
+	HashAlgorithm      string
+	RetainedEventCount int
+	TotalEventCount    int64
+	TailChainIndex     int64
+	TailEventID        string
+	TailEventHash      string
+	Checkpoint         AuditChainCheckpoint
+	BrokenChainIndex   int64
+	Reason             string
 }
 
 type OutboxMessage struct {

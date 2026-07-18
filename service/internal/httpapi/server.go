@@ -269,6 +269,7 @@ func (s *Server) registerRoutes() {
 	s.mux.HandleFunc("POST /ocsp", s.respondOCSP)
 
 	s.mux.HandleFunc("GET /audit-events", s.listAuditEvents)
+	s.mux.HandleFunc("GET /audit-events/integrity", s.getAuditIntegrity)
 	s.mux.HandleFunc("POST /audit-events/retention/prune", s.pruneAuditEvents)
 	s.mux.HandleFunc("POST /audit-events/repair/issuance", s.repairIssuanceAuditEvents)
 	s.mux.HandleFunc("GET /trust/anchors", s.listTrustAnchors)
@@ -1084,6 +1085,15 @@ func auditEventQueryFromRequest(r *http.Request) (lifecycle.AuditEventQuery, err
 	return query, nil
 }
 
+func (s *Server) getAuditIntegrity(w http.ResponseWriter, r *http.Request) {
+	verification, err := s.service.VerifyAuditChain(r.Context())
+	if err != nil {
+		s.writeError(w, r, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, toAuditChainVerificationResponse(verification))
+}
+
 func (s *Server) pruneAuditEvents(w http.ResponseWriter, r *http.Request) {
 	var req pruneAuditEventsRequest
 	if err := decodeJSON(r, &req); err != nil {
@@ -1444,6 +1454,8 @@ func publicErrorMessage(err error) string {
 		return domain.ErrRateLimited.Error()
 	case errors.Is(err, domain.ErrInvalidTransition):
 		return domain.ErrInvalidTransition.Error()
+	case errors.Is(err, domain.ErrAuditChainConflict):
+		return domain.ErrAuditChainConflict.Error()
 	case errors.Is(err, domain.ErrIdentityNotFound):
 		return domain.ErrIdentityNotFound.Error()
 	case errors.Is(err, domain.ErrIssuerNotFound):
@@ -1510,6 +1522,8 @@ func statusForError(err error) int {
 	case errors.Is(err, domain.ErrACMEAccountDeactivated):
 		return http.StatusUnauthorized
 	case errors.Is(err, domain.ErrInvalidTransition):
+		return http.StatusConflict
+	case errors.Is(err, domain.ErrAuditChainConflict):
 		return http.StatusConflict
 	case errors.Is(err, domain.ErrIdentityNotFound),
 		errors.Is(err, domain.ErrIssuerNotFound),
@@ -1950,13 +1964,39 @@ type crlPublicationResponse struct {
 }
 
 type auditEventResponse struct {
-	ID           string    `json:"id"`
-	Actor        string    `json:"actor"`
-	Action       string    `json:"action"`
-	ResourceType string    `json:"resource_type"`
-	ResourceID   string    `json:"resource_id"`
-	MetadataJSON string    `json:"metadata_json"`
-	CreatedAt    time.Time `json:"created_at"`
+	ID                string    `json:"id"`
+	Actor             string    `json:"actor"`
+	Action            string    `json:"action"`
+	ResourceType      string    `json:"resource_type"`
+	ResourceID        string    `json:"resource_id"`
+	MetadataJSON      string    `json:"metadata_json"`
+	ChainIndex        int64     `json:"chain_index"`
+	HashAlgorithm     string    `json:"hash_algorithm"`
+	PreviousEventHash string    `json:"previous_event_hash"`
+	EventHash         string    `json:"event_hash"`
+	CreatedAt         time.Time `json:"created_at"`
+}
+
+type auditChainCheckpointResponse struct {
+	ID                string    `json:"id"`
+	ThroughChainIndex int64     `json:"through_chain_index"`
+	ThroughEventID    string    `json:"through_event_id"`
+	ThroughEventHash  string    `json:"through_event_hash"`
+	RetentionCutoff   time.Time `json:"retention_cutoff"`
+	CreatedAt         time.Time `json:"created_at"`
+}
+
+type auditChainVerificationResponse struct {
+	Verified           bool                         `json:"verified"`
+	HashAlgorithm      string                       `json:"hash_algorithm"`
+	RetainedEventCount int                          `json:"retained_event_count"`
+	TotalEventCount    int64                        `json:"total_event_count"`
+	TailChainIndex     int64                        `json:"tail_chain_index"`
+	TailEventID        string                       `json:"tail_event_id"`
+	TailEventHash      string                       `json:"tail_event_hash"`
+	Checkpoint         auditChainCheckpointResponse `json:"checkpoint"`
+	BrokenChainIndex   int64                        `json:"broken_chain_index"`
+	Reason             string                       `json:"reason"`
 }
 
 type repairIssuanceAuditEventsResponse struct {
@@ -2275,13 +2315,26 @@ func toCRLPublicationResponse(publication domain.CRLPublication) crlPublicationR
 
 func toAuditEventResponse(event domain.AuditEvent) auditEventResponse {
 	return auditEventResponse{
-		ID:           event.ID,
-		Actor:        event.Actor,
-		Action:       event.Action,
-		ResourceType: event.ResourceType,
-		ResourceID:   event.ResourceID,
-		MetadataJSON: event.MetadataJSON,
-		CreatedAt:    event.CreatedAt,
+		ID: event.ID, Actor: event.Actor, Action: event.Action,
+		ResourceType: event.ResourceType, ResourceID: event.ResourceID,
+		MetadataJSON: event.MetadataJSON, ChainIndex: event.ChainIndex,
+		HashAlgorithm: event.HashAlgorithm, PreviousEventHash: event.PreviousEventHash,
+		EventHash: event.EventHash, CreatedAt: event.CreatedAt,
+	}
+}
+
+func toAuditChainVerificationResponse(value domain.AuditChainVerification) auditChainVerificationResponse {
+	return auditChainVerificationResponse{
+		Verified: value.Verified, HashAlgorithm: value.HashAlgorithm,
+		RetainedEventCount: value.RetainedEventCount, TotalEventCount: value.TotalEventCount,
+		TailChainIndex: value.TailChainIndex, TailEventID: value.TailEventID,
+		TailEventHash: value.TailEventHash, BrokenChainIndex: value.BrokenChainIndex,
+		Reason: value.Reason,
+		Checkpoint: auditChainCheckpointResponse{
+			ID: value.Checkpoint.ID, ThroughChainIndex: value.Checkpoint.ThroughChainIndex,
+			ThroughEventID: value.Checkpoint.ThroughEventID, ThroughEventHash: value.Checkpoint.ThroughEventHash,
+			RetentionCutoff: value.Checkpoint.RetentionCutoff, CreatedAt: value.Checkpoint.CreatedAt,
+		},
 	}
 }
 

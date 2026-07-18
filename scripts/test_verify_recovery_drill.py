@@ -22,7 +22,7 @@ SPEC.loader.exec_module(MODULE)
 
 
 def context(work_dir: Path):
-    migration = (ROOT / MODULE.MIGRATION).read_bytes()
+    migration = b"\x00".join((ROOT / path).read_bytes() for path in MODULE.MIGRATIONS)
     return MODULE.DrillContext(
         root=ROOT,
         work_dir=work_dir,
@@ -39,7 +39,7 @@ def test_successful_drill_writes_redacted_evidence() -> None:
         markdown = (out / "recovery-verification.md").read_text(encoding="utf-8")
     assert evidence["result"] == "passed"
     assert evidence["state_counts"] == MODULE.EXPECTED_COUNTS
-    assert len(evidence["checks"]) == 11
+    assert len(evidence["checks"]) == 12
     assert json.loads(json_text)["commit"] == "a" * 40
     combined = (json_text + markdown).lower()
     for sensitive in MODULE.SENSITIVE_FIXTURES:

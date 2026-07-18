@@ -3594,6 +3594,10 @@ func (s *Service) ListAuditEvents(ctx context.Context) ([]domain.AuditEvent, err
 	return s.repo.ListAuditEvents(ctx)
 }
 
+func (s *Service) VerifyAuditChain(ctx context.Context) (domain.AuditChainVerification, error) {
+	return s.repo.VerifyAuditChain(ctx)
+}
+
 func (s *Service) ListAuditEventsQuery(ctx context.Context, query AuditEventQuery) ([]domain.AuditEvent, error) {
 	if query.Sort != "" && query.Sort != "asc" && query.Sort != "desc" {
 		return nil, domain.ErrInvalidRequest
@@ -4295,6 +4299,8 @@ func auditErrorCode(err error) string {
 		return "rate_limited"
 	case errors.Is(err, domain.ErrInvalidTransition):
 		return "invalid_lifecycle_transition"
+	case errors.Is(err, domain.ErrAuditChainConflict):
+		return "audit_chain_conflict"
 	case errors.Is(err, domain.ErrIdentityNotFound):
 		return "identity_not_found"
 	case errors.Is(err, domain.ErrIssuerNotFound):

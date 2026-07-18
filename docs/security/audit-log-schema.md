@@ -26,4 +26,17 @@ requirements.
 
 ## Gaps
 
-- evidence pack for policy changes
+- external immutable anchoring or signed SIEM export for the latest checkpoint
+  and chain tail
+
+
+## Tamper-Evidence Fields
+
+- `chain_index`: monotonic insertion order independent of event timestamp.
+- `hash_algorithm`: currently `sha256-v1`.
+- `previous_event_hash`: the prior retained or checkpointed event hash.
+- `event_hash`: canonical event digest.
+
+Retention checkpoints preserve the last removed event hash so verification can
+continue after pruning. Hashes are evidence fields and must not be rewritten in
+place.

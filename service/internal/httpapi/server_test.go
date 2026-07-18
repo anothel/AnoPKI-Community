@@ -153,6 +153,7 @@ func TestPublicErrorMessageAndStatusForErrorMapping(t *testing.T) {
 		{name: "ocsp response failed", err: domain.ErrOCSPResponseFailed, wantMessage: domain.ErrOCSPResponseFailed.Error(), wantStatus: http.StatusBadGateway},
 		{name: "storage failure", err: domain.ErrStorageFailure, wantMessage: domain.ErrStorageFailure.Error(), wantStatus: http.StatusInternalServerError},
 		{name: "invalid transition", err: domain.ErrInvalidTransition, wantMessage: domain.ErrInvalidTransition.Error(), wantStatus: http.StatusConflict},
+		{name: "audit chain conflict", err: domain.ErrAuditChainConflict, wantMessage: domain.ErrAuditChainConflict.Error(), wantStatus: http.StatusConflict},
 		{name: "issuance attempt not found internal only", err: domain.ErrIssuanceAttemptNotFound, wantMessage: "internal server error", wantStatus: http.StatusInternalServerError},
 		{name: "webhook delivery not found internal only", err: domain.ErrWebhookDeliveryNotFound, wantMessage: "internal server error", wantStatus: http.StatusInternalServerError},
 		{name: "unknown", err: errors.New("unexpected"), wantMessage: "internal server error", wantStatus: http.StatusInternalServerError},
@@ -3148,6 +3149,17 @@ func TestListAuditEvents(t *testing.T) {
 	}
 }
 
+func TestAuditIntegrityEndpoint(t *testing.T) {
+	api := newTestAPI(t)
+	api.createIssuer(t)
+	var verification auditChainVerificationResponse
+	status := api.doJSON(t, http.MethodGet, "/audit-events/integrity", "operator", nil, &verification)
+	assertStatus(t, status, http.StatusOK)
+	if !verification.Verified || verification.HashAlgorithm != "sha256-v1" || verification.RetainedEventCount == 0 || verification.TailEventHash == "" {
+		t.Fatalf("audit integrity response = %#v", verification)
+	}
+}
+
 func TestListAuditEventsFiltersSortsAndPaginates(t *testing.T) {
 	api := newTestAPI(t)
 	base := testNow.Add(-time.Hour)
@@ -5001,13 +5013,17 @@ type apiCRLPublication struct {
 }
 
 type apiAuditEvent struct {
-	ID           string    `json:"id"`
-	Actor        string    `json:"actor"`
-	Action       string    `json:"action"`
-	ResourceType string    `json:"resource_type"`
-	ResourceID   string    `json:"resource_id"`
-	MetadataJSON string    `json:"metadata_json"`
-	CreatedAt    time.Time `json:"created_at"`
+	ID                string    `json:"id"`
+	Actor             string    `json:"actor"`
+	Action            string    `json:"action"`
+	ResourceType      string    `json:"resource_type"`
+	ResourceID        string    `json:"resource_id"`
+	MetadataJSON      string    `json:"metadata_json"`
+	ChainIndex        int64     `json:"chain_index"`
+	HashAlgorithm     string    `json:"hash_algorithm"`
+	PreviousEventHash string    `json:"previous_event_hash"`
+	EventHash         string    `json:"event_hash"`
+	CreatedAt         time.Time `json:"created_at"`
 }
 
 type ocspResponderValidationRequest struct {

@@ -35,4 +35,5 @@ var (
 	ErrOCSPResponseFailed            = errors.New("ocsp response failed")
 	ErrOCSPResponderValidationFailed = errors.New("ocsp responder validation failed")
 	ErrStorageFailure                = errors.New("storage failure")
+	ErrAuditChainConflict            = errors.New("audit chain conflict")
 )

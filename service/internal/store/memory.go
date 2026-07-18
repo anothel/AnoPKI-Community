@@ -25,6 +25,7 @@ type MemoryStore struct {
 	crls              map[string]domain.CRLPublication
 	crlClaims         map[string]domain.CRLGenerationClaim
 	auditEvents       []domain.AuditEvent
+	auditCheckpoints  []domain.AuditChainCheckpoint
 	outbox            map[string]domain.OutboxMessage
 	jobAttempts       map[string]domain.JobAttempt
 	webhookDeliveries map[string]domain.WebhookDelivery
@@ -49,6 +50,7 @@ func NewMemoryStore() *MemoryStore {
 		crls:              make(map[string]domain.CRLPublication),
 		crlClaims:         make(map[string]domain.CRLGenerationClaim),
 		auditEvents:       make([]domain.AuditEvent, 0),
+		auditCheckpoints:  make([]domain.AuditChainCheckpoint, 0),
 		outbox:            make(map[string]domain.OutboxMessage),
 		jobAttempts:       make(map[string]domain.JobAttempt),
 		webhookDeliveries: make(map[string]domain.WebhookDelivery),
@@ -77,6 +79,7 @@ func (s *MemoryStore) WithinTx(ctx context.Context, fn func(Repository) error) e
 		crls:              cloneCRLPublications(s.crls),
 		crlClaims:         cloneCRLGenerationClaims(s.crlClaims),
 		auditEvents:       cloneAuditEvents(s.auditEvents),
+		auditCheckpoints:  cloneAuditCheckpoints(s.auditCheckpoints),
 		outbox:            cloneOutboxMessages(s.outbox),
 		jobAttempts:       cloneJobAttempts(s.jobAttempts),
 		webhookDeliveries: cloneWebhookDeliveries(s.webhookDeliveries),
@@ -102,6 +105,7 @@ func (s *MemoryStore) WithinTx(ctx context.Context, fn func(Repository) error) e
 	s.crls = tx.crls
 	s.crlClaims = tx.crlClaims
 	s.auditEvents = tx.auditEvents
+	s.auditCheckpoints = tx.auditCheckpoints
 	s.outbox = tx.outbox
 	s.jobAttempts = tx.jobAttempts
 	s.webhookDeliveries = tx.webhookDeliveries
@@ -519,12 +523,12 @@ func (s *MemoryStore) CreateAuditEvent(ctx context.Context, event domain.AuditEv
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	previousHash := ""
-	if len(s.auditEvents) > 0 {
-		previousHash = s.auditEvents[len(s.auditEvents)-1].EventHash
+	previousHash, previousIndex := memoryAuditTail(s.auditEvents, s.auditCheckpoints)
+	hashed, err := withAuditEventHash(previousHash, previousIndex+1, event)
+	if err != nil {
+		return err
 	}
-	event = withAuditEventHash(previousHash, event)
-	s.auditEvents = append(s.auditEvents, event)
+	s.auditEvents = append(s.auditEvents, hashed)
 	return nil
 }
 
@@ -547,18 +551,17 @@ func (s *MemoryStore) ListAuditEventsQuery(ctx context.Context, query AuditEvent
 func (s *MemoryStore) DeleteAuditEventsBefore(ctx context.Context, before time.Time) (int, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-
-	kept := s.auditEvents[:0]
-	deleted := 0
-	for _, event := range s.auditEvents {
-		if event.CreatedAt.Before(before) {
-			deleted++
-			continue
-		}
-		kept = append(kept, event)
+	verification := verifyMemoryAuditChain(s.auditEvents, s.auditCheckpoints)
+	if !verification.Verified {
+		return 0, domain.ErrAuditChainConflict
 	}
-	s.auditEvents = kept
-	return deleted, nil
+	return pruneMemoryAuditEvents(&s.auditEvents, &s.auditCheckpoints, before)
+}
+
+func (s *MemoryStore) VerifyAuditChain(ctx context.Context) (domain.AuditChainVerification, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return verifyMemoryAuditChain(s.auditEvents, s.auditCheckpoints), nil
 }
 
 func (s *MemoryStore) CreateOutboxMessage(ctx context.Context, message domain.OutboxMessage) error {
@@ -1318,6 +1321,7 @@ type memoryTx struct {
 	crls              map[string]domain.CRLPublication
 	crlClaims         map[string]domain.CRLGenerationClaim
 	auditEvents       []domain.AuditEvent
+	auditCheckpoints  []domain.AuditChainCheckpoint
 	outbox            map[string]domain.OutboxMessage
 	jobAttempts       map[string]domain.JobAttempt
 	webhookDeliveries map[string]domain.WebhookDelivery
@@ -1597,12 +1601,12 @@ func (tx *memoryTx) DeleteCRLGenerationClaimIfCurrent(ctx context.Context, curre
 }
 
 func (tx *memoryTx) CreateAuditEvent(ctx context.Context, event domain.AuditEvent) error {
-	previousHash := ""
-	if len(tx.auditEvents) > 0 {
-		previousHash = tx.auditEvents[len(tx.auditEvents)-1].EventHash
+	previousHash, previousIndex := memoryAuditTail(tx.auditEvents, tx.auditCheckpoints)
+	hashed, err := withAuditEventHash(previousHash, previousIndex+1, event)
+	if err != nil {
+		return err
 	}
-	event = withAuditEventHash(previousHash, event)
-	tx.auditEvents = append(tx.auditEvents, event)
+	tx.auditEvents = append(tx.auditEvents, hashed)
 	return nil
 }
 
@@ -1617,17 +1621,15 @@ func (tx *memoryTx) ListAuditEventsQuery(ctx context.Context, query AuditEventQu
 }
 
 func (tx *memoryTx) DeleteAuditEventsBefore(ctx context.Context, before time.Time) (int, error) {
-	kept := tx.auditEvents[:0]
-	deleted := 0
-	for _, event := range tx.auditEvents {
-		if event.CreatedAt.Before(before) {
-			deleted++
-			continue
-		}
-		kept = append(kept, event)
+	verification := verifyMemoryAuditChain(tx.auditEvents, tx.auditCheckpoints)
+	if !verification.Verified {
+		return 0, domain.ErrAuditChainConflict
 	}
-	tx.auditEvents = kept
-	return deleted, nil
+	return pruneMemoryAuditEvents(&tx.auditEvents, &tx.auditCheckpoints, before)
+}
+
+func (tx *memoryTx) VerifyAuditChain(ctx context.Context) (domain.AuditChainVerification, error) {
+	return verifyMemoryAuditChain(tx.auditEvents, tx.auditCheckpoints), nil
 }
 
 func (tx *memoryTx) CreateOutboxMessage(ctx context.Context, message domain.OutboxMessage) error {
@@ -2083,6 +2085,62 @@ func latestCRLPublicationByIssuer(publications map[string]domain.CRLPublication,
 		return domain.CRLPublication{}, domain.ErrCRLPublicationNotFound
 	}
 	return latest, nil
+}
+
+func memoryAuditTail(events []domain.AuditEvent, checkpoints []domain.AuditChainCheckpoint) (string, int64) {
+	if len(events) > 0 {
+		last := events[len(events)-1]
+		return last.EventHash, last.ChainIndex
+	}
+	checkpoint := latestMemoryAuditCheckpoint(checkpoints)
+	return checkpoint.ThroughEventHash, checkpoint.ThroughChainIndex
+}
+
+func latestMemoryAuditCheckpoint(checkpoints []domain.AuditChainCheckpoint) domain.AuditChainCheckpoint {
+	if len(checkpoints) == 0 {
+		return domain.AuditChainCheckpoint{}
+	}
+	return checkpoints[len(checkpoints)-1]
+}
+
+func verifyMemoryAuditChain(events []domain.AuditEvent, checkpoints []domain.AuditChainCheckpoint) domain.AuditChainVerification {
+	checkpoint := latestMemoryAuditCheckpoint(checkpoints)
+	tailHash, tailIndex := memoryAuditTail(events, checkpoints)
+	tailID := checkpoint.ThroughEventID
+	if len(events) > 0 {
+		tailID = events[len(events)-1].ID
+	}
+	return verifyAuditChain(events, checkpoint, tailIndex, tailID, tailHash, tailIndex)
+}
+
+func pruneMemoryAuditEvents(events *[]domain.AuditEvent, checkpoints *[]domain.AuditChainCheckpoint, before time.Time) (int, error) {
+	deleted := 0
+	for deleted < len(*events) && (*events)[deleted].CreatedAt.Before(before) {
+		deleted++
+	}
+	if deleted == 0 {
+		return 0, nil
+	}
+	through := (*events)[deleted-1]
+	checkpoint := domain.AuditChainCheckpoint{
+		ID:                auditCheckpointID(through.ChainIndex, through.ID, through.EventHash, before),
+		ThroughChainIndex: through.ChainIndex,
+		ThroughEventID:    through.ID,
+		ThroughEventHash:  through.EventHash,
+		RetentionCutoff:   before.UTC(),
+		CreatedAt:         time.Now().UTC(),
+	}
+	*checkpoints = append(*checkpoints, checkpoint)
+	kept := make([]domain.AuditEvent, len(*events)-deleted)
+	copy(kept, (*events)[deleted:])
+	*events = kept
+	return deleted, nil
+}
+
+func cloneAuditCheckpoints(src []domain.AuditChainCheckpoint) []domain.AuditChainCheckpoint {
+	dst := make([]domain.AuditChainCheckpoint, len(src))
+	copy(dst, src)
+	return dst
 }
 
 func cloneAuditEvents(src []domain.AuditEvent) []domain.AuditEvent {

@@ -10,26 +10,19 @@ import (
 	"errors"
 	"fmt"
 	"time"
+
+	"github.com/anothel/anopki/service/internal/domain"
 )
 
-//go:embed migrations/0001_init.sql migrations/0001_init_sqlite.sql
+//go:embed migrations/0001_init.sql migrations/0001_init_sqlite.sql migrations/0002_audit_hash_chain.sql migrations/0002_audit_hash_chain_sqlite.sql
 var migrationFiles embed.FS
 
 const initialMigrationVersion = 1
+const auditHashMigrationVersion = 2
 const sqliteMigrationBusyTimeoutMS = 5000
 const postgresMigrationAdvisoryLockID int64 = 5847545710944921361
 
 func ApplyInitialMigration(ctx context.Context, db *sql.DB, driver string) error {
-	path, err := initialMigrationPath(driver)
-	if err != nil {
-		return err
-	}
-
-	sqlBytes, err := migrationFiles.ReadFile(path)
-	if err != nil {
-		return fmt.Errorf("read initial migration: %w", err)
-	}
-
 	tx, err := beginMigrationTx(ctx, db, driver)
 	if err != nil {
 		return err
@@ -39,45 +32,146 @@ func ApplyInitialMigration(ctx context.Context, db *sql.DB, driver string) error
 	if err := createSchemaMigrationsTable(ctx, tx, driver); err != nil {
 		return err
 	}
-	checksum := migrationChecksum(sqlBytes)
-	applied, err := checkSchemaMigration(ctx, tx, initialMigrationVersion, checksum)
+	migrations, err := migrationDefinitions(driver)
 	if err != nil {
 		return err
 	}
-	if !applied {
-		if err := insertSchemaMigration(ctx, tx, driver, initialMigrationVersion, checksum, true); err != nil {
+	for _, migration := range migrations {
+		sqlBytes, err := migrationFiles.ReadFile(migration.path)
+		if err != nil {
+			return fmt.Errorf("read migration %d: %w", migration.version, err)
+		}
+		checksum := migrationChecksum(sqlBytes)
+		applied, err := checkSchemaMigration(ctx, tx, migration.version, checksum)
+		if err != nil {
+			return err
+		}
+		if applied {
+			continue
+		}
+		if err := insertSchemaMigration(ctx, tx, driver, migration.version, checksum, true); err != nil {
 			return err
 		}
 		if _, err := tx.ExecContext(ctx, string(sqlBytes)); err != nil {
-			return fmt.Errorf("execute initial migration: %w", err)
+			return fmt.Errorf("execute migration %d: %w", migration.version, err)
 		}
-	}
-	if err := applyCompatibilityMigrations(ctx, tx, driver); err != nil {
-		return err
-	}
-	if !applied {
-		if err := markSchemaMigrationClean(ctx, tx, driver, initialMigrationVersion, checksum); err != nil {
+		if migration.version == initialMigrationVersion {
+			if err := applyCompatibilityMigrations(ctx, tx, driver); err != nil {
+				return err
+			}
+		}
+		if migration.version == auditHashMigrationVersion {
+			if err := backfillAuditHashChain(ctx, tx); err != nil {
+				return err
+			}
+		}
+		if err := markSchemaMigrationClean(ctx, tx, driver, migration.version, checksum); err != nil {
 			return err
 		}
+	}
+	// Older databases may have version 1 applied before compatibility columns were added.
+	if err := applyCompatibilityMigrations(ctx, tx, driver); err != nil {
+		return err
 	}
 	return tx.Commit()
 }
 
 func CheckInitialMigration(ctx context.Context, db *sql.DB, driver string) error {
-	path, err := initialMigrationPath(driver)
+	migrations, err := migrationDefinitions(driver)
 	if err != nil {
 		return err
 	}
-	sqlBytes, err := migrationFiles.ReadFile(path)
-	if err != nil {
-		return fmt.Errorf("read initial migration: %w", err)
+	for _, migration := range migrations {
+		sqlBytes, err := migrationFiles.ReadFile(migration.path)
+		if err != nil {
+			return fmt.Errorf("read migration %d: %w", migration.version, err)
+		}
+		applied, err := checkSchemaMigration(ctx, db, migration.version, migrationChecksum(sqlBytes))
+		if err != nil {
+			return err
+		}
+		if !applied {
+			return fmt.Errorf("schema migration version %d is not applied", migration.version)
+		}
 	}
-	applied, err := checkSchemaMigration(ctx, db, initialMigrationVersion, migrationChecksum(sqlBytes))
-	if err != nil {
-		return err
+	return nil
+}
+
+type migrationDefinition struct {
+	version int
+	path    string
+}
+
+func migrationDefinitions(driver string) ([]migrationDefinition, error) {
+	switch driver {
+	case "sqlite":
+		return []migrationDefinition{
+			{version: initialMigrationVersion, path: "migrations/0001_init_sqlite.sql"},
+			{version: auditHashMigrationVersion, path: "migrations/0002_audit_hash_chain_sqlite.sql"},
+		}, nil
+	case "pgx":
+		return []migrationDefinition{
+			{version: initialMigrationVersion, path: "migrations/0001_init.sql"},
+			{version: auditHashMigrationVersion, path: "migrations/0002_audit_hash_chain.sql"},
+		}, nil
+	default:
+		return nil, fmt.Errorf("unsupported database driver %q", driver)
 	}
-	if !applied {
-		return fmt.Errorf("schema migration version %d is not applied", initialMigrationVersion)
+}
+
+func backfillAuditHashChain(ctx context.Context, exec sqlExecutor) error {
+	rows, err := exec.QueryContext(ctx, `
+SELECT id, actor, action, resource_type, resource_id, metadata_json, created_at
+FROM audit_events
+ORDER BY created_at, id`)
+	if err != nil {
+		return fmt.Errorf("list audit events for hash backfill: %w", err)
+	}
+	events := make([]domain.AuditEvent, 0)
+	for rows.Next() {
+		event, err := scanLegacyAuditEvent(rows)
+		if err != nil {
+			_ = rows.Close()
+			return err
+		}
+		events = append(events, event)
+	}
+	if err := rows.Err(); err != nil {
+		_ = rows.Close()
+		return fmt.Errorf("iterate audit events for hash backfill: %w", err)
+	}
+	if err := rows.Close(); err != nil {
+		return fmt.Errorf("close audit events for hash backfill: %w", err)
+	}
+
+	previousHash := ""
+	var chainIndex int64
+	tailID := ""
+	for _, original := range events {
+		chainIndex++
+		event, err := withAuditEventHash(previousHash, chainIndex, original)
+		if err != nil {
+			return fmt.Errorf("hash audit event %s during migration: %w", original.ID, err)
+		}
+		if _, err := exec.ExecContext(ctx, `
+UPDATE audit_events
+SET chain_index = $1, hash_algorithm = $2, previous_event_hash = $3, event_hash = $4
+WHERE id = $5`, event.ChainIndex, event.HashAlgorithm, event.PreviousEventHash, event.EventHash, event.ID); err != nil {
+			return fmt.Errorf("backfill audit event %s: %w", event.ID, err)
+		}
+		previousHash = event.EventHash
+		tailID = event.ID
+	}
+	if _, err := exec.ExecContext(ctx, `
+UPDATE audit_chain_state
+SET tail_chain_index = $1, tail_event_id = $2, tail_event_hash = $3, total_event_count = $4, updated_at = $5
+WHERE id = 1`, chainIndex, tailID, previousHash, chainIndex, formatSQLTime(time.Now())); err != nil {
+		return fmt.Errorf("initialize audit chain state: %w", err)
+	}
+	if _, err := exec.ExecContext(ctx, `
+CREATE UNIQUE INDEX IF NOT EXISTS idx_audit_events_chain_index
+ON audit_events(chain_index)`); err != nil {
+		return fmt.Errorf("create audit chain index: %w", err)
 	}
 	return nil
 }
@@ -159,17 +253,6 @@ func (tx *migrationTx) Rollback() {
 	}
 	tx.done = true
 	_ = tx.rollback()
-}
-
-func initialMigrationPath(driver string) (string, error) {
-	switch driver {
-	case "sqlite":
-		return "migrations/0001_init_sqlite.sql", nil
-	case "pgx":
-		return "migrations/0001_init.sql", nil
-	default:
-		return "", fmt.Errorf("unsupported database driver %q", driver)
-	}
 }
 
 func migrationChecksum(sqlBytes []byte) string {

@@ -427,6 +427,13 @@
         "responses": {"200": {"$ref": "#/components/responses/AuditEventList"}, "default": {"$ref": "#/components/responses/Error"}}
       }
     },
+    "/audit-events/integrity": {
+      "get": {
+        "tags": ["audit"],
+        "operationId": "getAuditIntegrity",
+        "responses": {"200": {"$ref": "#/components/responses/AuditChainVerification"}, "default": {"$ref": "#/components/responses/Error"}}
+      }
+    },
     "/audit-events/retention/prune": {
       "post": {
         "tags": ["audit"],
@@ -597,6 +604,7 @@
       "APIKeyList": {"description": "API key list", "content": {"application/json": {"schema": {"type": "array", "items": {"$ref": "#/components/schemas/APIKey"}}}}},
       "APIKeyWithToken": {"description": "API key with one-time token", "content": {"application/json": {"schema": {"allOf": [{"$ref": "#/components/schemas/APIKey"}, {"type": "object", "properties": {"token": {"type": "string"}}}]}}}},
       "AuditEventList": {"description": "Audit event list", "content": {"application/json": {"schema": {"type": "array", "items": {"$ref": "#/components/schemas/AuditEvent"}}}}},
+      "AuditChainVerification": {"description": "Audit hash-chain verification", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/AuditChainVerification"}}}},
       "AuditRetentionPrune": {"description": "Audit retention prune result", "content": {"application/json": {"schema": {"type": "object", "properties": {"deleted_count": {"type": "integer"}}}}}},
       "AuditRepair": {"description": "Audit repair result", "content": {"application/json": {"schema": {"type": "object", "properties": {"repaired_count": {"type": "integer"}}}}}},
       "ACMEAccount": {"description": "ACME account", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/ACMEAccount"}}}},
@@ -625,7 +633,9 @@
       "NotificationEndpoint": {"allOf": [{"$ref": "#/components/schemas/NotificationEndpointCreate"}, {"$ref": "#/components/schemas/ResourceStatus"}]},
       "OutboxMessage": {"type": "object", "additionalProperties": true},
       "APIKey": {"allOf": [{"$ref": "#/components/schemas/ResourceStatus"}, {"type": "object", "properties": {"name": {"type": "string"}, "actor": {"type": "string"}, "scopes": {"type": "array", "items": {"type": "string"}}, "expires_at": {"type": "string", "format": "date-time"}, "last_used_at": {"type": "string", "format": "date-time"}, "token_fingerprint": {"type": "string"}}}]},
-      "AuditEvent": {"type": "object", "additionalProperties": true},
+      "AuditEvent": {"type": "object", "required": ["id", "actor", "action", "resource_type", "resource_id", "metadata_json", "chain_index", "hash_algorithm", "previous_event_hash", "event_hash", "created_at"], "properties": {"id": {"type": "string"}, "actor": {"type": "string"}, "action": {"type": "string"}, "resource_type": {"type": "string"}, "resource_id": {"type": "string"}, "metadata_json": {"type": "string"}, "chain_index": {"type": "integer", "format": "int64"}, "hash_algorithm": {"type": "string", "enum": ["sha256-v1"]}, "previous_event_hash": {"type": "string"}, "event_hash": {"type": "string"}, "created_at": {"type": "string", "format": "date-time"}}},
+      "AuditChainCheckpoint": {"type": "object", "properties": {"id": {"type": "string"}, "through_chain_index": {"type": "integer", "format": "int64"}, "through_event_id": {"type": "string"}, "through_event_hash": {"type": "string"}, "retention_cutoff": {"type": "string", "format": "date-time"}, "created_at": {"type": "string", "format": "date-time"}}},
+      "AuditChainVerification": {"type": "object", "required": ["verified", "hash_algorithm", "retained_event_count", "total_event_count", "tail_chain_index", "tail_event_id", "tail_event_hash", "checkpoint", "broken_chain_index", "reason"], "properties": {"verified": {"type": "boolean"}, "hash_algorithm": {"type": "string", "enum": ["sha256-v1"]}, "retained_event_count": {"type": "integer"}, "total_event_count": {"type": "integer", "format": "int64"}, "tail_chain_index": {"type": "integer", "format": "int64"}, "tail_event_id": {"type": "string"}, "tail_event_hash": {"type": "string"}, "checkpoint": {"$ref": "#/components/schemas/AuditChainCheckpoint"}, "broken_chain_index": {"type": "integer", "format": "int64"}, "reason": {"type": "string"}}},
       "ACMEAccount": {"allOf": [{"$ref": "#/components/schemas/ResourceStatus"}, {"type": "object", "properties": {"contacts": {"type": "array", "items": {"type": "string"}}, "terms_of_service_agreed": {"type": "boolean"}, "key_thumbprint": {"type": "string"}}}]},
       "ACMEOrderCreate": {"type": "object", "required": ["account_id", "identity_id", "issuer_id", "requested_not_after"], "properties": {"account_id": {"type": "string"}, "identity_id": {"type": "string"}, "issuer_id": {"type": "string"}, "certificate_profile_id": {"type": "string"}, "requested_dns_names": {"type": "array", "items": {"type": "string"}}, "requested_ip_addresses": {"type": "array", "items": {"type": "string"}}, "requested_not_after": {"type": "string", "format": "date-time"}}},
       "ACMEOrder": {"allOf": [{"$ref": "#/components/schemas/ACMEOrderCreate"}, {"$ref": "#/components/schemas/ResourceStatus"}]},

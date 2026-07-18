@@ -22,6 +22,7 @@ problem types, status, and detail. ACME errors also include a fresh
 | `ErrRateLimited` | `rate limited` | 429 |
 | `ErrACMEAccountDeactivated` | `acme account deactivated` | 401 |
 | `ErrInvalidTransition` | `invalid lifecycle transition` | 409 |
+| `ErrAuditChainConflict` | `audit chain conflict` | 409 |
 | `ErrIdentityNotFound` | `identity not found` | 404 |
 | `ErrIssuerNotFound` | `issuer not found` | 404 |
 | `ErrOCSPResponderNotFound` | `ocsp responder not found` | 404 |
@@ -71,6 +72,7 @@ Failed API request audit events use these stable `error_code` values:
 | `forbidden` | authenticated principal lacks required scope |
 | `rate_limited` | request exceeded fixed-window rate limit |
 | `invalid_lifecycle_transition` | request does not match current resource state |
+| `audit_chain_conflict` | audit hash-chain state or compare-and-swap validation failed |
 | `identity_not_found` | identity lookup failed |
 | `issuer_not_found` | issuer lookup failed |
 | `ocsp_responder_not_found` | OCSP responder lookup failed |

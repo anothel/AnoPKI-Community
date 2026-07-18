@@ -436,3 +436,51 @@ func testSQLiteIndexExists(t *testing.T, db *sql.DB, index string) bool {
 	}
 	return name == index
 }
+
+func TestApplyInitialMigrationBackfillsAuditHashChain(t *testing.T) {
+	ctx := context.Background()
+	db, err := sql.Open("sqlite", ":memory:")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	if err := createSchemaMigrationsTable(ctx, db, "sqlite"); err != nil {
+		t.Fatal(err)
+	}
+	v1, err := migrationFiles.ReadFile("migrations/0001_init_sqlite.sql")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.ExecContext(ctx, string(v1)); err != nil {
+		t.Fatal(err)
+	}
+	if err := insertSchemaMigration(ctx, db, "sqlite", 1, migrationChecksum(v1), false); err != nil {
+		t.Fatal(err)
+	}
+	base := time.Date(2026, time.January, 2, 3, 4, 5, 0, time.UTC)
+	for _, event := range []domain.AuditEvent{
+		testAuditEvent("legacy-audit-1", "alice", "identity.created", "identity", "identity-1", base),
+		testAuditEvent("legacy-audit-2", "bob", "certificate.issued", "certificate", "certificate-1", base.Add(time.Minute)),
+	} {
+		if _, err := db.ExecContext(ctx, `INSERT INTO audit_events (id, actor, action, resource_type, resource_id, metadata_json, created_at) VALUES ($1,$2,$3,$4,$5,$6,$7)`, event.ID, event.Actor, event.Action, event.ResourceType, event.ResourceID, event.MetadataJSON, formatSQLTime(event.CreatedAt)); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := ApplyInitialMigration(ctx, db, "sqlite"); err != nil {
+		t.Fatal(err)
+	}
+	verification, err := NewSQLStore(db).VerifyAuditChain(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !verification.Verified || verification.TotalEventCount != 2 || verification.TailChainIndex != 2 {
+		t.Fatalf("verification = %#v", verification)
+	}
+	var version2 int
+	if err := db.QueryRowContext(ctx, `SELECT COUNT(*) FROM schema_migrations WHERE version = 2 AND dirty = 0`).Scan(&version2); err != nil {
+		t.Fatal(err)
+	}
+	if version2 != 1 {
+		t.Fatalf("version 2 count = %d", version2)
+	}
+}
