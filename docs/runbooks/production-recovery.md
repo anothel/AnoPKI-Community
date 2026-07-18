@@ -78,6 +78,9 @@ python scripts\test_verify_audit_replay_drill.py
 python scripts\verify-audit-replay-drill.py --out-dir .tmp\audit-replay-evidence\manual
 python scripts\test_verify_issuer_rollover_drill.py
 python scripts\verify-issuer-rollover-drill.py --out-dir .tmp\issuer-rollover-evidence\manual
+python scripts\test_verify_postgres_recovery_drill.py
+$env:ANOPKI_POSTGRES_RECOVERY_DSN = "postgres://anopki:anopki@localhost:5432/anopki_recovery_control?sslmode=disable"
+python scripts\verify-postgres-recovery-drill.py --out-dir .tmp\postgres-recovery-evidence\manual
 ```
 
 The drill creates the current SQLite schema, seeds issuer and OCSP responder
@@ -103,6 +106,7 @@ phantom CRL publication or success audit is created during signer failure, publi
 failures map correctly, CRL numbering resumes without a skipped publication and
 recovered operations return through the normal signing-evidence contract. The audit/replay drill separately proves idempotent issuance-audit reconstruction, scoped dead-letter selection, preserved job/webhook history, and successful completion only after receiver recovery. The issuer-rollover drill proves an atomic same-root intermediate transition, overlap operation for old certificates and CRLs, stale-retry rejection, and explicit rollback without duplicate audit or outbox events.
 
-These drills cover deterministic SQLite backup/restore and single-node
-CRL/OCSP signer-outage semantics. PostgreSQL, multi-node traffic and real
-key-provider recovery remain separate operational evidence.
+These drills cover deterministic SQLite and PostgreSQL 16 backup/restore,
+transactional migration rollback, intermediate rollover, and single-node
+CRL/OCSP signer-outage semantics. Multi-node traffic and real key-provider
+recovery remain separate operational evidence.

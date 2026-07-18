@@ -155,6 +155,12 @@ $steps = @(
         Command = @("python", "scripts\verify-issuer-rollover-drill.py", "--out-dir", ".tmp\issuer-rollover-evidence\verify-local")
     },
     @{
+        Name = "PostgreSQL recovery drill tests"
+        Dir = $RepoRoot
+        Display = "python scripts\test_verify_postgres_recovery_drill.py"
+        Command = @("python", "scripts\test_verify_postgres_recovery_drill.py")
+    },
+    @{
         Name = "release artifact validator tests"
         Dir = $RepoRoot
         Display = "python scripts\test_validate_release_artifacts.py"

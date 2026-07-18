@@ -14,7 +14,7 @@ Current draft: [v0.1.0-alpha.0 candidate evidence](release-candidate-v0.1.0-alph
 | Go security scan | `gosec` v2.25.0 | `verify-go-release.py --profile analysis` in CI. |
 | Go race detector | `go test -race ./...` | `verify-go-release.py --profile analysis` in CI. |
 | Go dependency vulnerability scan | `govulncheck` v1.1.4 | `verify-go-release.py --profile analysis` in CI. |
-| PostgreSQL | PostgreSQL 16 service integration | CI `postgres-integration` job records client/server versions. |
+| PostgreSQL | PostgreSQL 16 integration and recovery | CI `postgres-integration` records client/server versions; `postgres-recovery-drill` proves migration rollback and `pg_dump`/`pg_restore` recovery. |
 | C++ parser fuzz/sanitizer smoke | Clang/libFuzzer with AddressSanitizer | CI `cpp-fuzz-smoke` job builds CSR, OCSP, and CRL parser targets and runs each for at most 20 seconds. |
 | Community boundary | `scripts/validate-community-boundary.py` | CI `community-boundary` job. |
 | Secret baseline | `scripts/security-baseline-scan.py` | CI `secret-baseline` job and README smoke checklist. |
@@ -29,6 +29,7 @@ Pre-1.0 releases distribute archives, not installers or container images:
 - `anopki-service` binary archive,
 - `anopki-core` CLI binary archive,
 - `anopki-go-verification.tar.gz` containing full-profile JSON, Markdown and redacted logs,
+- `anopki-postgres-recovery-verification.tar.gz` containing PostgreSQL 16 backup/restore and migration-rollback evidence,
 - `anopki-backend-info.json` from the built Core artifact,
 - `anopki-release-metadata.json` binding version/commit, product profile,
   backend evidence, and Community KeyProvider policy,
@@ -63,7 +64,7 @@ Each release candidate records this matrix in release notes:
 | Go | `go version` from CI and release host; The maintained floor is Go 1.25.11; CI pins Go 1.25.12 and Go 1.26.5 and uploads runner evidence. |
 | OpenSSL | CMake configure output or package version used by C++ build. |
 | SQLite | Go test result for memory/SQLite stores. |
-| PostgreSQL | PostgreSQL integration job result and DSN major version. |
+| PostgreSQL | PostgreSQL integration and recovery-drill result plus DSN major version. |
 | lego | ACME smoke result when ACME behavior changed. |
 | certbot | Linux or elevated Windows smoke result when environment exists; WSL certbot evidence is recorded in the ACME client compatibility matrix. |
 
@@ -78,7 +79,7 @@ Copy this table into release notes for each release candidate and replace
 | Go | `go version` from CI and release host | pending | pending |
 | OpenSSL | CMake configure output or package version | pending | pending |
 | SQLite | Local or CI Go test result covering SQLite store | pending | pending |
-| PostgreSQL | PostgreSQL integration job and DSN major version | pending | pending |
+| PostgreSQL | PostgreSQL integration, recovery drill and DSN major version | pending | pending |
 | lego | ACME smoke command/output when ACME behavior changed | pending | pending |
 | certbot | WSL/Linux/elevated Windows smoke command/output when ACME behavior changed | pending | pending |
 
@@ -95,6 +96,20 @@ and Markdown and is packaged as `anopki-recovery-verification.tar.gz`. Release
 validation requires `result=passed` and the exact same Community commit as
 `anopki-release-metadata.json`. Database files and raw sensitive values are not
 packaged.
+
+## PostgreSQL Recovery Evidence Runner
+
+`scripts/verify-postgres-recovery-drill.py` requires Go 1.25.11+, PostgreSQL 16,
+`psql`, `pg_dump`, and `pg_restore`. It creates isolated source and restore
+databases, applies the real Go migration path, proves failed migration
+transactions roll back without dirty rows or probe tables, rejects an explicit
+dirty migration, seeds representative issuer/responder, signing, CRL, audit,
+outbox and webhook state, takes a custom-format backup, damages the source, and
+restores into a fresh database. Strict JSON, Markdown and one redacted test log
+are packaged as `anopki-postgres-recovery-verification.tar.gz`. Release
+validation requires PostgreSQL major 16, exact commit binding, matching before
+and after state digests, expected table counts, and no DSN, raw key reference,
+secret, database dump, or private-key material in evidence.
 
 ## CRL And OCSP Outage Evidence Runner
 
@@ -265,6 +280,8 @@ evidence still needs release workflow artifacts containing archives,
 - `python scripts/verify-audit-replay-drill.py --out-dir .tmp\audit-replay-evidence\verify-local`
 - `python scripts/test_verify_issuer_rollover_drill.py`
 - `python scripts/verify-issuer-rollover-drill.py --out-dir .tmp\issuer-rollover-evidence\verify-local`
+- `python scripts/test_verify_postgres_recovery_drill.py`
+- `python scripts/verify-postgres-recovery-drill.py --out-dir .tmp\postgres-recovery-evidence\verify-local`
 - `python scripts/test_validate_release_artifacts.py`
 - `python scripts/test_validate_service_contracts.py`
 - `python scripts/validate-service-contracts.py`

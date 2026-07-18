@@ -149,6 +149,14 @@ python scripts\test_verify_issuer_rollover_drill.py
 python scripts\verify-issuer-rollover-drill.py --out-dir .tmp\issuer-rollover-evidence\verify-local
 # requires Go 1.25.11+ and proves atomic same-root rollover and rollback semantics
 
+python scripts\test_verify_postgres_recovery_drill.py
+# PostgreSQL recovery drill tests passed: 5
+
+# Optional full PostgreSQL 16 drill; requires psql, pg_dump, pg_restore and a disposable DSN.
+$env:ANOPKI_POSTGRES_RECOVERY_DSN = "postgres://anopki:anopki@localhost:5432/anopki_recovery_control?sslmode=disable"
+python scripts\verify-postgres-recovery-drill.py --out-dir .tmp\postgres-recovery-evidence\verify-local
+# requires Go 1.25.11+ and proves transaction rollback plus pg_dump/pg_restore state preservation
+
 python scripts\test_validate_release_artifacts.py
 # release artifact tests ok
 

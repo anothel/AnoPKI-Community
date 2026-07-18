@@ -392,6 +392,118 @@ def write_issuer_rollover_evidence_archive(
             archive.add(root / "unexpected.txt", arcname="unexpected.txt")
 
 
+def write_postgres_recovery_evidence_archive(
+    path: Path,
+    *,
+    result: str = "passed",
+    commit: str = "0123456789abcdef0123456789abcdef01234567",
+    extra_field: bool = False,
+    extra_member: bool = False,
+    client_major: int = 16,
+) -> None:
+    root = path.parent / "postgres-recovery-evidence"
+    if root.exists():
+        shutil.rmtree(root)
+    root.mkdir(parents=True, exist_ok=True)
+    tests = [
+        ("github.com/anothel/anopki/service/internal/store", "TestPostgresRecoveryDrillMigrationRollbackIntegration"),
+        ("github.com/anothel/anopki/service/internal/store", "TestPostgresRecoveryDrillDirtyMigrationRejectedIntegration"),
+    ]
+    checks = [
+        "postgres-client-tools-available",
+        "postgres-16-server-verified",
+        "current-migration-clean",
+        "failed-migration-transaction-rolled-back",
+        "dirty-migration-rejected",
+        "custom-format-backup-created",
+        "source-damage-detected",
+        "restore-state-digest-matched",
+        "key-reference-hashes-preserved",
+        "signing-and-crl-artifacts-preserved",
+        "audit-outbox-webhook-state-preserved",
+        "sensitive-evidence-exclusion",
+    ]
+    counts = {
+        "schema_migrations": 1,
+        "identities": 1,
+        "issuers": 1,
+        "ocsp_responders": 1,
+        "notification_endpoints": 1,
+        "certificate_profiles": 1,
+        "enrollments": 1,
+        "certificates": 1,
+        "certificate_issuance_attempts": 1,
+        "revocations": 1,
+        "crl_publications": 1,
+        "audit_events": 2,
+        "outbox_messages": 1,
+        "job_attempts": 1,
+        "webhook_deliveries": 1,
+        "api_keys": 1,
+    }
+    regex = "^(" + "|".join(name for _, name in tests) + ")$"
+    evidence = {
+        "schema_version": 1,
+        "evidence_type": "community_postgres_recovery_drill",
+        "product": "AnoPKI",
+        "edition": "community",
+        "product_profile": "community-openssl",
+        "commit": commit,
+        "minimum_go_version": "1.25.11",
+        "required_postgres_major": 16,
+        "started_at": "2026-07-18T01:00:00Z",
+        "completed_at": "2026-07-18T01:00:01Z",
+        "result": result,
+        "go_version": "go version go1.25.12 linux/amd64",
+        "postgres_client_versions": {
+            "psql": f"psql (PostgreSQL) {client_major}.9",
+            "pg_dump": f"pg_dump (PostgreSQL) {client_major}.9",
+            "pg_restore": f"pg_restore (PostgreSQL) {client_major}.9",
+        },
+        "postgres_server_version": "16.9",
+        "test_command": ["go", "test", "-json", "-count=1", "-run", regex, "./internal/store"],
+        "tests": [{"package": package, "name": name, "status": "pass"} for package, name in tests],
+        "checks": [{"name": name, "status": "passed"} for name in checks],
+        "state_counts": counts,
+        "migration_checksum": "1" * 64,
+        "backup_sha256": "2" * 64,
+        "state_digest_before": "3" * 64,
+        "state_digest_after": "3" * 64,
+        "key_reference_hashes": {"issuer": "4" * 64, "responder": "5" * 64},
+        "artifact_hashes": {
+            "certificate_pem": "6" * 64,
+            "signing_evidence_json": "7" * 64,
+            "crl_pem": "8" * 64,
+            "audit_metadata_json": "9" * 64,
+            "outbox_payload_json": "a" * 64,
+            "notification_secret_digest": "b" * 64,
+            "api_token_hash": "c" * 64,
+        },
+        "redaction": {
+            "private_key_markers_found": False,
+            "raw_key_references_in_evidence": False,
+            "sensitive_values_in_evidence": False,
+            "database_dsn_in_evidence": False,
+        },
+        "blocker": "" if result == "passed" else "test failure",
+    }
+    if result != "passed":
+        evidence["checks"] = [{"name": name, "status": "failed"} for name in checks]
+    if extra_field:
+        evidence["unexpected"] = "drift"
+    (root / "postgres-recovery-verification.json").write_text(json.dumps(evidence), encoding="utf-8")
+    (root / "postgres-recovery-verification.md").write_text("# PostgreSQL recovery evidence\n", encoding="utf-8")
+    (root / "postgres-recovery-test.log").write_text("pass\n", encoding="utf-8")
+    if extra_member:
+        (root / "unexpected.txt").write_text("unexpected\n", encoding="utf-8")
+    with tarfile.open(path, "w:gz") as archive:
+        archive.add(root / "postgres-recovery-verification.json", arcname="postgres-recovery-verification.json")
+        archive.add(root / "postgres-recovery-verification.md", arcname="postgres-recovery-verification.md")
+        archive.add(root / "postgres-recovery-test.log", arcname="postgres-recovery-test.log")
+        if extra_member:
+            archive.add(root / "unexpected.txt", arcname="unexpected.txt")
+
+
 def backend_info() -> dict[str, object]:
     return {
         "product_profile": "community-openssl",
@@ -473,6 +585,7 @@ def write_valid_dist(dist: Path) -> tuple[Path, Path]:
     write_status_outage_evidence_archive(dist / "anopki-status-outage-verification.tar.gz")
     write_audit_replay_evidence_archive(dist / "anopki-audit-replay-verification.tar.gz")
     write_issuer_rollover_evidence_archive(dist / "anopki-issuer-rollover-verification.tar.gz")
+    write_postgres_recovery_evidence_archive(dist / "anopki-postgres-recovery-verification.tar.gz")
     backend = backend_info()
     (dist / "anopki-backend-info.json").write_text(json.dumps(backend), encoding="utf-8")
     (dist / "anopki-release-metadata.json").write_text(json.dumps(release_metadata(backend)), encoding="utf-8")
@@ -962,6 +1075,82 @@ def test_unexpected_issuer_rollover_member_fails() -> None:
     assert "unexpected issuer rollover evidence members" in result.stderr
 
 
+def test_missing_postgres_recovery_evidence_fails() -> None:
+    with tempfile.TemporaryDirectory() as tmp:
+        dist = Path(tmp)
+        write_valid_dist(dist)
+        (dist / "anopki-postgres-recovery-verification.tar.gz").unlink()
+        rewrite_checksums(dist)
+        result = run_validator(dist)
+    assert result.returncode == 1
+    assert "missing PostgreSQL recovery verification evidence" in result.stderr
+
+
+def test_failed_postgres_recovery_evidence_fails() -> None:
+    with tempfile.TemporaryDirectory() as tmp:
+        dist = Path(tmp)
+        write_valid_dist(dist)
+        write_postgres_recovery_evidence_archive(
+            dist / "anopki-postgres-recovery-verification.tar.gz", result="failed"
+        )
+        rewrite_checksums(dist)
+        result = run_validator(dist)
+    assert result.returncode == 1
+    assert "PostgreSQL recovery verification drill did not pass" in result.stderr
+
+
+def test_postgres_recovery_commit_mismatch_fails() -> None:
+    with tempfile.TemporaryDirectory() as tmp:
+        dist = Path(tmp)
+        write_valid_dist(dist)
+        write_postgres_recovery_evidence_archive(
+            dist / "anopki-postgres-recovery-verification.tar.gz", commit="f" * 40
+        )
+        rewrite_checksums(dist)
+        result = run_validator(dist)
+    assert result.returncode == 1
+    assert "PostgreSQL recovery verification commit does not match" in result.stderr
+
+
+def test_unknown_postgres_recovery_field_fails() -> None:
+    with tempfile.TemporaryDirectory() as tmp:
+        dist = Path(tmp)
+        write_valid_dist(dist)
+        write_postgres_recovery_evidence_archive(
+            dist / "anopki-postgres-recovery-verification.tar.gz", extra_field=True
+        )
+        rewrite_checksums(dist)
+        result = run_validator(dist)
+    assert result.returncode == 1
+    assert "PostgreSQL recovery verification evidence has unknown fields" in result.stderr
+
+
+def test_unexpected_postgres_recovery_member_fails() -> None:
+    with tempfile.TemporaryDirectory() as tmp:
+        dist = Path(tmp)
+        write_valid_dist(dist)
+        write_postgres_recovery_evidence_archive(
+            dist / "anopki-postgres-recovery-verification.tar.gz", extra_member=True
+        )
+        rewrite_checksums(dist)
+        result = run_validator(dist)
+    assert result.returncode == 1
+    assert "unexpected PostgreSQL recovery evidence members" in result.stderr
+
+
+def test_postgres_recovery_client_major_mismatch_fails() -> None:
+    with tempfile.TemporaryDirectory() as tmp:
+        dist = Path(tmp)
+        write_valid_dist(dist)
+        write_postgres_recovery_evidence_archive(
+            dist / "anopki-postgres-recovery-verification.tar.gz", client_major=17
+        )
+        rewrite_checksums(dist)
+        result = run_validator(dist)
+    assert result.returncode == 1
+    assert "did not use PostgreSQL 16" in result.stderr
+
+
 def main() -> None:
     test_valid_release_artifacts_pass()
     test_missing_release_archive_fails()
@@ -1003,6 +1192,12 @@ def main() -> None:
     test_issuer_rollover_commit_mismatch_fails()
     test_unknown_issuer_rollover_field_fails()
     test_unexpected_issuer_rollover_member_fails()
+    test_missing_postgres_recovery_evidence_fails()
+    test_failed_postgres_recovery_evidence_fails()
+    test_postgres_recovery_commit_mismatch_fails()
+    test_unknown_postgres_recovery_field_fails()
+    test_unexpected_postgres_recovery_member_fails()
+    test_postgres_recovery_client_major_mismatch_fails()
     print("release artifact tests ok")
 
 

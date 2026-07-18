@@ -13,6 +13,20 @@ jobs:
   build-artifacts:
     name: Build release artifacts
     runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_DB: anopki_recovery_control
+          POSTGRES_USER: anopki
+          POSTGRES_PASSWORD: anopki
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U anopki -d anopki_recovery_control"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-go@v5
@@ -24,7 +38,7 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.x"
-      - run: sudo apt-get update && sudo apt-get install -y cmake g++ libssl-dev pkg-config
+      - run: sudo apt-get update && sudo apt-get install -y cmake g++ libssl-dev pkg-config postgresql-client
       - uses: anchore/sbom-action/download-syft@v0.17.9
       - name: Record stable toolchain
         run: |
@@ -32,6 +46,7 @@ jobs:
           cmake --version
           c++ --version
           pkg-config --modversion openssl
+          psql --version
       - run: mkdir -p dist
       - name: Run supported-Go full verification
         run: >-
@@ -49,6 +64,15 @@ jobs:
       - name: Package recovery verification evidence
         run: |
           tar -czf dist/anopki-recovery-verification.tar.gz -C .tmp/release-recovery-evidence recovery-verification.json recovery-verification.md
+      - name: Run PostgreSQL recovery verification
+        run: |
+          python scripts/test_verify_postgres_recovery_drill.py
+          python scripts/verify-postgres-recovery-drill.py --out-dir .tmp/release-postgres-recovery-evidence --commit "${GITHUB_SHA}"
+        env:
+          ANOPKI_POSTGRES_RECOVERY_DSN: postgres://anopki:anopki@localhost:5432/anopki_recovery_control?sslmode=disable
+      - name: Package PostgreSQL recovery verification evidence
+        run: |
+          tar -czf dist/anopki-postgres-recovery-verification.tar.gz -C .tmp/release-postgres-recovery-evidence postgres-recovery-verification.json postgres-recovery-verification.md postgres-recovery-test.log
       - name: Run CRL and OCSP outage verification
         run: |
           python scripts/test_verify_status_outage_drill.py

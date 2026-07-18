@@ -57,6 +57,7 @@ def main() -> None:
         'python scripts\\verify-audit-replay-drill.py --out-dir .tmp\\audit-replay-evidence\\verify-local',
         'python scripts\\test_verify_issuer_rollover_drill.py',
         'python scripts\\verify-issuer-rollover-drill.py --out-dir .tmp\\issuer-rollover-evidence\\verify-local',
+        'python scripts\\test_verify_postgres_recovery_drill.py',
         'python scripts\\test_validate_release_artifacts.py',
         'python scripts\\test_validate_service_contracts.py',
         'python scripts\\validate-service-contracts.py',

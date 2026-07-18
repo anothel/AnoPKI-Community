@@ -21,6 +21,7 @@ REQUIRED_DOC_TEXT = [
     "## CRL And OCSP Outage Evidence Runner",
     "## Audit Repair And Dead-Letter Replay Evidence Runner",
     "## Intermediate Issuer Rollover Evidence Runner",
+    "## PostgreSQL Recovery Evidence Runner",
     "## Supported-Go Evidence Runner",
     "## Required Evidence Per Release Candidate",
     "verify-go-release.py",
@@ -29,6 +30,8 @@ REQUIRED_DOC_TEXT = [
     "anopki-status-outage-verification.tar.gz",
     "anopki-audit-replay-verification.tar.gz",
     "anopki-issuer-rollover-verification.tar.gz",
+    "python scripts/verify-postgres-recovery-drill.py",
+    "anopki-postgres-recovery-verification.tar.gz",
     "syft",
     "cosign",
     "govulncheck",
@@ -62,7 +65,7 @@ REQUIRED_COMPATIBILITY_TEMPLATE_TEXT = [
     "| Go | `go version` from CI and release host |",
     "| OpenSSL | CMake configure output or package version |",
     "| SQLite | Local or CI Go test result covering SQLite store |",
-    "| PostgreSQL | PostgreSQL integration job and DSN major version |",
+    "| PostgreSQL | PostgreSQL integration, recovery drill and DSN major version |",
     "| lego | ACME smoke command/output when ACME behavior changed |",
     "| certbot | WSL/Linux/elevated Windows smoke command/output when ACME behavior changed |",
 ]
@@ -84,6 +87,12 @@ REQUIRED_CI_TEXT = [
     "python scripts/test_verify_issuer_rollover_drill.py",
     "python scripts/verify-issuer-rollover-drill.py",
     "anopki-issuer-rollover-verification",
+    "python scripts/test_verify_postgres_recovery_drill.py",
+    "python scripts/verify-postgres-recovery-drill.py",
+    "anopki-postgres-recovery-verification",
+    "postgres-recovery-drill:",
+    "image: postgres:16",
+    "postgresql-client",
     "python scripts/test_validate_release_artifacts.py",
     "python scripts/test_validate_release_evidence.py",
     "python scripts/validate-release-evidence.py",
@@ -188,6 +197,25 @@ REQUIRED_ISSUER_ROLLOVER_RUNNER_TEXT = [
     "sensitive-evidence-exclusion",
 ]
 
+
+REQUIRED_POSTGRES_RECOVERY_RUNNER_TEXT = [
+    "MINIMUM_GO_VERSION = (1, 25, 11)",
+    "REQUIRED_POSTGRES_MAJOR = 16",
+    "client_version = result.stdout.strip()",
+    "parse_postgres_major(client_version) != REQUIRED_POSTGRES_MAJOR",
+    "community_postgres_recovery_drill",
+    "TestPostgresRecoveryDrillMigrationRollbackIntegration",
+    "TestPostgresRecoveryDrillDirtyMigrationRejectedIntegration",
+    "pg_dump",
+    "pg_restore",
+    "custom-format-backup-created",
+    "restore-state-digest-matched",
+    "postgres-recovery-verification.json",
+    "postgres-recovery-verification.md",
+    "postgres-recovery-test.log",
+    "sensitive-evidence-exclusion",
+]
+
 REQUIRED_RELEASE_TEXT = [
     "workflow_dispatch:",
     "tags:",
@@ -206,6 +234,8 @@ REQUIRED_RELEASE_TEXT = [
     "anopki-audit-replay-verification.tar.gz",
     "python scripts/verify-issuer-rollover-drill.py",
     "anopki-issuer-rollover-verification.tar.gz",
+    "python scripts/verify-postgres-recovery-drill.py",
+    "anopki-postgres-recovery-verification.tar.gz",
     '--commit "${GITHUB_SHA}"',
     'VERSION="$(cat VERSION)"',
     "go build -ldflags",
@@ -217,6 +247,8 @@ REQUIRED_RELEASE_TEXT = [
     "anopki-release-metadata.json",
     "sha256sum dist/*.tar.gz dist/anopki-backend-info.json dist/anopki-release-metadata.json",
     "python scripts/validate-release-artifacts.py dist",
+    "postgres:16",
+    "postgresql-client",
     "syft scan dir:dist",
     "cosign sign-blob",
     "actions/upload-artifact",
@@ -310,6 +342,7 @@ def main() -> None:
     require_text(root / "scripts/verify-status-outage-drill.py", REQUIRED_STATUS_OUTAGE_RUNNER_TEXT)
     require_text(root / "scripts/verify-audit-replay-drill.py", REQUIRED_AUDIT_REPLAY_RUNNER_TEXT)
     require_text(root / "scripts/verify-issuer-rollover-drill.py", REQUIRED_ISSUER_ROLLOVER_RUNNER_TEXT)
+    require_text(root / "scripts/verify-postgres-recovery-drill.py", REQUIRED_POSTGRES_RECOVERY_RUNNER_TEXT)
     require_text(root / ".github/workflows/ci.yml", REQUIRED_CI_TEXT)
     require_text(root / ".github/workflows/release.yml", REQUIRED_RELEASE_TEXT)
     print("release evidence ok")

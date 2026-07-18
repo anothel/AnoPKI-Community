@@ -293,6 +293,49 @@ jobs:
         env:
           ANOPKI_POSTGRES_TEST_DSN: postgres://anopki:anopki@localhost:5432/anopki_test?sslmode=disable
 
+  postgres-recovery-drill:
+    name: PostgreSQL 16 backup and restore drill
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_DB: anopki_recovery_control
+          POSTGRES_USER: anopki
+          POSTGRES_PASSWORD: anopki
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U anopki -d anopki_recovery_control"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.25.12"
+          cache-dependency-path: |
+            service/go.mod
+            service/go.sum
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.x"
+      - run: sudo apt-get update && sudo apt-get install -y postgresql-client
+      - run: python scripts/test_verify_postgres_recovery_drill.py
+      - name: Run PostgreSQL recovery drill
+        run: >-
+          python scripts/verify-postgres-recovery-drill.py
+          --out-dir .tmp/postgres-recovery-evidence/ci
+          --commit "${GITHUB_SHA}"
+        env:
+          ANOPKI_POSTGRES_RECOVERY_DSN: postgres://anopki:anopki@localhost:5432/anopki_recovery_control?sslmode=disable
+      - uses: actions/upload-artifact@v4
+        with:
+          name: anopki-postgres-recovery-verification
+          path: .tmp/postgres-recovery-evidence/ci/
+          if-no-files-found: error
+
   cpp-core:
     name: C++ core
     runs-on: ubuntu-latest
