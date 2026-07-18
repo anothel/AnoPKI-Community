@@ -155,6 +155,18 @@ $steps = @(
         Command = @("python", "scripts\verify-issuer-rollover-drill.py", "--out-dir", ".tmp\issuer-rollover-evidence\verify-local")
     },
     @{
+        Name = "multi-node reliability drill tests"
+        Dir = $RepoRoot
+        Display = "python scripts\test_verify_multi_node_reliability.py"
+        Command = @("python", "scripts\test_verify_multi_node_reliability.py")
+    },
+    @{
+        Name = "multi-node reliability drill"
+        Dir = $RepoRoot
+        Display = "python scripts\verify-multi-node-reliability.py --out-dir .tmp\multi-node-evidence\verify-local"
+        Command = @("python", "scripts\verify-multi-node-reliability.py", "--out-dir", ".tmp\multi-node-evidence\verify-local")
+    },
+    @{
         Name = "PostgreSQL recovery drill tests"
         Dir = $RepoRoot
         Display = "python scripts\test_verify_postgres_recovery_drill.py"

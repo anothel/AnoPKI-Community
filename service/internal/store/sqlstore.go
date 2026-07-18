@@ -1617,6 +1617,39 @@ func scanCRLPublication(scanner sqlScanner) (domain.CRLPublication, error) {
 	return publication, nil
 }
 
+func scanCRLGenerationClaim(scanner sqlScanner) (domain.CRLGenerationClaim, error) {
+	var claim domain.CRLGenerationClaim
+	var leaseExpiresAt any
+	var createdAt any
+	var updatedAt any
+	if err := scanner.Scan(
+		&claim.IssuerID,
+		&claim.DistributionPoint,
+		&claim.CRLNumber,
+		&leaseExpiresAt,
+		&createdAt,
+		&updatedAt,
+	); err != nil {
+		return domain.CRLGenerationClaim{}, err
+	}
+	parsedLeaseExpiresAt, err := parseSQLTime(leaseExpiresAt)
+	if err != nil {
+		return domain.CRLGenerationClaim{}, err
+	}
+	parsedCreatedAt, err := parseSQLTime(createdAt)
+	if err != nil {
+		return domain.CRLGenerationClaim{}, err
+	}
+	parsedUpdatedAt, err := parseSQLTime(updatedAt)
+	if err != nil {
+		return domain.CRLGenerationClaim{}, err
+	}
+	claim.LeaseExpiresAt = parsedLeaseExpiresAt
+	claim.CreatedAt = parsedCreatedAt
+	claim.UpdatedAt = parsedUpdatedAt
+	return claim, nil
+}
+
 func marshalStringSlice(values []string) (string, error) {
 	if values == nil {
 		values = []string{}

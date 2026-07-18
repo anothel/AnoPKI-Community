@@ -149,6 +149,12 @@ python scripts\test_verify_issuer_rollover_drill.py
 python scripts\verify-issuer-rollover-drill.py --out-dir .tmp\issuer-rollover-evidence\verify-local
 # requires Go 1.25.11+ and proves atomic same-root rollover and rollback semantics
 
+python scripts\test_verify_multi_node_reliability.py
+# multi-node reliability drill tests passed: 5
+
+python scripts\verify-multi-node-reliability.py --out-dir .tmp\multi-node-evidence\verify-local
+# requires Go 1.25.11+ and proves single-writer issuance, CRL and Outbox lease semantics
+
 python scripts\test_verify_postgres_recovery_drill.py
 # PostgreSQL recovery drill tests passed: 5
 

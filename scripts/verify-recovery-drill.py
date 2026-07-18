@@ -41,6 +41,7 @@ SELECTED_TABLES = (
     "certificate_issuance_attempts",
     "revocations",
     "crl_publications",
+    "crl_generation_claims",
     "audit_events",
     "outbox_messages",
     "job_attempts",
@@ -56,6 +57,7 @@ EXPECTED_COUNTS = {
     "certificate_issuance_attempts": 1,
     "revocations": 1,
     "crl_publications": 1,
+    "crl_generation_claims": 0,
     "audit_events": 2,
     "outbox_messages": 1,
     "job_attempts": 1,
@@ -156,6 +158,17 @@ def initialize_database(ctx: DrillContext, path: Path) -> None:
             );
             CREATE INDEX IF NOT EXISTS idx_webhook_deliveries_endpoint
                 ON webhook_deliveries(endpoint_id, updated_at);
+            CREATE TABLE IF NOT EXISTS crl_generation_claims (
+                issuer_id TEXT NOT NULL REFERENCES issuers(id),
+                distribution_point TEXT NOT NULL,
+                crl_number INTEGER NOT NULL,
+                lease_expires_at TEXT NOT NULL,
+                created_at TEXT NOT NULL,
+                updated_at TEXT NOT NULL,
+                PRIMARY KEY (issuer_id, distribution_point)
+            );
+            CREATE INDEX IF NOT EXISTS idx_crl_generation_claims_lease
+                ON crl_generation_claims(lease_expires_at, issuer_id, distribution_point);
             """
         )
         db.execute(

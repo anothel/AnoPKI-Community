@@ -30,6 +30,7 @@ Pre-1.0 releases distribute archives, not installers or container images:
 - `anopki-core` CLI binary archive,
 - `anopki-go-verification.tar.gz` containing full-profile JSON, Markdown and redacted logs,
 - `anopki-postgres-recovery-verification.tar.gz` containing PostgreSQL 16 backup/restore and migration-rollback evidence,
+- `anopki-multi-node-verification.tar.gz` containing issuance, CRL and Outbox single-writer evidence,
 - `anopki-backend-info.json` from the built Core artifact,
 - `anopki-release-metadata.json` binding version/commit, product profile,
   backend evidence, and Community KeyProvider policy,
@@ -139,6 +140,21 @@ old-issuer CRL publication continues during overlap, and explicit rollback
 restores the previous issuer. Evidence is packaged as
 `anopki-issuer-rollover-verification.tar.gz` and excludes raw key references,
 certificate/CSR payloads, credentials, and private-key material.
+
+
+## Multi-Node Reliability Evidence Runner
+
+`scripts/verify-multi-node-reliability.py` executes focused MemoryStore/lifecycle
+regressions that model two service or worker nodes sharing one repository. It
+proves certificate issuance uses one active signing claim, CRL publication uses
+one leased claim with contiguous numbering, and a second Outbox dispatcher does
+not steal an active delivery lease. It also pins compare-and-swap rejection for
+stale claims, exact-once handler execution in the tested lease window, no
+automatic provider/backend fallback, and sensitive-evidence exclusion. Evidence
+is packaged as `anopki-multi-node-verification.tar.gz` and must match the exact
+Community release commit. This is deterministic contract evidence; real
+PostgreSQL multi-node failover and traffic-shift drills remain separate pending
+evidence.
 
 ## Supported-Go Evidence Runner
 
@@ -282,6 +298,8 @@ evidence still needs release workflow artifacts containing archives,
 - `python scripts/verify-issuer-rollover-drill.py --out-dir .tmp\issuer-rollover-evidence\verify-local`
 - `python scripts/test_verify_postgres_recovery_drill.py`
 - `python scripts/verify-postgres-recovery-drill.py --out-dir .tmp\postgres-recovery-evidence\verify-local`
+- `python scripts/test_verify_multi_node_reliability.py`
+- `python scripts/verify-multi-node-reliability.py --out-dir .tmp\multi-node-evidence\verify-local`
 - `python scripts/test_validate_release_artifacts.py`
 - `python scripts/test_validate_service_contracts.py`
 - `python scripts/validate-service-contracts.py`

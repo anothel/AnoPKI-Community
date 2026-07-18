@@ -1492,6 +1492,81 @@ func seedEnrollmentParents(t *testing.T, repo Repository, identityID, issuerID, 
 	}
 }
 
+func TestMemoryStoreCRLGenerationClaims(t *testing.T) {
+	testCRLGenerationClaims(t, NewMemoryStore())
+}
+
+func TestSQLStoreCRLGenerationClaims(t *testing.T) {
+	db, err := sql.Open("sqlite", "file:crl-generation-claims?mode=memory&cache=shared")
+	if err != nil {
+		t.Fatalf("sql.Open returned error: %v", err)
+	}
+	defer db.Close()
+	if err := ApplyInitialMigration(context.Background(), db, "sqlite"); err != nil {
+		t.Fatalf("ApplyInitialMigration returned error: %v", err)
+	}
+	testCRLGenerationClaims(t, NewSQLStore(db))
+}
+
+func testCRLGenerationClaims(t *testing.T, repo Repository) {
+	t.Helper()
+	ctx := context.Background()
+	now := time.Date(2026, time.January, 2, 3, 4, 5, 0, time.UTC)
+	issuer := domain.Issuer{
+		ID:             "issuer-crl-claim",
+		Name:           "issuer",
+		Kind:           domain.IssuerIntermediateCA,
+		Status:         domain.IssuerActive,
+		CertificatePEM: "issuer-cert",
+		KeyRef:         "issuer-key",
+		CreatedAt:      now,
+		UpdatedAt:      now,
+	}
+	if err := repo.CreateIssuer(ctx, issuer); err != nil {
+		t.Fatalf("CreateIssuer returned error: %v", err)
+	}
+	claim := domain.CRLGenerationClaim{
+		IssuerID:          issuer.ID,
+		DistributionPoint: "https://pki.example.test/issuer.crl",
+		CRLNumber:         1,
+		LeaseExpiresAt:    now.Add(5 * time.Minute),
+		CreatedAt:         now,
+		UpdatedAt:         now,
+	}
+	if err := repo.CreateCRLGenerationClaim(ctx, claim); err != nil {
+		t.Fatalf("CreateCRLGenerationClaim returned error: %v", err)
+	}
+	if err := repo.CreateCRLGenerationClaim(ctx, claim); !errors.Is(err, domain.ErrInvalidTransition) {
+		t.Fatalf("duplicate CreateCRLGenerationClaim error = %v, want ErrInvalidTransition", err)
+	}
+	stored, err := repo.GetCRLGenerationClaim(ctx, claim.IssuerID, claim.DistributionPoint)
+	if err != nil {
+		t.Fatalf("GetCRLGenerationClaim returned error: %v", err)
+	}
+	if stored.CRLNumber != claim.CRLNumber || !stored.LeaseExpiresAt.Equal(claim.LeaseExpiresAt) {
+		t.Fatalf("stored claim = %#v", stored)
+	}
+	next := stored
+	next.CRLNumber = 2
+	next.LeaseExpiresAt = now.Add(10 * time.Minute)
+	next.UpdatedAt = now.Add(time.Second)
+	if err := repo.UpdateCRLGenerationClaimIfCurrent(ctx, next, stored); err != nil {
+		t.Fatalf("UpdateCRLGenerationClaimIfCurrent returned error: %v", err)
+	}
+	if err := repo.UpdateCRLGenerationClaimIfCurrent(ctx, stored, stored); !errors.Is(err, domain.ErrInvalidTransition) {
+		t.Fatalf("stale UpdateCRLGenerationClaimIfCurrent error = %v, want ErrInvalidTransition", err)
+	}
+	if err := repo.DeleteCRLGenerationClaimIfCurrent(ctx, stored); !errors.Is(err, domain.ErrInvalidTransition) {
+		t.Fatalf("stale DeleteCRLGenerationClaimIfCurrent error = %v, want ErrInvalidTransition", err)
+	}
+	if err := repo.DeleteCRLGenerationClaimIfCurrent(ctx, next); err != nil {
+		t.Fatalf("DeleteCRLGenerationClaimIfCurrent returned error: %v", err)
+	}
+	if _, err := repo.GetCRLGenerationClaim(ctx, claim.IssuerID, claim.DistributionPoint); !errors.Is(err, domain.ErrCRLGenerationClaimNotFound) {
+		t.Fatalf("missing GetCRLGenerationClaim error = %v, want ErrCRLGenerationClaimNotFound", err)
+	}
+}
+
 func seedOutboxDeliveryParents(t *testing.T, repo Repository, outboxID, endpointID string, now time.Time) {
 	t.Helper()
 	ctx := context.Background()

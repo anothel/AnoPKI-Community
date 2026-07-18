@@ -349,6 +349,15 @@ type CRLPublication struct {
 	UpdatedAt         time.Time
 }
 
+type CRLGenerationClaim struct {
+	IssuerID          string
+	DistributionPoint string
+	CRLNumber         int64
+	LeaseExpiresAt    time.Time
+	CreatedAt         time.Time
+	UpdatedAt         time.Time
+}
+
 type AuditEvent struct {
 	ID                string
 	Actor             string

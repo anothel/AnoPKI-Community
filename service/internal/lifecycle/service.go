@@ -311,6 +311,7 @@ type FinalizeACMEOrderRequest struct {
 const (
 	defaultACMEAuthorizationLifetime = 24 * time.Hour
 	defaultIssuanceSigningLease      = 5 * time.Minute
+	defaultCRLGenerationLease        = 5 * time.Minute
 	maxCSRSANs                       = 100
 )
 
@@ -3050,16 +3051,28 @@ func (s *Service) PublishCRL(ctx context.Context, actor string, req PublishCRLRe
 	if err != nil {
 		return domain.CRLPublication{}, err
 	}
+	claim, err := s.claimCRLGeneration(ctx, req.IssuerID, req.DistributionPoint, now)
+	if err != nil {
+		return domain.CRLPublication{}, err
+	}
+	claimCompleted := false
+	defer func() {
+		if claimCompleted {
+			return
+		}
+		_ = s.repo.WithinTx(ctx, func(repo store.Repository) error {
+			err := repo.DeleteCRLGenerationClaimIfCurrent(ctx, claim)
+			if errors.Is(err, domain.ErrCRLGenerationClaimNotFound) || errors.Is(err, domain.ErrInvalidTransition) {
+				return nil
+			}
+			return err
+		})
+	}()
+
 	revokedEntries, err := s.repo.ListRevocationsByIssuer(ctx, req.IssuerID)
 	if err != nil {
 		return domain.CRLPublication{}, err
 	}
-	existing, err := s.repo.ListCRLPublicationsByIssuer(ctx, req.IssuerID)
-	if err != nil {
-		return domain.CRLPublication{}, err
-	}
-	crlNumber := nextCRLNumber(existing, req.DistributionPoint)
-
 	revokedCertificates := make([]corecli.RevokedCertificate, 0, len(revokedEntries))
 	for _, entry := range revokedEntries {
 		revokedCertificates = append(revokedCertificates, corecli.RevokedCertificate{
@@ -3075,7 +3088,7 @@ func (s *Service) PublishCRL(ctx context.Context, actor string, req PublishCRLRe
 		return s.issuer.GenerateCRL(ctx, corecli.GenerateCRLRequest{
 			IssuerCertificatePEM: issuer.CertificatePEM,
 			IssuerKeyRef:         issuer.KeyRef,
-			CRLNumber:            crlNumber,
+			CRLNumber:            claim.CRLNumber,
 			ThisUpdate:           now,
 			NextUpdate:           req.NextUpdate,
 			RevokedCertificates:  revokedCertificates,
@@ -3092,7 +3105,7 @@ func (s *Service) PublishCRL(ctx context.Context, actor string, req PublishCRLRe
 		ID:                s.idgen.NewID(),
 		IssuerID:          req.IssuerID,
 		DistributionPoint: req.DistributionPoint,
-		CRLNumber:         crlNumber,
+		CRLNumber:         claim.CRLNumber,
 		ThisUpdate:        now,
 		NextUpdate:        req.NextUpdate,
 		Status:            domain.CRLPublicationPublished,
@@ -3113,12 +3126,54 @@ func (s *Service) PublishCRL(ctx context.Context, actor string, req PublishCRLRe
 			"crl_publication_id": publication.ID,
 			"distribution_point": publication.DistributionPoint,
 			"crl_number":         publication.CRLNumber,
+			"claim_mode":         "leased_single_writer",
 		})
-		return s.createAuditEvent(ctx, repo, actor, "crl.published", "crl_publication", publication.ID, now, fields)
+		if err := s.createAuditEvent(ctx, repo, actor, "crl.published", "crl_publication", publication.ID, now, fields); err != nil {
+			return err
+		}
+		return repo.DeleteCRLGenerationClaimIfCurrent(ctx, claim)
 	}); err != nil {
 		return domain.CRLPublication{}, err
 	}
+	claimCompleted = true
 	return publication, nil
+}
+
+func (s *Service) claimCRLGeneration(ctx context.Context, issuerID string, distributionPoint string, now time.Time) (domain.CRLGenerationClaim, error) {
+	var claim domain.CRLGenerationClaim
+	if err := s.repo.WithinTx(ctx, func(repo store.Repository) error {
+		publications, err := repo.ListCRLPublicationsByIssuer(ctx, issuerID)
+		if err != nil {
+			return err
+		}
+		nextNumber := nextCRLNumber(publications, distributionPoint)
+		current, err := repo.GetCRLGenerationClaim(ctx, issuerID, distributionPoint)
+		if errors.Is(err, domain.ErrCRLGenerationClaimNotFound) {
+			claim = domain.CRLGenerationClaim{
+				IssuerID:          issuerID,
+				DistributionPoint: distributionPoint,
+				CRLNumber:         nextNumber,
+				LeaseExpiresAt:    now.Add(defaultCRLGenerationLease),
+				CreatedAt:         now,
+				UpdatedAt:         now,
+			}
+			return repo.CreateCRLGenerationClaim(ctx, claim)
+		}
+		if err != nil {
+			return err
+		}
+		if current.LeaseExpiresAt.After(now) {
+			return domain.ErrInvalidTransition
+		}
+		claim = current
+		claim.CRLNumber = nextNumber
+		claim.LeaseExpiresAt = now.Add(defaultCRLGenerationLease)
+		claim.UpdatedAt = now
+		return repo.UpdateCRLGenerationClaimIfCurrent(ctx, claim, current)
+	}); err != nil {
+		return domain.CRLGenerationClaim{}, err
+	}
+	return claim, nil
 }
 
 func (s *Service) RespondOCSP(ctx context.Context, actor string, requestDER []byte) (OCSPResponse, error) {

@@ -180,6 +180,28 @@ jobs:
           path: .tmp/issuer-rollover-evidence/ci/
           if-no-files-found: error
 
+  multi-node-reliability-drill:
+    name: Multi-node reliability drill
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.25.12"
+          cache-dependency-path: |
+            service/go.mod
+            service/go.sum
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.x"
+      - run: python scripts/test_verify_multi_node_reliability.py
+      - run: python scripts/verify-multi-node-reliability.py --out-dir .tmp/multi-node-evidence/ci --commit "${GITHUB_SHA}"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: anopki-multi-node-verification
+          path: .tmp/multi-node-evidence/ci/
+          if-no-files-found: error
+
   secret-baseline:
     name: Secret baseline scan
     runs-on: ubuntu-latest

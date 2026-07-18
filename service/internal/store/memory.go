@@ -23,6 +23,7 @@ type MemoryStore struct {
 	issuanceAttempts  map[string]domain.IssuanceAttempt
 	revocations       map[string]domain.Revocation
 	crls              map[string]domain.CRLPublication
+	crlClaims         map[string]domain.CRLGenerationClaim
 	auditEvents       []domain.AuditEvent
 	outbox            map[string]domain.OutboxMessage
 	jobAttempts       map[string]domain.JobAttempt
@@ -46,6 +47,7 @@ func NewMemoryStore() *MemoryStore {
 		issuanceAttempts:  make(map[string]domain.IssuanceAttempt),
 		revocations:       make(map[string]domain.Revocation),
 		crls:              make(map[string]domain.CRLPublication),
+		crlClaims:         make(map[string]domain.CRLGenerationClaim),
 		auditEvents:       make([]domain.AuditEvent, 0),
 		outbox:            make(map[string]domain.OutboxMessage),
 		jobAttempts:       make(map[string]domain.JobAttempt),
@@ -73,6 +75,7 @@ func (s *MemoryStore) WithinTx(ctx context.Context, fn func(Repository) error) e
 		issuanceAttempts:  cloneIssuanceAttempts(s.issuanceAttempts),
 		revocations:       cloneRevocations(s.revocations),
 		crls:              cloneCRLPublications(s.crls),
+		crlClaims:         cloneCRLGenerationClaims(s.crlClaims),
 		auditEvents:       cloneAuditEvents(s.auditEvents),
 		outbox:            cloneOutboxMessages(s.outbox),
 		jobAttempts:       cloneJobAttempts(s.jobAttempts),
@@ -97,6 +100,7 @@ func (s *MemoryStore) WithinTx(ctx context.Context, fn func(Repository) error) e
 	s.issuanceAttempts = tx.issuanceAttempts
 	s.revocations = tx.revocations
 	s.crls = tx.crls
+	s.crlClaims = tx.crlClaims
 	s.auditEvents = tx.auditEvents
 	s.outbox = tx.outbox
 	s.jobAttempts = tx.jobAttempts
@@ -483,6 +487,34 @@ func (s *MemoryStore) ListCRLPublicationsByIssuer(ctx context.Context, issuerID 
 	return listCRLPublicationsByIssuer(s.crls, issuerID), nil
 }
 
+func (s *MemoryStore) CreateCRLGenerationClaim(ctx context.Context, claim domain.CRLGenerationClaim) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	return createCRLGenerationClaim(s.crlClaims, claim)
+}
+
+func (s *MemoryStore) GetCRLGenerationClaim(ctx context.Context, issuerID string, distributionPoint string) (domain.CRLGenerationClaim, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	return getCRLGenerationClaim(s.crlClaims, issuerID, distributionPoint)
+}
+
+func (s *MemoryStore) UpdateCRLGenerationClaimIfCurrent(ctx context.Context, claim domain.CRLGenerationClaim, current domain.CRLGenerationClaim) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	return updateCRLGenerationClaimIfCurrent(s.crlClaims, claim, current)
+}
+
+func (s *MemoryStore) DeleteCRLGenerationClaimIfCurrent(ctx context.Context, current domain.CRLGenerationClaim) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	return deleteCRLGenerationClaimIfCurrent(s.crlClaims, current)
+}
+
 func (s *MemoryStore) CreateAuditEvent(ctx context.Context, event domain.AuditEvent) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -855,6 +887,65 @@ func getIssuanceAttempt(attempts map[string]domain.IssuanceAttempt, enrollmentID
 	return copyIssuanceAttempt(attempt), nil
 }
 
+func crlGenerationClaimKey(issuerID string, distributionPoint string) string {
+	return issuerID + "\x00" + distributionPoint
+}
+
+func createCRLGenerationClaim(claims map[string]domain.CRLGenerationClaim, claim domain.CRLGenerationClaim) error {
+	key := crlGenerationClaimKey(claim.IssuerID, claim.DistributionPoint)
+	if _, ok := claims[key]; ok {
+		return domain.ErrInvalidTransition
+	}
+	claims[key] = claim
+	return nil
+}
+
+func getCRLGenerationClaim(claims map[string]domain.CRLGenerationClaim, issuerID string, distributionPoint string) (domain.CRLGenerationClaim, error) {
+	claim, ok := claims[crlGenerationClaimKey(issuerID, distributionPoint)]
+	if !ok {
+		return domain.CRLGenerationClaim{}, domain.ErrCRLGenerationClaimNotFound
+	}
+	return claim, nil
+}
+
+func updateCRLGenerationClaimIfCurrent(claims map[string]domain.CRLGenerationClaim, claim domain.CRLGenerationClaim, current domain.CRLGenerationClaim) error {
+	key := crlGenerationClaimKey(claim.IssuerID, claim.DistributionPoint)
+	stored, ok := claims[key]
+	if !ok {
+		return domain.ErrCRLGenerationClaimNotFound
+	}
+	if stored.CRLNumber != current.CRLNumber ||
+		!stored.LeaseExpiresAt.Equal(current.LeaseExpiresAt) ||
+		!stored.UpdatedAt.Equal(current.UpdatedAt) {
+		return domain.ErrInvalidTransition
+	}
+	claims[key] = claim
+	return nil
+}
+
+func deleteCRLGenerationClaimIfCurrent(claims map[string]domain.CRLGenerationClaim, current domain.CRLGenerationClaim) error {
+	key := crlGenerationClaimKey(current.IssuerID, current.DistributionPoint)
+	stored, ok := claims[key]
+	if !ok {
+		return domain.ErrCRLGenerationClaimNotFound
+	}
+	if stored.CRLNumber != current.CRLNumber ||
+		!stored.LeaseExpiresAt.Equal(current.LeaseExpiresAt) ||
+		!stored.UpdatedAt.Equal(current.UpdatedAt) {
+		return domain.ErrInvalidTransition
+	}
+	delete(claims, key)
+	return nil
+}
+
+func cloneCRLGenerationClaims(values map[string]domain.CRLGenerationClaim) map[string]domain.CRLGenerationClaim {
+	cloned := make(map[string]domain.CRLGenerationClaim, len(values))
+	for key, value := range values {
+		cloned[key] = value
+	}
+	return cloned
+}
+
 func copyNotificationEndpoint(endpoint domain.NotificationEndpoint) domain.NotificationEndpoint {
 	endpoint.EventTypes = append([]string(nil), endpoint.EventTypes...)
 	return endpoint
@@ -1225,6 +1316,7 @@ type memoryTx struct {
 	issuanceAttempts  map[string]domain.IssuanceAttempt
 	revocations       map[string]domain.Revocation
 	crls              map[string]domain.CRLPublication
+	crlClaims         map[string]domain.CRLGenerationClaim
 	auditEvents       []domain.AuditEvent
 	outbox            map[string]domain.OutboxMessage
 	jobAttempts       map[string]domain.JobAttempt
@@ -1486,6 +1578,22 @@ func (tx *memoryTx) GetLatestCRLPublicationByIssuer(ctx context.Context, issuerI
 
 func (tx *memoryTx) ListCRLPublicationsByIssuer(ctx context.Context, issuerID string) ([]domain.CRLPublication, error) {
 	return listCRLPublicationsByIssuer(tx.crls, issuerID), nil
+}
+
+func (tx *memoryTx) CreateCRLGenerationClaim(ctx context.Context, claim domain.CRLGenerationClaim) error {
+	return createCRLGenerationClaim(tx.crlClaims, claim)
+}
+
+func (tx *memoryTx) GetCRLGenerationClaim(ctx context.Context, issuerID string, distributionPoint string) (domain.CRLGenerationClaim, error) {
+	return getCRLGenerationClaim(tx.crlClaims, issuerID, distributionPoint)
+}
+
+func (tx *memoryTx) UpdateCRLGenerationClaimIfCurrent(ctx context.Context, claim domain.CRLGenerationClaim, current domain.CRLGenerationClaim) error {
+	return updateCRLGenerationClaimIfCurrent(tx.crlClaims, claim, current)
+}
+
+func (tx *memoryTx) DeleteCRLGenerationClaimIfCurrent(ctx context.Context, current domain.CRLGenerationClaim) error {
+	return deleteCRLGenerationClaimIfCurrent(tx.crlClaims, current)
 }
 
 func (tx *memoryTx) CreateAuditEvent(ctx context.Context, event domain.AuditEvent) error {

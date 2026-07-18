@@ -36,6 +36,8 @@ python scripts\test_verify_audit_replay_drill.py
 python scripts\verify-audit-replay-drill.py --out-dir .tmp\audit-replay-evidence\full
 python scripts\test_verify_issuer_rollover_drill.py
 python scripts\verify-issuer-rollover-drill.py --out-dir .tmp\issuer-rollover-evidence\full
+python scripts\test_verify_multi_node_reliability.py
+python scripts\verify-multi-node-reliability.py --out-dir .tmp\multi-node-evidence\full
 python scripts\test_verify_postgres_recovery_drill.py
 $env:ANOPKI_POSTGRES_RECOVERY_DSN = "postgres://anopki:anopki@localhost:5432/anopki_recovery_control?sslmode=disable"
 python scripts\verify-postgres-recovery-drill.py --out-dir .tmp\postgres-recovery-evidence\full
@@ -114,6 +116,7 @@ Certbot smoke requires Linux/WSL or elevated Windows with certbot installed.
    `anopki-audit-replay-verification.tar.gz`,
    `anopki-issuer-rollover-verification.tar.gz`,
    `anopki-postgres-recovery-verification.tar.gz`,
+   `anopki-multi-node-verification.tar.gz`,
    `anopki-backend-info.json`, `anopki-release-metadata.json`, `SHA256SUMS`,
    CycloneDX SBOM, and
    `SIGNING-STATUS.txt`. The profile metadata must match the built Core and

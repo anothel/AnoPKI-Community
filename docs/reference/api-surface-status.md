@@ -18,11 +18,11 @@ partial, planned, smoke-only, or not-production-stable.
 
 | Area | Status | Evidence | Remaining gap |
 | --- | --- | --- | --- |
-| Identity, issuer, profile, enrollment, approval, issuance | Implemented, not-production-stable | Service README, OpenAPI, state transitions, Go/C++ boundary tests. | Public API compatibility freeze. |
+| Identity, issuer, profile, enrollment, approval, issuance | Implemented, not-production-stable | Service README, OpenAPI, state transitions, Go/C++ boundary tests, and multi-node issuance-claim evidence. | Public API compatibility freeze and real multi-node failover evidence. |
 | Certificate inventory, renewal, reissue, revocation, suspension, expiration scan | Implemented, not-production-stable | Service README, state transitions, lifecycle tests. | Deployment-target automation remains planned. |
-| CRL publication and OCSP response | Implemented, not-production-stable | Service README, core CLI contract, CRL/OCSP tests, and single-node signer outage/recovery evidence. | Multi-node HA deployment and traffic-shift outage evidence. |
+| CRL publication and OCSP response | Implemented, not-production-stable | Service README, core CLI contract, CRL/OCSP tests, signer outage/recovery evidence, and multi-node CRL lease evidence. | Real multi-node HA deployment and traffic-shift outage evidence. |
 | Delegated OCSP responder registration and rotation | Implemented, not-production-stable | Service README, OpenAPI, lifecycle tests. | Production non-exportable provider support remains outside the current Community runtime scope. |
-| Audit events, outbox, webhook delivery | Partial, not-production-stable | Service README, webhook receiver reference, outbox tests, audit-repair/dead-letter replay evidence, audit tamper-evidence plan, SIEM detection examples. | Tamper-evident hash-chain implementation and SIEM exporter integration. |
+| Audit events, outbox, webhook delivery | Partial, not-production-stable | Service README, webhook receiver reference, outbox tests, audit-repair/dead-letter replay evidence, multi-node active-lease evidence, audit tamper-evidence plan, SIEM detection examples. | Real multi-node failover, tamper-evident hash-chain implementation and SIEM exporter integration. |
 | API key auth and operational probes | Implemented, not-production-stable | Service README, production startup guard tests, access model. | First-class role/ABAC enforcement waits for an operator directory. |
 | Public RFC 8555 ACME protocol adapter | Partial, smoke-only, not-production-stable | RFC 8555 conformance matrix plus lego and WSL certbot smoke evidence. | EAB and DNS-01 remain gated. |
 | Internal ACME state management endpoints | Implemented, not-production-stable | Service README, OpenAPI, store tests. | Operator-facing shape can change before 1.0. |

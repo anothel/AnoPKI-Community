@@ -412,6 +412,17 @@ func applySQLiteCompatibilityMigrations(ctx context.Context, db sqlExecutor) err
 			ON certificate_issuance_attempts(status, lease_expires_at, updated_at, enrollment_id)`,
 		`CREATE UNIQUE INDEX IF NOT EXISTS idx_crl_publications_issuer_distribution_number
 			ON crl_publications(issuer_id, distribution_point, crl_number)`,
+		`CREATE TABLE IF NOT EXISTS crl_generation_claims (
+			issuer_id TEXT NOT NULL REFERENCES issuers(id),
+			distribution_point TEXT NOT NULL,
+			crl_number INTEGER NOT NULL,
+			lease_expires_at TEXT NOT NULL,
+			created_at TEXT NOT NULL,
+			updated_at TEXT NOT NULL,
+			PRIMARY KEY (issuer_id, distribution_point)
+		)`,
+		`CREATE INDEX IF NOT EXISTS idx_crl_generation_claims_lease
+			ON crl_generation_claims(lease_expires_at, issuer_id, distribution_point)`,
 		`CREATE TABLE IF NOT EXISTS api_keys (
 			id TEXT PRIMARY KEY,
 			name TEXT NOT NULL,
@@ -748,6 +759,17 @@ func applyPostgresCompatibilityMigrations(ctx context.Context, db sqlExecutor) e
 			ON certificate_issuance_attempts(status, lease_expires_at, updated_at, enrollment_id)`,
 		`CREATE UNIQUE INDEX IF NOT EXISTS idx_crl_publications_issuer_distribution_number
 			ON crl_publications(issuer_id, distribution_point, crl_number)`,
+		`CREATE TABLE IF NOT EXISTS crl_generation_claims (
+			issuer_id TEXT NOT NULL REFERENCES issuers(id),
+			distribution_point TEXT NOT NULL,
+			crl_number BIGINT NOT NULL,
+			lease_expires_at TIMESTAMPTZ NOT NULL,
+			created_at TIMESTAMPTZ NOT NULL,
+			updated_at TIMESTAMPTZ NOT NULL,
+			PRIMARY KEY (issuer_id, distribution_point)
+		)`,
+		`CREATE INDEX IF NOT EXISTS idx_crl_generation_claims_lease
+			ON crl_generation_claims(lease_expires_at, issuer_id, distribution_point)`,
 		`CREATE TABLE IF NOT EXISTS api_keys (
 			id TEXT PRIMARY KEY,
 			name TEXT NOT NULL,

@@ -22,6 +22,7 @@ REQUIRED_DOC_TEXT = [
     "## Audit Repair And Dead-Letter Replay Evidence Runner",
     "## Intermediate Issuer Rollover Evidence Runner",
     "## PostgreSQL Recovery Evidence Runner",
+    "## Multi-Node Reliability Evidence Runner",
     "## Supported-Go Evidence Runner",
     "## Required Evidence Per Release Candidate",
     "verify-go-release.py",
@@ -32,6 +33,8 @@ REQUIRED_DOC_TEXT = [
     "anopki-issuer-rollover-verification.tar.gz",
     "python scripts/verify-postgres-recovery-drill.py",
     "anopki-postgres-recovery-verification.tar.gz",
+    "python scripts/verify-multi-node-reliability.py",
+    "anopki-multi-node-verification.tar.gz",
     "syft",
     "cosign",
     "govulncheck",
@@ -91,6 +94,10 @@ REQUIRED_CI_TEXT = [
     "python scripts/verify-postgres-recovery-drill.py",
     "anopki-postgres-recovery-verification",
     "postgres-recovery-drill:",
+    "python scripts/test_verify_multi_node_reliability.py",
+    "python scripts/verify-multi-node-reliability.py",
+    "anopki-multi-node-verification",
+    "multi-node-reliability-drill:",
     "image: postgres:16",
     "postgresql-client",
     "python scripts/test_validate_release_artifacts.py",
@@ -148,6 +155,7 @@ REQUIRED_RECOVERY_RUNNER_TEXT = [
     "schema_migrations",
     "certificate_issuance_attempts",
     "crl_publications",
+    "crl_generation_claims",
     "webhook_deliveries",
     "private-key-exclusion",
     "recovery-verification.json",
@@ -208,11 +216,30 @@ REQUIRED_POSTGRES_RECOVERY_RUNNER_TEXT = [
     "TestPostgresRecoveryDrillDirtyMigrationRejectedIntegration",
     "pg_dump",
     "pg_restore",
+    "crl_generation_claims",
     "custom-format-backup-created",
     "restore-state-digest-matched",
     "postgres-recovery-verification.json",
     "postgres-recovery-verification.md",
     "postgres-recovery-test.log",
+    "sensitive-evidence-exclusion",
+]
+
+
+REQUIRED_MULTI_NODE_RUNNER_TEXT = [
+    "MINIMUM_GO_VERSION = (1, 25, 11)",
+    "community_multi_node_reliability_drill",
+    "TestIssueCertificateActiveClaimPreventsSecondServiceSigning",
+    "TestPublishCRLActiveClaimPreventsSecondServiceSigning",
+    "TestOutboxDispatcherActiveLeasePreventsSecondNodeHandling",
+    "TestMemoryStoreCRLGenerationClaims",
+    "certificate-signing-single-writer",
+    "crl-generation-single-writer",
+    "outbox-active-lease-not-stolen",
+    "stale-claim-cas-rejected",
+    "multi-node-verification.json",
+    "multi-node-verification.md",
+    "multi-node-test.log",
     "sensitive-evidence-exclusion",
 ]
 
@@ -236,6 +263,8 @@ REQUIRED_RELEASE_TEXT = [
     "anopki-issuer-rollover-verification.tar.gz",
     "python scripts/verify-postgres-recovery-drill.py",
     "anopki-postgres-recovery-verification.tar.gz",
+    "python scripts/verify-multi-node-reliability.py",
+    "anopki-multi-node-verification.tar.gz",
     '--commit "${GITHUB_SHA}"',
     'VERSION="$(cat VERSION)"',
     "go build -ldflags",
@@ -343,6 +372,7 @@ def main() -> None:
     require_text(root / "scripts/verify-audit-replay-drill.py", REQUIRED_AUDIT_REPLAY_RUNNER_TEXT)
     require_text(root / "scripts/verify-issuer-rollover-drill.py", REQUIRED_ISSUER_ROLLOVER_RUNNER_TEXT)
     require_text(root / "scripts/verify-postgres-recovery-drill.py", REQUIRED_POSTGRES_RECOVERY_RUNNER_TEXT)
+    require_text(root / "scripts/verify-multi-node-reliability.py", REQUIRED_MULTI_NODE_RUNNER_TEXT)
     require_text(root / ".github/workflows/ci.yml", REQUIRED_CI_TEXT)
     require_text(root / ".github/workflows/release.yml", REQUIRED_RELEASE_TEXT)
     print("release evidence ok")

@@ -18,6 +18,7 @@ var (
 	ErrCertificateNotFound           = errors.New("certificate not found")
 	ErrIssuanceAttemptNotFound       = errors.New("issuance attempt not found")
 	ErrCRLPublicationNotFound        = errors.New("crl publication not found")
+	ErrCRLGenerationClaimNotFound    = errors.New("crl generation claim not found")
 	ErrOutboxMessageNotFound         = errors.New("outbox message not found")
 	ErrWebhookDeliveryNotFound       = errors.New("webhook delivery not found")
 	ErrAPIKeyNotFound                = errors.New("api key not found")

@@ -6,6 +6,7 @@ import (
 	"errors"
 	"net/http"
 	"net/http/httptest"
+	"sync"
 	"testing"
 	"time"
 
@@ -59,6 +60,80 @@ func TestOutboxDispatcherCompletesHandledMessage(t *testing.T) {
 	}
 	if len(attempts) != 1 || attempts[0].Status != domain.JobAttemptSucceeded || attempts[0].Error != "" {
 		t.Fatalf("attempts = %#v, want one success", attempts)
+	}
+}
+
+func TestOutboxDispatcherActiveLeasePreventsSecondNodeHandling(t *testing.T) {
+	ctx := context.Background()
+	repo := store.NewMemoryStore()
+	clock := fixedClock{now: time.Date(2026, time.January, 2, 3, 4, 5, 0, time.UTC)}
+	message := domain.OutboxMessage{
+		ID:          "outbox-multi-node",
+		Type:        "certificate.expiring",
+		PayloadJSON: `{"certificate_id":"cert-1"}`,
+		Status:      domain.OutboxPending,
+		AvailableAt: clock.now.Add(-time.Minute),
+		CreatedAt:   clock.now.Add(-time.Minute),
+		UpdatedAt:   clock.now.Add(-time.Minute),
+	}
+	if err := repo.CreateOutboxMessage(ctx, message); err != nil {
+		t.Fatalf("CreateOutboxMessage returned error: %v", err)
+	}
+
+	ready := make(chan struct{})
+	release := make(chan struct{})
+	var mu sync.Mutex
+	handled := 0
+	first := NewOutboxDispatcher(repo, OutboxHandlerFunc(func(ctx context.Context, message domain.OutboxMessage) error {
+		mu.Lock()
+		handled++
+		mu.Unlock()
+		close(ready)
+		select {
+		case <-release:
+			return nil
+		case <-ctx.Done():
+			return ctx.Err()
+		}
+	}), clock, &threadSafeIDGenerator{})
+	second := NewOutboxDispatcher(repo, OutboxHandlerFunc(func(ctx context.Context, message domain.OutboxMessage) error {
+		mu.Lock()
+		handled++
+		mu.Unlock()
+		return nil
+	}), clock, &threadSafeIDGenerator{})
+
+	type runResult struct {
+		processed int
+		err       error
+	}
+	result := make(chan runResult, 1)
+	go func() {
+		processed, err := first.RunOnce(ctx, 10)
+		result <- runResult{processed: processed, err: err}
+	}()
+	select {
+	case <-ready:
+	case <-time.After(5 * time.Second):
+		t.Fatal("timed out waiting for first node handler")
+	}
+
+	processed, err := second.RunOnce(ctx, 10)
+	if err != nil {
+		t.Fatalf("second RunOnce returned error: %v", err)
+	}
+	if processed != 0 {
+		t.Fatalf("second processed = %d, want 0", processed)
+	}
+	close(release)
+	firstResult := <-result
+	if firstResult.err != nil || firstResult.processed != 1 {
+		t.Fatalf("first RunOnce = (%d, %v), want (1, nil)", firstResult.processed, firstResult.err)
+	}
+	mu.Lock()
+	defer mu.Unlock()
+	if handled != 1 {
+		t.Fatalf("handled = %d, want 1", handled)
 	}
 }
 

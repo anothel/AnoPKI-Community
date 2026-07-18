@@ -128,6 +128,22 @@ func (s *SQLStore) ListCRLPublicationsByIssuer(ctx context.Context, issuerID str
 	return s.repository().ListCRLPublicationsByIssuer(ctx, issuerID)
 }
 
+func (s *SQLStore) CreateCRLGenerationClaim(ctx context.Context, claim domain.CRLGenerationClaim) error {
+	return s.repository().CreateCRLGenerationClaim(ctx, claim)
+}
+
+func (s *SQLStore) GetCRLGenerationClaim(ctx context.Context, issuerID string, distributionPoint string) (domain.CRLGenerationClaim, error) {
+	return s.repository().GetCRLGenerationClaim(ctx, issuerID, distributionPoint)
+}
+
+func (s *SQLStore) UpdateCRLGenerationClaimIfCurrent(ctx context.Context, claim domain.CRLGenerationClaim, current domain.CRLGenerationClaim) error {
+	return s.repository().UpdateCRLGenerationClaimIfCurrent(ctx, claim, current)
+}
+
+func (s *SQLStore) DeleteCRLGenerationClaimIfCurrent(ctx context.Context, current domain.CRLGenerationClaim) error {
+	return s.repository().DeleteCRLGenerationClaimIfCurrent(ctx, current)
+}
+
 func (r sqlRepository) CreateCertificateProfile(ctx context.Context, profile domain.CertificateProfile) error {
 	allowedDNSPatterns, err := marshalStringSlice(profile.AllowedDNSPatterns)
 	if err != nil {
@@ -1098,4 +1114,110 @@ ORDER BY crl_number, created_at, id`, issuerID)
 		return nil, err
 	}
 	return publications, nil
+}
+
+func (r sqlRepository) CreateCRLGenerationClaim(ctx context.Context, claim domain.CRLGenerationClaim) error {
+	_, err := r.exec.ExecContext(ctx, `
+INSERT INTO crl_generation_claims (
+	issuer_id, distribution_point, crl_number, lease_expires_at, created_at, updated_at
+) VALUES (
+	$1, $2, $3, $4, $5, $6
+)`,
+		claim.IssuerID,
+		claim.DistributionPoint,
+		claim.CRLNumber,
+		formatSQLTime(claim.LeaseExpiresAt),
+		formatSQLTime(claim.CreatedAt),
+		formatSQLTime(claim.UpdatedAt),
+	)
+	if isUniqueConstraintError(err) {
+		return domain.ErrInvalidTransition
+	}
+	return err
+}
+
+func (r sqlRepository) GetCRLGenerationClaim(ctx context.Context, issuerID string, distributionPoint string) (domain.CRLGenerationClaim, error) {
+	claim, err := scanCRLGenerationClaim(r.exec.QueryRowContext(ctx, `
+SELECT issuer_id, distribution_point, crl_number, lease_expires_at, created_at, updated_at
+FROM crl_generation_claims
+WHERE issuer_id = $1 AND distribution_point = $2`, issuerID, distributionPoint))
+	if errors.Is(err, sql.ErrNoRows) {
+		return domain.CRLGenerationClaim{}, domain.ErrCRLGenerationClaimNotFound
+	}
+	if err != nil {
+		return domain.CRLGenerationClaim{}, err
+	}
+	return claim, nil
+}
+
+func (r sqlRepository) UpdateCRLGenerationClaimIfCurrent(ctx context.Context, claim domain.CRLGenerationClaim, current domain.CRLGenerationClaim) error {
+	result, err := r.exec.ExecContext(ctx, `
+UPDATE crl_generation_claims
+SET crl_number = $1,
+	lease_expires_at = $2,
+	created_at = $3,
+	updated_at = $4
+WHERE issuer_id = $5
+	AND distribution_point = $6
+	AND crl_number = $7
+	AND lease_expires_at = $8
+	AND updated_at = $9`,
+		claim.CRLNumber,
+		formatSQLTime(claim.LeaseExpiresAt),
+		formatSQLTime(claim.CreatedAt),
+		formatSQLTime(claim.UpdatedAt),
+		claim.IssuerID,
+		claim.DistributionPoint,
+		current.CRLNumber,
+		formatSQLTime(current.LeaseExpiresAt),
+		formatSQLTime(current.UpdatedAt),
+	)
+	if err != nil {
+		return err
+	}
+	rowsAffected, err := affectedRows(result)
+	if err != nil {
+		return err
+	}
+	if rowsAffected != 0 {
+		return nil
+	}
+	if _, err := r.GetCRLGenerationClaim(ctx, claim.IssuerID, claim.DistributionPoint); errors.Is(err, domain.ErrCRLGenerationClaimNotFound) {
+		return domain.ErrCRLGenerationClaimNotFound
+	} else if err != nil {
+		return err
+	}
+	return domain.ErrInvalidTransition
+}
+
+func (r sqlRepository) DeleteCRLGenerationClaimIfCurrent(ctx context.Context, current domain.CRLGenerationClaim) error {
+	result, err := r.exec.ExecContext(ctx, `
+DELETE FROM crl_generation_claims
+WHERE issuer_id = $1
+	AND distribution_point = $2
+	AND crl_number = $3
+	AND lease_expires_at = $4
+	AND updated_at = $5`,
+		current.IssuerID,
+		current.DistributionPoint,
+		current.CRLNumber,
+		formatSQLTime(current.LeaseExpiresAt),
+		formatSQLTime(current.UpdatedAt),
+	)
+	if err != nil {
+		return err
+	}
+	rowsAffected, err := affectedRows(result)
+	if err != nil {
+		return err
+	}
+	if rowsAffected != 0 {
+		return nil
+	}
+	if _, err := r.GetCRLGenerationClaim(ctx, current.IssuerID, current.DistributionPoint); errors.Is(err, domain.ErrCRLGenerationClaimNotFound) {
+		return domain.ErrCRLGenerationClaimNotFound
+	} else if err != nil {
+		return err
+	}
+	return domain.ErrInvalidTransition
 }

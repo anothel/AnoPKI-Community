@@ -62,6 +62,7 @@ SELECTED_TABLES = (
     "certificate_issuance_attempts",
     "revocations",
     "crl_publications",
+    "crl_generation_claims",
     "audit_events",
     "outbox_messages",
     "job_attempts",

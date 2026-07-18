@@ -134,6 +134,10 @@ type CRLPublicationRepository interface {
 	GetCRLPublication(ctx context.Context, id string) (domain.CRLPublication, error)
 	GetLatestCRLPublicationByIssuer(ctx context.Context, issuerID string) (domain.CRLPublication, error)
 	ListCRLPublicationsByIssuer(ctx context.Context, issuerID string) ([]domain.CRLPublication, error)
+	CreateCRLGenerationClaim(ctx context.Context, claim domain.CRLGenerationClaim) error
+	GetCRLGenerationClaim(ctx context.Context, issuerID string, distributionPoint string) (domain.CRLGenerationClaim, error)
+	UpdateCRLGenerationClaimIfCurrent(ctx context.Context, claim domain.CRLGenerationClaim, current domain.CRLGenerationClaim) error
+	DeleteCRLGenerationClaimIfCurrent(ctx context.Context, current domain.CRLGenerationClaim) error
 }
 
 type AuditRepository interface {

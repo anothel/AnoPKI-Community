@@ -992,6 +992,65 @@ func TestPublishCRLSelectsRevokedCertificatesAndPersistsArtifact(t *testing.T) {
 	}
 }
 
+func TestPublishCRLActiveClaimPreventsSecondServiceSigning(t *testing.T) {
+	ctx := context.Background()
+	repo := store.NewMemoryStore()
+	clock := fixedClock{now: time.Date(2026, time.January, 2, 3, 4, 5, 0, time.UTC)}
+	firstIssuer := newBlockingCRLIssuer()
+	firstService := New(repo, firstIssuer, clock, &threadSafeIDGenerator{})
+	secondIssuer := &fakeIssuer{crlResult: corecli.GenerateCRLResult{CRLPEM: "second-crl-pem"}}
+	secondService := New(repo, secondIssuer, clock, &threadSafeIDGenerator{})
+
+	issuer, err := firstService.CreateIssuer(ctx, "admin", CreateIssuerRequest{
+		Name:           "intermediate-ca",
+		Kind:           domain.IssuerIntermediateCA,
+		CertificatePEM: "issuer-cert-pem",
+		KeyRef:         "issuer-key-ref",
+	})
+	if err != nil {
+		t.Fatalf("CreateIssuer returned error: %v", err)
+	}
+	request := PublishCRLRequest{
+		IssuerID:          issuer.ID,
+		DistributionPoint: "https://pki.example.test/intermediate.crl",
+		NextUpdate:        clock.now.Add(24 * time.Hour),
+	}
+	result := make(chan crlPublicationResult, 1)
+	go func() {
+		publication, err := firstService.PublishCRL(ctx, "node-a", request)
+		result <- crlPublicationResult{publication: publication, err: err}
+	}()
+	select {
+	case <-firstIssuer.ready:
+	case <-time.After(5 * time.Second):
+		t.Fatal("timed out waiting for first CRL signing request")
+	}
+
+	if _, err := secondService.PublishCRL(ctx, "node-b", request); !errors.Is(err, domain.ErrInvalidTransition) {
+		t.Fatalf("second PublishCRL error = %v, want ErrInvalidTransition", err)
+	}
+	if len(secondIssuer.crlRequests) != 0 {
+		t.Fatalf("second issuer CRL request count = %d, want 0", len(secondIssuer.crlRequests))
+	}
+
+	close(firstIssuer.release)
+	first := <-result
+	if first.err != nil {
+		t.Fatalf("first PublishCRL returned error: %v", first.err)
+	}
+	if first.publication.CRLNumber != 1 {
+		t.Fatalf("first CRL number = %d, want 1", first.publication.CRLNumber)
+	}
+
+	second, err := secondService.PublishCRL(ctx, "node-b", request)
+	if err != nil {
+		t.Fatalf("PublishCRL after claim release returned error: %v", err)
+	}
+	if second.CRLNumber != 2 {
+		t.Fatalf("second CRL number = %d, want 2", second.CRLNumber)
+	}
+}
+
 func TestPublishCRLMapsCoreFailure(t *testing.T) {
 	ctx := context.Background()
 	repo := store.NewMemoryStore()
@@ -6671,6 +6730,42 @@ func (f *fakeKeyProvider) CheckReady(_ context.Context, ref string) (keyref.Prov
 		Class:         keyref.Class(ref),
 		Exportability: keyref.Exportability(ref),
 	}, nil
+}
+
+type crlPublicationResult struct {
+	publication domain.CRLPublication
+	err         error
+}
+
+type blockingCRLIssuer struct {
+	*fakeIssuer
+	mu      sync.Mutex
+	ready   chan struct{}
+	release chan struct{}
+}
+
+func newBlockingCRLIssuer() *blockingCRLIssuer {
+	return &blockingCRLIssuer{
+		fakeIssuer: &fakeIssuer{crlResult: corecli.GenerateCRLResult{CRLPEM: "first-crl-pem"}},
+		ready:      make(chan struct{}),
+		release:    make(chan struct{}),
+	}
+}
+
+func (f *blockingCRLIssuer) GenerateCRL(ctx context.Context, req corecli.GenerateCRLRequest) (corecli.GenerateCRLResult, error) {
+	f.mu.Lock()
+	if len(f.fakeIssuer.crlRequests) == 0 {
+		close(f.ready)
+	}
+	f.mu.Unlock()
+	select {
+	case <-f.release:
+	case <-ctx.Done():
+		return corecli.GenerateCRLResult{}, ctx.Err()
+	}
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return f.fakeIssuer.GenerateCRL(ctx, req)
 }
 
 type issueCertificateResult struct {

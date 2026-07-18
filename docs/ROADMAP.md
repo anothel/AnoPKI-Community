@@ -40,7 +40,8 @@ Completed backend and FileKeyProvider work is intentionally omitted.
 - Keep the audit-repair and dead-letter replay drill and release evidence contract current.
 - Keep the intermediate issuer rollover and rollback drill and release evidence contract current.
 - Keep the PostgreSQL 16 backup/restore and migration-rollback drill and release evidence contract current.
-- Expand multi-node recovery evidence.
+- Keep multi-node issuance, CRL and Outbox single-writer evidence current.
+- Expand real multi-node PostgreSQL, failover and traffic-shift evidence.
 - Complete tamper-evident audit storage only after event-schema stability is sufficient.
 
 ## P2 — Refactor safety
