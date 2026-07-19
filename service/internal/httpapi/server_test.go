@@ -28,6 +28,8 @@ import (
 	"os"
 	"reflect"
 	"strings"
+	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -3410,6 +3412,345 @@ func TestAPIKeyAuthRejectsInvalidBearerToken(t *testing.T) {
 	}
 }
 
+func TestRequestAuthorizerRunsAfterAuthenticationAndScopeAndSkipsPublicRoutes(t *testing.T) {
+	var calls atomic.Int32
+	authorizer := requestAuthorizerFunc(func(context.Context, AuthorizationInput) (AuthorizationResult, error) {
+		calls.Add(1)
+		return AuthorizationResult{Outcome: AuthorizationOutcomeAllow}, nil
+	})
+	api := newTestAPIWithAuthorizer(t, AuthConfig{Mode: AuthModeAPIKey}, authorizer)
+
+	var body errorResponse
+	status := api.doJSON(t, http.MethodGet, "/identities", "", nil, &body)
+	assertStatus(t, status, http.StatusUnauthorized)
+
+	createScopedTestAPIKey(t, api.repo, "read-key", "read-token", "reader", domain.APIKeyActive, domain.APIKeyScopeRead)
+	status = api.doJSONWithHeaders(t, http.MethodPost, "/identities", "", map[string]any{
+		"type": string(domain.IdentityMachine),
+		"name": "blocked-before-authorizer",
+	}, map[string]string{
+		"Authorization": "Bearer read-token",
+	}, &body)
+	assertStatus(t, status, http.StatusForbidden)
+
+	status = api.doJSON(t, http.MethodGet, "/crls/missing-crl", "", nil, &body)
+	assertStatus(t, status, http.StatusNotFound)
+	if got := calls.Load(); got != 0 {
+		t.Fatalf("authorizer calls = %d, want 0", got)
+	}
+}
+
+func TestRequestAuthorizerReceivesMinimalAuditContextWithoutSecrets(t *testing.T) {
+	inputs := make(chan AuthorizationInput, 2)
+	authorizer := requestAuthorizerFunc(func(_ context.Context, input AuthorizationInput) (AuthorizationResult, error) {
+		inputs <- input
+		return AuthorizationResult{Outcome: AuthorizationOutcomeAllow}, nil
+	})
+	auth := AuthConfig{Mode: AuthModeAPIKey, TrustedProxies: mustParseTrustedProxies(t, "127.0.0.0/8", "::1/128")}
+	api := newTestAPIWithAuthorizer(t, auth, authorizer)
+	createScopedTestAPIKey(t, api.repo, "write-key", "raw-api-key-secret", "writer", domain.APIKeyActive, domain.APIKeyScopeWrite)
+
+	headers := map[string]string{
+		"Authorization":   "Bearer raw-api-key-secret",
+		"Cookie":          "session=cookie-secret",
+		"X-Request-ID":    "req-authz-123",
+		"Traceparent":     "00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-01",
+		"User-Agent":      "authz-test/1.0",
+		"X-Forwarded-For": "203.0.113.20, 10.0.0.1",
+	}
+	var created apiIdentity
+	status := api.doJSONWithHeaders(t, http.MethodPost, "/identities?customer=query-secret", "ignored", map[string]any{
+		"type": string(domain.IdentityMachine),
+		"name": "body-secret",
+	}, headers, &created)
+	assertStatus(t, status, http.StatusCreated)
+	input := <-inputs
+	if input.ActorID != "writer" ||
+		input.AuthenticationMethod != string(AuthModeAPIKey) ||
+		input.RequiredScope != string(requiredScopeWrite) ||
+		input.HTTPMethod != http.MethodPost ||
+		input.RoutePattern != "/identities" ||
+		input.RequestID != "req-authz-123" ||
+		input.Traceparent != headers["Traceparent"] ||
+		input.ClientIP != "203.0.113.20" ||
+		input.UserAgent != "authz-test/1.0" {
+		t.Fatalf("authorization input = %#v", input)
+	}
+
+	var missing errorResponse
+	status = api.doJSONWithHeaders(t, http.MethodGet, "/identities/path-secret", "", nil, headers, &missing)
+	assertStatus(t, status, http.StatusNotFound)
+	pathInput := <-inputs
+	if pathInput.RequiredScope != string(requiredScopeRead) || pathInput.RoutePattern != "/identities/{id}" {
+		t.Fatalf("path authorization input = %#v", pathInput)
+	}
+
+	encoded, err := json.Marshal([]AuthorizationInput{input, pathInput})
+	if err != nil {
+		t.Fatalf("marshal authorization inputs: %v", err)
+	}
+	for _, excluded := range []string{"raw-api-key-secret", "Bearer ", "cookie-secret", "body-secret", "query-secret", "path-secret"} {
+		if bytes.Contains(encoded, []byte(excluded)) {
+			t.Fatalf("authorization input exposed %q: %s", excluded, encoded)
+		}
+	}
+}
+
+func TestRequestAuthorizerOutcomesFailClosed(t *testing.T) {
+	tests := []struct {
+		name       string
+		result     AuthorizationResult
+		err        error
+		wantStatus int
+		wantCount  int
+	}{
+		{name: "allow", result: AuthorizationResult{Outcome: AuthorizationOutcomeAllow}, wantStatus: http.StatusCreated, wantCount: 1},
+		{name: "deny", result: AuthorizationResult{Outcome: AuthorizationOutcomeDeny}, wantStatus: http.StatusForbidden},
+		{name: "approval required", result: AuthorizationResult{Outcome: AuthorizationOutcomeApprovalRequired}, wantStatus: http.StatusForbidden},
+		{name: "evaluator error", err: errors.New("evaluator failed"), wantStatus: http.StatusForbidden},
+		{name: "empty outcome", result: AuthorizationResult{}, wantStatus: http.StatusForbidden},
+		{name: "unknown outcome", result: AuthorizationResult{Outcome: AuthorizationOutcome("unknown")}, wantStatus: http.StatusForbidden},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			authorizer := requestAuthorizerFunc(func(context.Context, AuthorizationInput) (AuthorizationResult, error) {
+				return tt.result, tt.err
+			})
+			api := newTestAPIWithAuthorizer(t, AuthConfig{Mode: AuthModeDev}, authorizer)
+			var response any
+			status := api.doJSON(t, http.MethodPost, "/identities", "actor", map[string]any{
+				"type": string(domain.IdentityMachine),
+				"name": "authorization-outcome",
+			}, &response)
+			assertStatus(t, status, tt.wantStatus)
+
+			identities, err := api.repo.ListIdentities(api.ctx)
+			if err != nil {
+				t.Fatalf("list identities: %v", err)
+			}
+			if len(identities) != tt.wantCount {
+				t.Fatalf("identity count = %d, want %d", len(identities), tt.wantCount)
+			}
+		})
+	}
+}
+
+func TestRequestAuthorizerReceivesCanceledContext(t *testing.T) {
+	api := newTestAPI(t)
+	var sawCanceled atomic.Bool
+	authorizer := requestAuthorizerFunc(func(ctx context.Context, _ AuthorizationInput) (AuthorizationResult, error) {
+		sawCanceled.Store(errors.Is(ctx.Err(), context.Canceled))
+		return AuthorizationResult{}, ctx.Err()
+	})
+	server := NewWithAuthorizer(api.service, AuthConfig{Mode: AuthModeDev}, ACMEConfig{}, authorizer)
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	req := httptest.NewRequest(http.MethodPost, "/identities", strings.NewReader(`{"type":"machine","name":"canceled"}`)).WithContext(ctx)
+	req.Header.Set("Content-Type", "application/json")
+	response := httptest.NewRecorder()
+	server.ServeHTTP(response, req)
+
+	assertStatus(t, response.Code, http.StatusForbidden)
+	if !sawCanceled.Load() {
+		t.Fatal("authorizer did not receive canceled request context")
+	}
+	identities, err := api.repo.ListIdentities(api.ctx)
+	if err != nil {
+		t.Fatalf("list identities: %v", err)
+	}
+	if len(identities) != 0 {
+		t.Fatalf("identity count = %d, want 0", len(identities))
+	}
+}
+
+func TestRequestAuthorizerConcurrentDecisionsDoNotLeak(t *testing.T) {
+	api := newTestAPI(t)
+	authorizer := requestAuthorizerFunc(func(_ context.Context, input AuthorizationInput) (AuthorizationResult, error) {
+		if strings.HasPrefix(input.ActorID, "allow-") {
+			return AuthorizationResult{Outcome: AuthorizationOutcomeAllow}, nil
+		}
+		return AuthorizationResult{Outcome: AuthorizationOutcomeDeny}, nil
+	})
+	server := NewWithAuthorizer(api.service, AuthConfig{Mode: AuthModeDev}, ACMEConfig{}, authorizer)
+
+	const requestCount = 32
+	errs := make(chan error, requestCount)
+	var wg sync.WaitGroup
+	for i := 0; i < requestCount; i++ {
+		wg.Add(1)
+		go func(i int) {
+			defer wg.Done()
+			allowed := i%2 == 0
+			actor := fmt.Sprintf("deny-%d", i)
+			wantStatus := http.StatusForbidden
+			if allowed {
+				actor = fmt.Sprintf("allow-%d", i)
+				wantStatus = http.StatusOK
+			}
+			req := httptest.NewRequest(http.MethodGet, "/identities", nil)
+			req.Header.Set("X-Actor", actor)
+			response := httptest.NewRecorder()
+			server.ServeHTTP(response, req)
+			if response.Code != wantStatus {
+				errs <- fmt.Errorf("actor %s status = %d, want %d", actor, response.Code, wantStatus)
+			}
+		}(i)
+	}
+	wg.Wait()
+	close(errs)
+	for err := range errs {
+		t.Error(err)
+	}
+}
+
+func TestRequestAuthorizationRouteFixture(t *testing.T) {
+	fixtures := []struct {
+		method  string
+		path    string
+		pattern string
+		public  bool
+	}{
+		{http.MethodGet, "/debug/vars", "GET /debug/vars", false},
+		{http.MethodPost, "/identities", "POST /identities", false},
+		{http.MethodGet, "/identities", "GET /identities", false},
+		{http.MethodGet, "/identities/identity-1", "GET /identities/{id}", false},
+		{http.MethodPost, "/issuers", "POST /issuers", false},
+		{http.MethodGet, "/issuers/issuer-1/chain", "GET /issuers/{id}/chain", false},
+		{http.MethodPost, "/issuers/issuer-1/ocsp-responders", "POST /issuers/{id}/ocsp-responders", false},
+		{http.MethodGet, "/issuers/issuer-1/ocsp-responders", "GET /issuers/{id}/ocsp-responders", false},
+		{http.MethodPost, "/issuers/issuer-1/ocsp-responders/rotate", "POST /issuers/{id}/ocsp-responders/rotate", false},
+		{http.MethodPost, "/issuers/issuer-1/ocsp-responders/responder-1/disable", "POST /issuers/{id}/ocsp-responders/{responderID}/disable", false},
+		{http.MethodPost, "/notification-endpoints", "POST /notification-endpoints", false},
+		{http.MethodGet, "/notification-endpoints", "GET /notification-endpoints", false},
+		{http.MethodPost, "/notification-endpoints/endpoint-1/disable", "POST /notification-endpoints/{id}/disable", false},
+		{http.MethodGet, "/outbox/messages", "GET /outbox/messages", false},
+		{http.MethodPost, "/outbox/messages/dead-letter/replay", "POST /outbox/messages/dead-letter/replay", false},
+		{http.MethodPost, "/outbox/messages/message-1/retry", "POST /outbox/messages/{id}/retry", false},
+		{http.MethodGet, "/operator/certificate-inventory", "GET /operator/certificate-inventory", false},
+		{http.MethodGet, "/operator/expiry-slo", "GET /operator/expiry-slo", false},
+		{http.MethodPost, "/api-keys", "POST /api-keys", false},
+		{http.MethodGet, "/api-keys", "GET /api-keys", false},
+		{http.MethodPost, "/api-keys/key-1/rotate", "POST /api-keys/{id}/rotate", false},
+		{http.MethodPost, "/api-keys/key-1/disable", "POST /api-keys/{id}/disable", false},
+		{http.MethodPost, "/acme/accounts", "POST /acme/accounts", false},
+		{http.MethodGet, "/acme/accounts", "GET /acme/accounts", false},
+		{http.MethodPost, "/acme/orders", "POST /acme/orders", false},
+		{http.MethodGet, "/acme/orders/order-1", "GET /acme/orders/{id}", false},
+		{http.MethodGet, "/acme/orders/order-1/authorizations", "GET /acme/orders/{id}/authorizations", false},
+		{http.MethodPost, "/acme/orders/order-1/finalize", "POST /acme/orders/{id}/finalize", false},
+		{http.MethodGet, "/acme/authorizations/authz-1/challenges", "GET /acme/authorizations/{id}/challenges", false},
+		{http.MethodPost, "/acme/challenges/challenge-1/complete", "POST /acme/challenges/{id}/complete", false},
+		{http.MethodGet, "/acme/directory", "GET /acme/directory", true},
+		{http.MethodHead, "/acme/new-nonce", "HEAD /acme/new-nonce", true},
+		{http.MethodGet, "/acme/new-nonce", "GET /acme/new-nonce", true},
+		{http.MethodPost, "/acme/new-account", "POST /acme/new-account", true},
+		{http.MethodPost, "/acme/account/account-1", "POST /acme/account/{id}", true},
+		{http.MethodPost, "/acme/new-order", "POST /acme/new-order", true},
+		{http.MethodPost, "/acme/key-change", "POST /acme/key-change", true},
+		{http.MethodGet, "/acme/order/order-1", "GET /acme/order/{id}", true},
+		{http.MethodPost, "/acme/order/order-1", "POST /acme/order/{id}", true},
+		{http.MethodGet, "/acme/authz/authz-1", "GET /acme/authz/{id}", true},
+		{http.MethodPost, "/acme/authz/authz-1", "POST /acme/authz/{id}", true},
+		{http.MethodPost, "/acme/challenge/challenge-1", "POST /acme/challenge/{id}", true},
+		{http.MethodPost, "/acme/order/order-1/finalize", "POST /acme/order/{id}/finalize", true},
+		{http.MethodPost, "/acme/revoke-cert", "POST /acme/revoke-cert", true},
+		{http.MethodGet, "/acme/cert/cert-1", "GET /acme/cert/{id}", true},
+		{http.MethodPost, "/acme/cert/cert-1", "POST /acme/cert/{id}", true},
+		{http.MethodPost, "/certificate-profiles", "POST /certificate-profiles", false},
+		{http.MethodGet, "/certificate-profiles", "GET /certificate-profiles", false},
+		{http.MethodGet, "/certificate-profiles/profile-1", "GET /certificate-profiles/{id}", false},
+		{http.MethodPost, "/enrollments", "POST /enrollments", false},
+		{http.MethodGet, "/enrollments", "GET /enrollments", false},
+		{http.MethodGet, "/enrollments/enrollment-1", "GET /enrollments/{id}", false},
+		{http.MethodPost, "/enrollments/enrollment-1/approve", "POST /enrollments/{id}/approve", false},
+		{http.MethodPost, "/enrollments/enrollment-1/reject", "POST /enrollments/{id}/reject", false},
+		{http.MethodPost, "/certificates", "POST /certificates", false},
+		{http.MethodGet, "/certificates", "GET /certificates", false},
+		{http.MethodPost, "/certificates/expiration-scan", "POST /certificates/expiration-scan", false},
+		{http.MethodGet, "/certificates/certificate-1", "GET /certificates/{id}", false},
+		{http.MethodPost, "/certificates/certificate-1/revoke", "POST /certificates/{id}/revoke", false},
+		{http.MethodPost, "/certificates/certificate-1/suspend", "POST /certificates/{id}/suspend", false},
+		{http.MethodPost, "/certificates/certificate-1/resume", "POST /certificates/{id}/resume", false},
+		{http.MethodPost, "/certificates/certificate-1/renew", "POST /certificates/{id}/renew", false},
+		{http.MethodPost, "/certificates/certificate-1/reissue", "POST /certificates/{id}/reissue", false},
+		{http.MethodPost, "/crls", "POST /crls", false},
+		{http.MethodGet, "/crls/crl-1", "GET /crls/{id}", true},
+		{http.MethodGet, "/issuers/issuer-1/crl", "GET /issuers/{id}/crl", true},
+		{http.MethodPost, "/ocsp", "POST /ocsp", true},
+		{http.MethodGet, "/audit-events", "GET /audit-events", false},
+		{http.MethodGet, "/audit-events/integrity", "GET /audit-events/integrity", false},
+		{http.MethodPost, "/audit-events/retention/prune", "POST /audit-events/retention/prune", false},
+		{http.MethodPost, "/audit-events/repair/issuance", "POST /audit-events/repair/issuance", false},
+		{http.MethodGet, "/trust/anchors", "GET /trust/anchors", false},
+	}
+	if len(fixtures) != 72 {
+		t.Fatalf("route fixture count = %d, want 72", len(fixtures))
+	}
+
+	server := New(nil)
+	publicCount := 0
+	for _, fixture := range fixtures {
+		req := httptest.NewRequest(fixture.method, fixture.path, nil)
+		_, pattern := server.mux.Handler(req)
+		if pattern != fixture.pattern {
+			t.Errorf("%s %s pattern = %q, want %q", fixture.method, fixture.path, pattern, fixture.pattern)
+		}
+		if public := isPublicEndpoint(fixture.method, fixture.path); public != fixture.public {
+			t.Errorf("%s %s public = %t, want %t", fixture.method, fixture.path, public, fixture.public)
+		}
+		if fixture.public {
+			publicCount++
+		}
+	}
+	if publicCount != 19 || len(fixtures)-publicCount != 53 {
+		t.Fatalf("route classification = %d public/%d protected, want 19/53", publicCount, len(fixtures)-publicCount)
+	}
+
+	api := newTestAPI(t)
+	var authorizerCalls atomic.Int32
+	server = NewWithAuthorizer(api.service, AuthConfig{Mode: AuthModeAPIKey}, ACMEConfig{}, requestAuthorizerFunc(func(context.Context, AuthorizationInput) (AuthorizationResult, error) {
+		authorizerCalls.Add(1)
+		return AuthorizationResult{Outcome: AuthorizationOutcomeDeny}, nil
+	}))
+	for _, fixture := range fixtures {
+		if !fixture.public {
+			continue
+		}
+		server.ServeHTTP(httptest.NewRecorder(), httptest.NewRequest(fixture.method, fixture.path, nil))
+	}
+	if got := authorizerCalls.Load(); got != 0 {
+		t.Fatalf("authorizer calls for public route fixture = %d, want 0", got)
+	}
+}
+
+func TestRequiredScopeCompatibilityFixture(t *testing.T) {
+	tests := []struct {
+		method string
+		path   string
+		want   requiredScope
+	}{
+		{http.MethodGet, "/identities", requiredScopeRead},
+		{http.MethodPost, "/identities", requiredScopeWrite},
+		{http.MethodPost, "/certificates/expiration-scan", requiredScopeOperator},
+		{http.MethodGet, "/api-keys", requiredScopeOperator},
+		{http.MethodGet, "/outbox/messages", requiredScopeOperator},
+		{http.MethodGet, "/audit-events", requiredScopeOperator},
+		{http.MethodGet, "/operator/certificate-inventory", requiredScopeOperator},
+	}
+	for _, tt := range tests {
+		if got := requiredScopeForRequest(tt.method, tt.path); got != tt.want {
+			t.Errorf("requiredScopeForRequest(%q, %q) = %q, want %q", tt.method, tt.path, got, tt.want)
+		}
+	}
+}
+
+type requestAuthorizerFunc func(context.Context, AuthorizationInput) (AuthorizationResult, error)
+
+func (f requestAuthorizerFunc) Authorize(ctx context.Context, input AuthorizationInput) (AuthorizationResult, error) {
+	return f(ctx, input)
+}
+
 func TestDebugVarsExposesAnoPKIMetrics(t *testing.T) {
 	api := newTestAPI(t)
 
@@ -3766,6 +4107,11 @@ func newTestAPIWithAuth(t *testing.T, auth AuthConfig) *testAPI {
 	return newTestAPIWithAuthAndAPIKeyPepper(t, auth, "")
 }
 
+func newTestAPIWithAuthorizer(t *testing.T, auth AuthConfig, authorizer RequestAuthorizer) *testAPI {
+	t.Helper()
+	return newTestAPIWithAuthACMEAPIKeyPepperAndAuthorizer(t, auth, ACMEConfig{}, "", authorizer)
+}
+
 func newTestAPIWithACMEConfig(t *testing.T, acme ACMEConfig) *testAPI {
 	t.Helper()
 	return newTestAPIWithAuthACMEAndAPIKeyPepper(t, AuthConfig{Mode: AuthModeDev}, acme, "")
@@ -3778,6 +4124,11 @@ func newTestAPIWithAuthAndAPIKeyPepper(t *testing.T, auth AuthConfig, pepper str
 
 func newTestAPIWithAuthACMEAndAPIKeyPepper(t *testing.T, auth AuthConfig, acme ACMEConfig, pepper string) *testAPI {
 	t.Helper()
+	return newTestAPIWithAuthACMEAPIKeyPepperAndAuthorizer(t, auth, acme, pepper, nil)
+}
+
+func newTestAPIWithAuthACMEAPIKeyPepperAndAuthorizer(t *testing.T, auth AuthConfig, acme ACMEConfig, pepper string, authorizer RequestAuthorizer) *testAPI {
+	t.Helper()
 	issuer := &fakeIssuer{}
 	acmeHTTP01 := &fakeACMEHTTP01Verifier{}
 	repo := store.NewMemoryStore()
@@ -3789,7 +4140,7 @@ func newTestAPIWithAuthACMEAndAPIKeyPepper(t *testing.T, auth AuthConfig, acme A
 		acmeHTTP01,
 		pepper,
 	)
-	server := httptest.NewServer(NewWithAuthAndACME(service, auth, acme))
+	server := httptest.NewServer(NewWithAuthorizer(service, auth, acme, authorizer))
 	t.Cleanup(server.Close)
 
 	return &testAPI{

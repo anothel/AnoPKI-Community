@@ -23,13 +23,14 @@ import (
 )
 
 type Server struct {
-	service *lifecycle.Service
-	mux     *http.ServeMux
-	auth    AuthConfig
-	acme    ACMEConfig
-	nonces  ACMENonceStore
-	rateMu  sync.Mutex
-	rates   map[string]acmeRateBucket
+	service    *lifecycle.Service
+	mux        *http.ServeMux
+	auth       AuthConfig
+	acme       ACMEConfig
+	authorizer RequestAuthorizer
+	nonces     ACMENonceStore
+	rateMu     sync.Mutex
+	rates      map[string]acmeRateBucket
 }
 
 var errACMEBadNonce = errors.New("acme bad nonce")
@@ -55,6 +56,34 @@ const (
 type AuthConfig struct {
 	Mode           AuthMode
 	TrustedProxies []netip.Prefix
+}
+
+type RequestAuthorizer interface {
+	Authorize(context.Context, AuthorizationInput) (AuthorizationResult, error)
+}
+
+type AuthorizationInput struct {
+	ActorID              string
+	AuthenticationMethod string
+	RequiredScope        string
+	HTTPMethod           string
+	RoutePattern         string
+	RequestID            string
+	Traceparent          string
+	ClientIP             string
+	UserAgent            string
+}
+
+type AuthorizationOutcome string
+
+const (
+	AuthorizationOutcomeAllow            AuthorizationOutcome = "allow"
+	AuthorizationOutcomeDeny             AuthorizationOutcome = "deny"
+	AuthorizationOutcomeApprovalRequired AuthorizationOutcome = "approval_required"
+)
+
+type AuthorizationResult struct {
+	Outcome AuthorizationOutcome
 }
 
 type ACMEConfig struct {
@@ -107,6 +136,10 @@ func NewWithAuth(service *lifecycle.Service, auth AuthConfig) *Server {
 }
 
 func NewWithAuthAndACME(service *lifecycle.Service, auth AuthConfig, acme ACMEConfig) *Server {
+	return NewWithAuthorizer(service, auth, acme, nil)
+}
+
+func NewWithAuthorizer(service *lifecycle.Service, auth AuthConfig, acme ACMEConfig, authorizer RequestAuthorizer) *Server {
 	if auth.Mode == "" {
 		auth.Mode = AuthModeDev
 	}
@@ -121,12 +154,13 @@ func NewWithAuthAndACME(service *lifecycle.Service, auth AuthConfig, acme ACMECo
 		acme.RateLimitWindow = defaultACMERateWindow
 	}
 	s := &Server{
-		service: service,
-		mux:     http.NewServeMux(),
-		auth:    auth,
-		acme:    acme,
-		nonces:  nonceStore,
-		rates:   make(map[string]acmeRateBucket),
+		service:    service,
+		mux:        http.NewServeMux(),
+		auth:       auth,
+		acme:       acme,
+		authorizer: authorizer,
+		nonces:     nonceStore,
+		rates:      make(map[string]acmeRateBucket),
 	}
 	s.registerRoutes()
 	return s
@@ -140,14 +174,15 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}()
 	requestID := requestIDForRequest(r)
 	rw.Header().Set("X-Request-ID", requestID)
-	ctx := lifecycle.WithAuditRequestMetadata(r.Context(), lifecycle.AuditRequestMetadata{
+	auditMetadata := lifecycle.AuditRequestMetadata{
 		RequestID:   requestID,
 		Traceparent: strings.TrimSpace(r.Header.Get("Traceparent")),
 		ClientIP:    requestClientIP(r, s.auth.TrustedProxies),
 		UserAgent:   strings.TrimSpace(r.UserAgent()),
 		AuthMethod:  string(s.auth.Mode),
 		StartedAt:   time.Now(),
-	})
+	}
+	ctx := lifecycle.WithAuditRequestMetadata(r.Context(), auditMetadata)
 	r = r.WithContext(ctx)
 	r.Body = http.MaxBytesReader(rw, r.Body, requestBodyLimit(r))
 	authenticated, err := s.authenticateRequest(r)
@@ -159,6 +194,29 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	r = r.WithContext(authenticated)
+	if s.authorizer != nil && !isPublicEndpoint(r.Method, r.URL.Path) {
+		_, routePattern := s.mux.Handler(r)
+		if _, pathPattern, ok := strings.Cut(routePattern, " "); ok {
+			routePattern = pathPattern
+		}
+		if routePattern != "" {
+			result, err := s.authorizer.Authorize(r.Context(), AuthorizationInput{
+				ActorID:              requestActor(r),
+				AuthenticationMethod: string(s.auth.Mode),
+				RequiredScope:        string(requiredScopeForRequest(r.Method, r.URL.Path)),
+				HTTPMethod:           r.Method,
+				RoutePattern:         routePattern,
+				RequestID:            auditMetadata.RequestID,
+				Traceparent:          auditMetadata.Traceparent,
+				ClientIP:             auditMetadata.ClientIP,
+				UserAgent:            auditMetadata.UserAgent,
+			})
+			if err != nil || result.Outcome != AuthorizationOutcomeAllow {
+				s.writeError(rw, r, domain.ErrForbidden)
+				return
+			}
+		}
+	}
 	if err := s.checkACMERateLimit(r); err != nil {
 		metricBoundary = "rate_limit"
 		s.writeError(rw, r, err)

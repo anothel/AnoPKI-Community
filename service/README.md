@@ -137,6 +137,8 @@ Audit events include structured `metadata_json` for lifecycle resource IDs and s
 
 API authentication defaults to `dev` mode for local compatibility. In `dev` mode, the service uses `X-Actor` as the audit actor and allows requests without credentials. Set `ANOPKI_AUTH_MODE=api_key` to require `Authorization: Bearer <token>` for lifecycle and operator APIs. `POST /ocsp`, `GET /crls/{id}`, and `GET /issuers/{id}/crl` remain public distribution endpoints. Bootstrap an initial operator key by setting `ANOPKI_BOOTSTRAP_API_KEY`. Set `ANOPKI_API_KEY_PEPPER` to store new API key token hashes as HMAC-SHA256 values. Existing SHA-256 token hashes remain accepted so operators can enable a pepper before rotating legacy keys.
 
+Community authorization remains based on the existing API key `read`, `write`, and `operator` scopes. `httpapi.RequestAuthorizer` is an optional internal extension seam: when injected, it runs only after authentication and legacy scope checks on protected routes, and the default Community HTTP behavior is unchanged when it is absent. Community does not implement RBAC/ABAC, OIDC/SAML, or an approval workflow, and does not include Enterprise commercial policy or role catalogs.
+
 Set `ANOPKI_ENV=production` for production startup checks. Production mode rejects `dev` auth mode, requires a strong `ANOPKI_API_KEY_PEPPER`, rejects configured bootstrap API keys shorter than 32 characters or matching common defaults such as `change-me`, and enforces HTTPS plus strong secrets for new webhook notification endpoints.
 
 Operational probes are public:
