@@ -3,6 +3,7 @@ package store
 
 import (
 	"context"
+	"errors"
 	"testing"
 	"time"
 
@@ -32,7 +33,7 @@ func TestAuditChainAppendAndVerifyAcrossStores(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			if !verification.Verified || verification.RetainedEventCount != 2 || verification.TotalEventCount != 2 || verification.TailChainIndex != 2 {
+			if !verification.Valid || verification.EventCount != 2 || verification.FirstSequence != 1 || verification.LastSequence != 2 {
 				t.Fatalf("verification = %#v", verification)
 			}
 		})
@@ -58,11 +59,11 @@ func TestAuditChainTamperingDetected(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if verification.Verified || verification.BrokenChainIndex != 1 || verification.Reason != "event_hash_mismatch" {
+	if verification.Valid || verification.FailureReason != "event_hash_mismatch" {
 		t.Fatalf("verification = %#v", verification)
 	}
-	if _, err := repo.DeleteAuditEventsBefore(ctx, base.Add(2*time.Minute)); err != domain.ErrAuditChainConflict {
-		t.Fatalf("DeleteAuditEventsBefore tampered chain error = %v, want %v", err, domain.ErrAuditChainConflict)
+	if _, err := repo.DeleteAuditEventsBefore(ctx, base.Add(2*time.Minute)); !errors.Is(err, domain.ErrAuditIntegrity) {
+		t.Fatalf("DeleteAuditEventsBefore tampered chain error = %v, want %v", err, domain.ErrAuditIntegrity)
 	}
 
 	checkpointRepo := NewMemoryStore()
@@ -76,13 +77,13 @@ func TestAuditChainTamperingDetected(t *testing.T) {
 		t.Fatal(err)
 	}
 	checkpointRepo.mu.Lock()
-	checkpointRepo.auditCheckpoints[0].ThroughEventHash = "tampered"
+	checkpointRepo.auditState.CheckpointEventHash = tamperedAuditHash(checkpointRepo.auditState.CheckpointEventHash)
 	checkpointRepo.mu.Unlock()
 	checkpointVerification, err := checkpointRepo.VerifyAuditChain(ctx)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if checkpointVerification.Verified || checkpointVerification.Reason != "checkpoint_hash_mismatch" {
+	if checkpointVerification.Valid || checkpointVerification.FailureReason != "state_latest_mismatch" {
 		t.Fatalf("checkpoint verification = %#v", checkpointVerification)
 	}
 }
@@ -109,17 +110,17 @@ func TestAuditChainPruneCheckpointPreservesVerification(t *testing.T) {
 				t.Fatalf("DeleteAuditEventsBefore = %d, %v", deleted, err)
 			}
 			verification, err := tt.repo.VerifyAuditChain(ctx)
-			if err != nil || !verification.Verified {
+			if err != nil || !verification.Valid {
 				t.Fatalf("VerifyAuditChain = %#v, %v", verification, err)
 			}
-			if verification.Checkpoint.ThroughChainIndex != 2 || verification.RetainedEventCount != 1 || verification.TotalEventCount != 3 {
+			if verification.CheckpointSequence != 2 || verification.EventCount != 1 || verification.LastSequence != 3 {
 				t.Fatalf("verification after prune = %#v", verification)
 			}
 			if err := tt.repo.CreateAuditEvent(ctx, testAuditEvent("audit-4", "operator", "event.created", "event", "resource", base.Add(4*time.Minute))); err != nil {
 				t.Fatal(err)
 			}
 			verification, _ = tt.repo.VerifyAuditChain(ctx)
-			if !verification.Verified || verification.TailChainIndex != 4 {
+			if !verification.Valid || verification.LastSequence != 4 {
 				t.Fatalf("verification after append = %#v", verification)
 			}
 		})

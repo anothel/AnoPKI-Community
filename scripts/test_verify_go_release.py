@@ -54,10 +54,16 @@ raise SystemExit(0)
 
 
 def make_fake_go(root: Path) -> Path:
-    path = root / "fake-go.py"
-    path.write_text(FAKE_GO, encoding="utf-8")
-    path.chmod(0o755)
-    return path
+    script = root / "fake-go.py"
+    script.write_text(FAKE_GO, encoding="utf-8")
+    if os.name == "nt":
+        launcher = root / "fake-go.cmd"
+        launcher.write_text(
+            f'@"{sys.executable}" "%~dp0fake-go.py" %*\n', encoding="utf-8"
+        )
+        return launcher
+    script.chmod(0o755)
+    return script
 
 
 def run(profile: str, *, version: str = "go1.25.12", fail: str = ""):
