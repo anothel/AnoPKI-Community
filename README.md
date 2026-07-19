@@ -143,6 +143,12 @@ python scripts\test_verify_audit_replay_drill.py
 python scripts\verify-audit-replay-drill.py --out-dir .tmp\audit-replay-evidence\verify-local
 # requires Go 1.25.11+ and proves idempotent audit repair and scoped dead-letter recovery
 
+python scripts\test_verify_audit_integrity_drill.py
+# Audit integrity drill tests passed: 8
+
+python scripts\verify-audit-integrity-drill.py --out-dir .tmp\audit-integrity-evidence\verify-local
+# requires Go 1.25.11+; local run proves Memory/SQLite/API integrity and release CI additionally requires PostgreSQL parity
+
 python scripts\test_verify_issuer_rollover_drill.py
 # issuer rollover drill tests passed: 5
 

@@ -158,6 +158,48 @@ jobs:
           path: .tmp/audit-replay-evidence/ci/
           if-no-files-found: error
 
+  audit-integrity-drill:
+    name: Audit hash-chain integrity drill
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_DB: anopki_test
+          POSTGRES_USER: anopki
+          POSTGRES_PASSWORD: anopki
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U anopki -d anopki_test"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.25.12"
+          cache-dependency-path: |
+            service/go.mod
+            service/go.sum
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.x"
+      - run: python scripts/test_verify_audit_integrity_drill.py
+      - run: >-
+          python scripts/verify-audit-integrity-drill.py
+          --require-postgres
+          --out-dir .tmp/audit-integrity-evidence/ci
+          --commit "${GITHUB_SHA}"
+        env:
+          ANOPKI_POSTGRES_TEST_DSN: postgres://anopki:anopki@localhost:5432/anopki_test?sslmode=disable
+      - uses: actions/upload-artifact@v4
+        with:
+          name: anopki-audit-integrity-verification
+          path: .tmp/audit-integrity-evidence/ci/
+          if-no-files-found: error
+
   issuer-rollover-drill:
     name: Intermediate issuer rollover drill
     runs-on: ubuntu-latest

@@ -55,6 +55,8 @@ def main() -> None:
         'python scripts\\verify-status-outage-drill.py --out-dir .tmp\\status-outage-evidence\\verify-local',
         'python scripts\\test_verify_audit_replay_drill.py',
         'python scripts\\verify-audit-replay-drill.py --out-dir .tmp\\audit-replay-evidence\\verify-local',
+        'python scripts\\test_verify_audit_integrity_drill.py',
+        'python scripts\\verify-audit-integrity-drill.py --out-dir .tmp\\audit-integrity-evidence\\verify-local',
         'python scripts\\test_verify_issuer_rollover_drill.py',
         'python scripts\\verify-issuer-rollover-drill.py --out-dir .tmp\\issuer-rollover-evidence\\verify-local',
         'python scripts\\test_verify_multi_node_reliability.py',

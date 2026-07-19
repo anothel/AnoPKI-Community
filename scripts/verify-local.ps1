@@ -143,6 +143,18 @@ $steps = @(
         Command = @("python", "scripts\verify-audit-replay-drill.py", "--out-dir", ".tmp\audit-replay-evidence\verify-local")
     },
     @{
+        Name = "Audit integrity drill tests"
+        Dir = $RepoRoot
+        Display = "python scripts\test_verify_audit_integrity_drill.py"
+        Command = @("python", "scripts\test_verify_audit_integrity_drill.py")
+    },
+    @{
+        Name = "Audit hash-chain integrity drill"
+        Dir = $RepoRoot
+        Display = "python scripts\verify-audit-integrity-drill.py --out-dir .tmp\audit-integrity-evidence\verify-local"
+        Command = @("python", "scripts\verify-audit-integrity-drill.py", "--out-dir", ".tmp\audit-integrity-evidence\verify-local")
+    },
+    @{
         Name = "issuer rollover drill tests"
         Dir = $RepoRoot
         Display = "python scripts\test_verify_issuer_rollover_drill.py"

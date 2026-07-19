@@ -87,6 +87,15 @@ jobs:
       - name: Package audit/replay verification evidence
         run: |
           tar -czf dist/anopki-audit-replay-verification.tar.gz -C .tmp/release-audit-replay-evidence audit-replay-verification.json audit-replay-verification.md audit-replay-test.log
+      - name: Run Audit hash-chain integrity verification
+        run: |
+          python scripts/test_verify_audit_integrity_drill.py
+          python scripts/verify-audit-integrity-drill.py --require-postgres --out-dir .tmp/release-audit-integrity-evidence --commit "${GITHUB_SHA}"
+        env:
+          ANOPKI_POSTGRES_TEST_DSN: postgres://anopki:anopki@localhost:5432/anopki_recovery_control?sslmode=disable
+      - name: Package Audit integrity verification evidence
+        run: |
+          tar -czf dist/anopki-audit-integrity-verification.tar.gz -C .tmp/release-audit-integrity-evidence audit-integrity-verification.json audit-integrity-verification.md audit-integrity-baseline-test.log audit-integrity-postgres-test.log
       - name: Run intermediate issuer rollover verification
         run: |
           python scripts/test_verify_issuer_rollover_drill.py

@@ -20,6 +20,7 @@ GO_EVIDENCE_NAME = "anopki-go-verification.tar.gz"
 RECOVERY_EVIDENCE_NAME = "anopki-recovery-verification.tar.gz"
 STATUS_OUTAGE_EVIDENCE_NAME = "anopki-status-outage-verification.tar.gz"
 AUDIT_REPLAY_EVIDENCE_NAME = "anopki-audit-replay-verification.tar.gz"
+AUDIT_INTEGRITY_EVIDENCE_NAME = "anopki-audit-integrity-verification.tar.gz"
 ISSUER_ROLLOVER_EVIDENCE_NAME = "anopki-issuer-rollover-verification.tar.gz"
 POSTGRES_RECOVERY_EVIDENCE_NAME = "anopki-postgres-recovery-verification.tar.gz"
 MULTI_NODE_EVIDENCE_NAME = "anopki-multi-node-verification.tar.gz"
@@ -637,6 +638,193 @@ def require_audit_replay_evidence_archive(dist: Path) -> tuple[Path, dict[str, o
     if "-----begin private key-----" in serialized or "-----begin encrypted private key-----" in serialized:
         fail("audit/replay verification evidence contains private-key material")
     return path, evidence
+
+def require_audit_integrity_evidence_archive(dist: Path) -> tuple[Path, dict[str, object]]:
+    path = dist / AUDIT_INTEGRITY_EVIDENCE_NAME
+    if not path.is_file():
+        fail(f"missing Audit integrity verification evidence archive: {path}")
+    if path.stat().st_size > 10 * 1024 * 1024:
+        fail(f"Audit integrity verification evidence archive is unexpectedly large: {path.name}")
+    expected_files = {
+        "audit-integrity-verification.json",
+        "audit-integrity-verification.md",
+        "audit-integrity-baseline-test.log",
+        "audit-integrity-postgres-test.log",
+    }
+    try:
+        with tarfile.open(path, "r:gz") as archive:
+            files: dict[str, tarfile.TarInfo] = {}
+            for member in archive.getmembers():
+                normalized = member.name.removeprefix("./")
+                posix = PurePosixPath(normalized)
+                if not normalized or posix.is_absolute() or ".." in posix.parts:
+                    fail(f"{path.name} contains unsafe archive member: {member.name}")
+                if not member.isfile():
+                    fail(f"{path.name} contains non-regular member: {member.name}")
+                if normalized in files:
+                    fail(f"{path.name} contains duplicate member: {normalized}")
+                files[normalized] = member
+            missing = sorted(expected_files - set(files))
+            extra = sorted(set(files) - expected_files)
+            if missing:
+                fail(f"{path.name} missing Audit integrity evidence members:\n" + "\n".join(missing))
+            if extra:
+                fail(f"{path.name} has unexpected Audit integrity evidence members:\n" + "\n".join(extra))
+            contents: dict[str, str] = {}
+            forbidden_archive_text = (
+                '"key_ref"', '"private_key"', '"password"', '"credential"',
+                '"session_token"', '"postgres_dsn"', "postgres://",
+                "-----begin private key-----", "-----begin encrypted private key-----",
+            )
+            for name, archive_member in files.items():
+                maximum_size = 1024 * 1024 if name.endswith(".json") else 5 * 1024 * 1024
+                if archive_member.size > maximum_size:
+                    fail(f"Audit integrity verification member is unexpectedly large: {name}")
+                extracted = archive.extractfile(archive_member)
+                if extracted is None:
+                    fail(f"{path.name} cannot read {name}")
+                try:
+                    contents[name] = extracted.read().decode("utf-8")
+                except UnicodeDecodeError as exc:
+                    fail(f"Audit integrity verification member is not UTF-8: {name}: {exc}")
+                lowered_member = contents[name].lower()
+                for forbidden in forbidden_archive_text:
+                    if forbidden in lowered_member:
+                        fail(f"Audit integrity verification archive contains forbidden sensitive content: {name}: {forbidden}")
+            try:
+                evidence = json.loads(contents["audit-integrity-verification.json"])
+            except json.JSONDecodeError as exc:
+                fail(f"invalid Audit integrity verification evidence: {exc}")
+    except tarfile.TarError as exc:
+        fail(f"invalid Audit integrity verification evidence archive {path}: {exc}")
+
+    if not isinstance(evidence, dict):
+        fail("Audit integrity verification evidence must be a JSON object")
+    expected_fields = {
+        "schema_version", "evidence_type", "product", "edition", "product_profile",
+        "commit", "minimum_go_version", "started_at", "completed_at", "result",
+        "go_version", "postgres_required", "test_commands", "tests", "checks",
+        "redaction", "blocker",
+    }
+    missing_fields = sorted(expected_fields - set(evidence))
+    extra_fields = sorted(set(evidence) - expected_fields)
+    if missing_fields:
+        fail("Audit integrity verification evidence missing fields:\n" + "\n".join(missing_fields))
+    if extra_fields:
+        fail("Audit integrity verification evidence has unknown fields:\n" + "\n".join(extra_fields))
+    if evidence["schema_version"] != 1 or evidence["evidence_type"] != "community_audit_integrity_drill":
+        fail("Audit integrity verification evidence identity is invalid")
+    if evidence["product"] != "AnoPKI" or evidence["edition"] != "community" or evidence["product_profile"] != "community-openssl":
+        fail("Audit integrity verification evidence profile is invalid")
+    if evidence["result"] != "passed" or evidence["blocker"] != "":
+        fail("Audit integrity verification drill did not pass")
+    if evidence["postgres_required"] is not True:
+        fail("Audit integrity verification release evidence must require PostgreSQL")
+    if evidence["minimum_go_version"] != "1.25.11":
+        fail("Audit integrity verification minimum Go version is invalid")
+    if not isinstance(evidence["commit"], str) or not re.fullmatch(r"[0-9a-f]{40}", evidence["commit"]):
+        fail("Audit integrity verification commit is invalid")
+    if not isinstance(evidence["go_version"], str) or "go version go" not in evidence["go_version"]:
+        fail("Audit integrity verification Go identity is invalid")
+    if parse_go_version(evidence["go_version"]) < (1, 25, 11):
+        fail("Audit integrity verification used an unsupported Go toolchain")
+
+    expected_tests = [
+        ("memory-sqlite-http", "github.com/anothel/anopki/service/internal/store", "TestAuditEventHashIsStable"),
+        ("memory-sqlite-http", "github.com/anothel/anopki/service/internal/store", "TestVerifyAuditEventsDetectsCheckpointAndEventTampering"),
+        ("memory-sqlite-http", "github.com/anothel/anopki/service/internal/store", "TestAuditIntegrityAppendCheckpointAndPruneParity"),
+        ("memory-sqlite-http", "github.com/anothel/anopki/service/internal/store", "TestMemoryAuditTamperFailsClosed"),
+        ("memory-sqlite-http", "github.com/anothel/anopki/service/internal/store", "TestMemoryAuditCheckpointTamperDetected"),
+        ("memory-sqlite-http", "github.com/anothel/anopki/service/internal/store", "TestMemoryAuditCheckpointTamperDetectedAfterFullPrune"),
+        ("memory-sqlite-http", "github.com/anothel/anopki/service/internal/store", "TestSQLiteAuditTamperAndCheckpointTamperFailClosed"),
+        ("memory-sqlite-http", "github.com/anothel/anopki/service/internal/store", "TestAuditHashChainMigrationBackfillsLegacySQLiteRowsBeforeUniqueIndex"),
+        ("memory-sqlite-http", "github.com/anothel/anopki/service/internal/httpapi", "TestGetAuditIntegrity"),
+        ("memory-sqlite-http", "github.com/anothel/anopki/service/internal/httpapi", "TestPruneAuditEventsByRetentionCutoff"),
+        ("postgresql", "github.com/anothel/anopki/service/internal/store", "TestPostgresIntegrationRepositoryParity/audit_integrity_chain"),
+    ]
+    tests = evidence["tests"]
+    if not isinstance(tests, list) or len(tests) != len(expected_tests):
+        fail("Audit integrity verification test set is invalid")
+    observed_tests: list[tuple[str, str, str]] = []
+    for test in tests:
+        if not isinstance(test, dict) or set(test) != {"backend", "package", "name", "status"}:
+            fail("Audit integrity verification test fields are invalid")
+        observed_tests.append((str(test["backend"]), str(test["package"]), str(test["name"])))
+        if test["status"] != "pass":
+            fail("Audit integrity verification contains a failed or skipped test")
+    if observed_tests != expected_tests:
+        fail("Audit integrity verification test order is invalid")
+
+    expected_checks = [
+        "canonical-hash-stability",
+        "event-and-checkpoint-tamper-detection",
+        "memory-sqlite-append-prune-parity",
+        "memory-tamper-fail-closed",
+        "checkpoint-tamper-detection",
+        "full-prune-checkpoint-tamper-detection",
+        "sqlite-tamper-fail-closed",
+        "legacy-backfill-before-unique-index",
+        "integrity-api-reporting",
+        "retention-prune-checkpoint",
+        "postgres-append-prune-parity",
+        "sensitive-evidence-exclusion",
+    ]
+    checks = evidence["checks"]
+    if not isinstance(checks, list) or len(checks) != len(expected_checks):
+        fail("Audit integrity verification check set is invalid")
+    names: list[str] = []
+    for check in checks:
+        if not isinstance(check, dict) or set(check) != {"name", "status"}:
+            fail("Audit integrity verification check fields are invalid")
+        names.append(str(check["name"]))
+        if check["status"] != "passed":
+            fail("Audit integrity verification contains a failed or skipped check")
+    if names != expected_checks:
+        fail("Audit integrity verification check order is invalid")
+
+    commands = evidence["test_commands"]
+    if not isinstance(commands, dict) or set(commands) != {"baseline", "postgres"}:
+        fail("Audit integrity verification command set is invalid")
+    for name in ("baseline", "postgres"):
+        command = commands[name]
+        if not isinstance(command, list) or not all(isinstance(item, str) for item in command):
+            fail(f"Audit integrity verification {name} command is invalid")
+    baseline_text = " ".join(commands["baseline"])
+    for required in (
+        "test -json", "./internal/store", "./internal/httpapi",
+        "TestAuditIntegrityAppendCheckpointAndPruneParity",
+        "TestSQLiteAuditTamperAndCheckpointTamperFailClosed",
+        "TestAuditHashChainMigrationBackfillsLegacySQLiteRowsBeforeUniqueIndex",
+        "TestGetAuditIntegrity", "TestPruneAuditEventsByRetentionCutoff",
+    ):
+        if required not in baseline_text:
+            fail(f"Audit integrity verification baseline command drift: missing {required}")
+    postgres_text = " ".join(commands["postgres"])
+    for required in (
+        "test -json", "./internal/store", "TestPostgresIntegrationRepositoryParity",
+        "audit_integrity_chain",
+    ):
+        if required not in postgres_text:
+            fail(f"Audit integrity verification PostgreSQL command drift: missing {required}")
+
+    expected_redaction = {
+        "private_key_markers_found": False,
+        "raw_key_references_in_evidence": False,
+        "database_credentials_in_evidence": False,
+        "sensitive_values_in_evidence": False,
+    }
+    if evidence["redaction"] != expected_redaction:
+        fail("Audit integrity verification redaction evidence is invalid")
+    serialized = json.dumps(evidence, sort_keys=True).lower()
+    for forbidden in (
+        '"key_ref"', '"private_key"', '"password"', '"credential"',
+        '"session_token"', '"postgres_dsn"', "postgres://", "-----begin private key-----",
+        "-----begin encrypted private key-----",
+    ):
+        if forbidden in serialized:
+            fail(f"Audit integrity verification evidence contains forbidden sensitive content: {forbidden}")
+    return path, evidence
+
 
 def require_issuer_rollover_evidence_archive(dist: Path) -> tuple[Path, dict[str, object]]:
     path = dist / ISSUER_ROLLOVER_EVIDENCE_NAME
@@ -1316,6 +1504,7 @@ def main() -> None:
     recovery_evidence, recovery_evidence_value = require_recovery_evidence_archive(dist)
     status_outage_evidence, status_outage_evidence_value = require_status_outage_evidence_archive(dist)
     audit_replay_evidence, audit_replay_evidence_value = require_audit_replay_evidence_archive(dist)
+    audit_integrity_evidence, audit_integrity_evidence_value = require_audit_integrity_evidence_archive(dist)
     issuer_rollover_evidence, issuer_rollover_evidence_value = require_issuer_rollover_evidence_archive(dist)
     postgres_recovery_evidence, postgres_recovery_evidence_value = require_postgres_recovery_evidence_archive(dist)
     multi_node_evidence, multi_node_evidence_value = require_multi_node_evidence_archive(dist)
@@ -1331,6 +1520,8 @@ def main() -> None:
         fail("status outage verification commit does not match release metadata")
     if audit_replay_evidence_value["commit"] != metadata["commit"]:
         fail("audit/replay verification commit does not match release metadata")
+    if audit_integrity_evidence_value["commit"] != metadata["commit"]:
+        fail("Audit integrity verification commit does not match release metadata")
     if issuer_rollover_evidence_value["commit"] != metadata["commit"]:
         fail("issuer rollover verification commit does not match release metadata")
     if postgres_recovery_evidence_value["commit"] != metadata["commit"]:
@@ -1339,7 +1530,7 @@ def main() -> None:
         fail("multi-node verification commit does not match release metadata")
 
     checksums = read_checksums(dist / "SHA256SUMS")
-    artifacts = (service, core, go_evidence, recovery_evidence, status_outage_evidence, audit_replay_evidence, issuer_rollover_evidence, postgres_recovery_evidence, multi_node_evidence, backend_path, metadata_path)
+    artifacts = (service, core, go_evidence, recovery_evidence, status_outage_evidence, audit_replay_evidence, audit_integrity_evidence, issuer_rollover_evidence, postgres_recovery_evidence, multi_node_evidence, backend_path, metadata_path)
     expected_names = {artifact.name for artifact in artifacts}
     extra_names = sorted(set(checksums) - expected_names)
     missing_names = sorted(expected_names - set(checksums))

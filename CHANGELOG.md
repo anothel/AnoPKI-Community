@@ -10,6 +10,7 @@ commands and known gaps before tagging.
 ### Added
 
 - A tamper-evident `sha256-v1` Audit chain with monotonic sequence, legacy migration backfill, Memory/SQLite/PostgreSQL verification, fail-closed append and retention, prune checkpoints, integrity API, and recovery-state evidence.
+- An exact-commit Audit integrity evidence runner and release artifact covering canonical hashing, legacy backfill, Memory/SQLite/PostgreSQL parity, row/checkpoint tampering, full-prune protection, integrity API reporting, retention checkpoints and strict redaction.
 - Multi-node single-writer reliability evidence for certificate issuance, CRL generation and Outbox dispatch, including CRL claim compare-and-swap semantics, contiguous numbering, active lease protection, exact-commit CI/release artifacts and strict redaction.
 - A PostgreSQL 16 backup/restore and migration-rollback evidence runner using isolated databases, real Go migrations, custom-format `pg_dump`/`pg_restore`, source-damage detection, exact state digests, CI/release artifact binding, and strict secret/DSN exclusion.
 - An atomic certificate-profile intermediate issuer rollover and rollback contract with same-root validation, stale-transition rejection, overlap preservation, audit/outbox evidence, and an exact-commit verification runner.

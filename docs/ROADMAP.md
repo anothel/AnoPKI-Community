@@ -38,6 +38,7 @@ Completed backend and FileKeyProvider work is intentionally omitted.
 - Keep the executable SQLite backup/restore drill and release evidence contract current.
 - Keep the executable CRL/OCSP outage-and-recovery drill and release evidence contract current.
 - Keep the audit-repair and dead-letter replay drill and release evidence contract current.
+- Keep the Audit hash-chain integrity drill and exact-commit release evidence current across Memory, SQLite and PostgreSQL.
 - Keep the intermediate issuer rollover and rollback drill and release evidence contract current.
 - Keep the PostgreSQL 16 backup/restore and migration-rollback drill and release evidence contract current.
 - Keep multi-node issuance, CRL and Outbox single-writer evidence current.

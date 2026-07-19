@@ -56,6 +56,13 @@ The checkpoint preserves chain continuity across pruning; it is not an external
 notary. Operators that require independent proof should export or anchor the
 latest sequence/hash in controlled release or SIEM evidence.
 
+## Release Evidence
+
+`scripts/verify-audit-integrity-drill.py` binds the focused chain regressions to
+one exact Community commit. Local runs cover Memory, SQLite, migration and HTTP
+contracts. CI and release runs additionally require PostgreSQL parity and package
+strict redacted evidence as `anopki-audit-integrity-verification.tar.gz`.
+
 ## Incident Handling
 
 - Treat any invalid integrity report as an incident.

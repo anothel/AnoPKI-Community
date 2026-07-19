@@ -327,6 +327,101 @@ def write_audit_replay_evidence_archive(
         if extra_member:
             archive.add(root / "unexpected.txt", arcname="unexpected.txt")
 
+def write_audit_integrity_evidence_archive(
+    path: Path,
+    *,
+    result: str = "passed",
+    commit: str = "0123456789abcdef0123456789abcdef01234567",
+    extra_field: bool = False,
+    extra_member: bool = False,
+    postgres_required: bool = True,
+    sensitive_log: bool = False,
+) -> None:
+    root = path.parent / "audit-integrity-evidence"
+    if root.exists():
+        shutil.rmtree(root)
+    root.mkdir(parents=True, exist_ok=True)
+    baseline_tests = [
+        ("memory-sqlite-http", "github.com/anothel/anopki/service/internal/store", "TestAuditEventHashIsStable"),
+        ("memory-sqlite-http", "github.com/anothel/anopki/service/internal/store", "TestVerifyAuditEventsDetectsCheckpointAndEventTampering"),
+        ("memory-sqlite-http", "github.com/anothel/anopki/service/internal/store", "TestAuditIntegrityAppendCheckpointAndPruneParity"),
+        ("memory-sqlite-http", "github.com/anothel/anopki/service/internal/store", "TestMemoryAuditTamperFailsClosed"),
+        ("memory-sqlite-http", "github.com/anothel/anopki/service/internal/store", "TestMemoryAuditCheckpointTamperDetected"),
+        ("memory-sqlite-http", "github.com/anothel/anopki/service/internal/store", "TestMemoryAuditCheckpointTamperDetectedAfterFullPrune"),
+        ("memory-sqlite-http", "github.com/anothel/anopki/service/internal/store", "TestSQLiteAuditTamperAndCheckpointTamperFailClosed"),
+        ("memory-sqlite-http", "github.com/anothel/anopki/service/internal/store", "TestAuditHashChainMigrationBackfillsLegacySQLiteRowsBeforeUniqueIndex"),
+        ("memory-sqlite-http", "github.com/anothel/anopki/service/internal/httpapi", "TestGetAuditIntegrity"),
+        ("memory-sqlite-http", "github.com/anothel/anopki/service/internal/httpapi", "TestPruneAuditEventsByRetentionCutoff"),
+    ]
+    postgres_test = (
+        "postgresql",
+        "github.com/anothel/anopki/service/internal/store",
+        "TestPostgresIntegrationRepositoryParity/audit_integrity_chain",
+    )
+    checks = [
+        "canonical-hash-stability",
+        "event-and-checkpoint-tamper-detection",
+        "memory-sqlite-append-prune-parity",
+        "memory-tamper-fail-closed",
+        "checkpoint-tamper-detection",
+        "full-prune-checkpoint-tamper-detection",
+        "sqlite-tamper-fail-closed",
+        "legacy-backfill-before-unique-index",
+        "integrity-api-reporting",
+        "retention-prune-checkpoint",
+        "postgres-append-prune-parity",
+        "sensitive-evidence-exclusion",
+    ]
+    baseline_regex = "^(" + "|".join(name for _, _, name in baseline_tests) + ")$"
+    evidence = {
+        "schema_version": 1,
+        "evidence_type": "community_audit_integrity_drill",
+        "product": "AnoPKI",
+        "edition": "community",
+        "product_profile": "community-openssl",
+        "commit": commit,
+        "minimum_go_version": "1.25.11",
+        "started_at": "2026-07-19T01:00:00Z",
+        "completed_at": "2026-07-19T01:00:01Z",
+        "result": result,
+        "go_version": "go version go1.25.12 linux/amd64",
+        "postgres_required": postgres_required,
+        "test_commands": {
+            "baseline": ["go", "test", "-json", "-count=1", "-run", baseline_regex, "./internal/store", "./internal/httpapi"],
+            "postgres": ["go", "test", "-json", "-count=1", "-run", "^TestPostgresIntegrationRepositoryParity$/^audit_integrity_chain$", "./internal/store"],
+        },
+        "tests": [
+            {"backend": backend, "package": package, "name": name, "status": "pass"}
+            for backend, package, name in [*baseline_tests, postgres_test]
+        ],
+        "checks": [{"name": name, "status": "passed"} for name in checks],
+        "redaction": {
+            "private_key_markers_found": False,
+            "raw_key_references_in_evidence": False,
+            "database_credentials_in_evidence": False,
+            "sensitive_values_in_evidence": False,
+        },
+        "blocker": "" if result == "passed" else "test failure",
+    }
+    if result != "passed":
+        evidence["checks"] = [{"name": name, "status": "failed"} for name in checks]
+    if extra_field:
+        evidence["unexpected"] = "drift"
+    (root / "audit-integrity-verification.json").write_text(json.dumps(evidence), encoding="utf-8")
+    (root / "audit-integrity-verification.md").write_text("# Audit integrity evidence\n", encoding="utf-8")
+    (root / "audit-integrity-baseline-test.log").write_text("pass\n", encoding="utf-8")
+    (root / "audit-integrity-postgres-test.log").write_text("postgres://user:secret@localhost/db\n" if sensitive_log else "pass\n", encoding="utf-8")
+    if extra_member:
+        (root / "unexpected.txt").write_text("unexpected\n", encoding="utf-8")
+    with tarfile.open(path, "w:gz") as archive:
+        archive.add(root / "audit-integrity-verification.json", arcname="audit-integrity-verification.json")
+        archive.add(root / "audit-integrity-verification.md", arcname="audit-integrity-verification.md")
+        archive.add(root / "audit-integrity-baseline-test.log", arcname="audit-integrity-baseline-test.log")
+        archive.add(root / "audit-integrity-postgres-test.log", arcname="audit-integrity-postgres-test.log")
+        if extra_member:
+            archive.add(root / "unexpected.txt", arcname="unexpected.txt")
+
+
 def write_issuer_rollover_evidence_archive(
     path: Path,
     *,
@@ -663,6 +758,7 @@ def write_valid_dist(dist: Path) -> tuple[Path, Path]:
     write_recovery_evidence_archive(dist / "anopki-recovery-verification.tar.gz")
     write_status_outage_evidence_archive(dist / "anopki-status-outage-verification.tar.gz")
     write_audit_replay_evidence_archive(dist / "anopki-audit-replay-verification.tar.gz")
+    write_audit_integrity_evidence_archive(dist / "anopki-audit-integrity-verification.tar.gz")
     write_issuer_rollover_evidence_archive(dist / "anopki-issuer-rollover-verification.tar.gz")
     write_postgres_recovery_evidence_archive(dist / "anopki-postgres-recovery-verification.tar.gz")
     write_multi_node_evidence_archive(dist / "anopki-multi-node-verification.tar.gz")
@@ -1100,6 +1196,95 @@ def test_unexpected_audit_replay_member_fails() -> None:
     assert result.returncode == 1
     assert "unexpected audit/replay evidence members" in result.stderr
 
+def test_missing_audit_integrity_evidence_fails() -> None:
+    with tempfile.TemporaryDirectory() as tmp:
+        dist = Path(tmp)
+        write_valid_dist(dist)
+        (dist / "anopki-audit-integrity-verification.tar.gz").unlink()
+        rewrite_checksums(dist)
+        result = run_validator(dist)
+    assert result.returncode == 1
+    assert "missing Audit integrity verification evidence archive" in result.stderr
+
+
+def test_failed_audit_integrity_evidence_fails() -> None:
+    with tempfile.TemporaryDirectory() as tmp:
+        dist = Path(tmp)
+        write_valid_dist(dist)
+        write_audit_integrity_evidence_archive(
+            dist / "anopki-audit-integrity-verification.tar.gz", result="failed"
+        )
+        rewrite_checksums(dist)
+        result = run_validator(dist)
+    assert result.returncode == 1
+    assert "Audit integrity verification drill did not pass" in result.stderr
+
+
+def test_audit_integrity_commit_mismatch_fails() -> None:
+    with tempfile.TemporaryDirectory() as tmp:
+        dist = Path(tmp)
+        write_valid_dist(dist)
+        write_audit_integrity_evidence_archive(
+            dist / "anopki-audit-integrity-verification.tar.gz", commit="f" * 40
+        )
+        rewrite_checksums(dist)
+        result = run_validator(dist)
+    assert result.returncode == 1
+    assert "Audit integrity verification commit does not match" in result.stderr
+
+
+def test_unknown_audit_integrity_field_fails() -> None:
+    with tempfile.TemporaryDirectory() as tmp:
+        dist = Path(tmp)
+        write_valid_dist(dist)
+        write_audit_integrity_evidence_archive(
+            dist / "anopki-audit-integrity-verification.tar.gz", extra_field=True
+        )
+        rewrite_checksums(dist)
+        result = run_validator(dist)
+    assert result.returncode == 1
+    assert "Audit integrity verification evidence has unknown fields" in result.stderr
+
+
+def test_unexpected_audit_integrity_member_fails() -> None:
+    with tempfile.TemporaryDirectory() as tmp:
+        dist = Path(tmp)
+        write_valid_dist(dist)
+        write_audit_integrity_evidence_archive(
+            dist / "anopki-audit-integrity-verification.tar.gz", extra_member=True
+        )
+        rewrite_checksums(dist)
+        result = run_validator(dist)
+    assert result.returncode == 1
+    assert "unexpected Audit integrity evidence members" in result.stderr
+
+
+def test_audit_integrity_sensitive_log_fails() -> None:
+    with tempfile.TemporaryDirectory() as tmp:
+        dist = Path(tmp)
+        write_valid_dist(dist)
+        write_audit_integrity_evidence_archive(
+            dist / "anopki-audit-integrity-verification.tar.gz", sensitive_log=True
+        )
+        rewrite_checksums(dist)
+        result = run_validator(dist)
+    assert result.returncode == 1
+    assert "forbidden sensitive content" in result.stderr
+
+
+def test_audit_integrity_postgres_must_be_required() -> None:
+    with tempfile.TemporaryDirectory() as tmp:
+        dist = Path(tmp)
+        write_valid_dist(dist)
+        write_audit_integrity_evidence_archive(
+            dist / "anopki-audit-integrity-verification.tar.gz", postgres_required=False
+        )
+        rewrite_checksums(dist)
+        result = run_validator(dist)
+    assert result.returncode == 1
+    assert "must require PostgreSQL" in result.stderr
+
+
 def test_missing_issuer_rollover_evidence_fails() -> None:
     with tempfile.TemporaryDirectory() as tmp:
         dist = Path(tmp)
@@ -1322,6 +1507,13 @@ def main() -> None:
     test_audit_replay_commit_mismatch_fails()
     test_unknown_audit_replay_field_fails()
     test_unexpected_audit_replay_member_fails()
+    test_missing_audit_integrity_evidence_fails()
+    test_failed_audit_integrity_evidence_fails()
+    test_audit_integrity_commit_mismatch_fails()
+    test_unknown_audit_integrity_field_fails()
+    test_unexpected_audit_integrity_member_fails()
+    test_audit_integrity_sensitive_log_fails()
+    test_audit_integrity_postgres_must_be_required()
     test_missing_issuer_rollover_evidence_fails()
     test_failed_issuer_rollover_evidence_fails()
     test_issuer_rollover_commit_mismatch_fails()

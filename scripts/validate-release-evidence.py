@@ -20,6 +20,7 @@ REQUIRED_DOC_TEXT = [
     "## SQLite Recovery Evidence Runner",
     "## CRL And OCSP Outage Evidence Runner",
     "## Audit Repair And Dead-Letter Replay Evidence Runner",
+    "## Audit Hash-Chain Integrity Evidence Runner",
     "## Intermediate Issuer Rollover Evidence Runner",
     "## PostgreSQL Recovery Evidence Runner",
     "## Multi-Node Reliability Evidence Runner",
@@ -30,6 +31,8 @@ REQUIRED_DOC_TEXT = [
     "anopki-recovery-verification.tar.gz",
     "anopki-status-outage-verification.tar.gz",
     "anopki-audit-replay-verification.tar.gz",
+    "python scripts/verify-audit-integrity-drill.py",
+    "anopki-audit-integrity-verification.tar.gz",
     "anopki-issuer-rollover-verification.tar.gz",
     "python scripts/verify-postgres-recovery-drill.py",
     "anopki-postgres-recovery-verification.tar.gz",
@@ -87,6 +90,11 @@ REQUIRED_CI_TEXT = [
     "python scripts/test_verify_audit_replay_drill.py",
     "python scripts/verify-audit-replay-drill.py",
     "anopki-audit-replay-verification",
+    "python scripts/test_verify_audit_integrity_drill.py",
+    "python scripts/verify-audit-integrity-drill.py",
+    "--require-postgres",
+    "anopki-audit-integrity-verification",
+    "audit-integrity-drill:",
     "python scripts/test_verify_issuer_rollover_drill.py",
     "python scripts/verify-issuer-rollover-drill.py",
     "anopki-issuer-rollover-verification",
@@ -191,6 +199,30 @@ REQUIRED_AUDIT_REPLAY_RUNNER_TEXT = [
 ]
 
 
+REQUIRED_AUDIT_INTEGRITY_RUNNER_TEXT = [
+    "MINIMUM_GO_VERSION = (1, 25, 11)",
+    "community_audit_integrity_drill",
+    'POSTGRES_DSN_ENV = "ANOPKI_POSTGRES_TEST_DSN"',
+    "require_postgres",
+    "TestAuditEventHashIsStable",
+    "TestVerifyAuditEventsDetectsCheckpointAndEventTampering",
+    "TestAuditIntegrityAppendCheckpointAndPruneParity",
+    "TestMemoryAuditTamperFailsClosed",
+    "TestMemoryAuditCheckpointTamperDetectedAfterFullPrune",
+    "TestSQLiteAuditTamperAndCheckpointTamperFailClosed",
+    "TestAuditHashChainMigrationBackfillsLegacySQLiteRowsBeforeUniqueIndex",
+    "TestGetAuditIntegrity",
+    "TestPruneAuditEventsByRetentionCutoff",
+    "TestPostgresIntegrationRepositoryParity/audit_integrity_chain",
+    "audit-integrity-verification.json",
+    "audit-integrity-verification.md",
+    "audit-integrity-baseline-test.log",
+    "audit-integrity-postgres-test.log",
+    "postgres-append-prune-parity",
+    "sensitive-evidence-exclusion",
+]
+
+
 REQUIRED_ISSUER_ROLLOVER_RUNNER_TEXT = [
     "MINIMUM_GO_VERSION = (1, 25, 11)",
     "community_issuer_rollover_drill",
@@ -259,6 +291,9 @@ REQUIRED_RELEASE_TEXT = [
     "anopki-status-outage-verification.tar.gz",
     "python scripts/verify-audit-replay-drill.py",
     "anopki-audit-replay-verification.tar.gz",
+    "python scripts/verify-audit-integrity-drill.py",
+    "--require-postgres",
+    "anopki-audit-integrity-verification.tar.gz",
     "python scripts/verify-issuer-rollover-drill.py",
     "anopki-issuer-rollover-verification.tar.gz",
     "python scripts/verify-postgres-recovery-drill.py",
@@ -370,6 +405,7 @@ def main() -> None:
     require_text(root / "scripts/verify-recovery-drill.py", REQUIRED_RECOVERY_RUNNER_TEXT)
     require_text(root / "scripts/verify-status-outage-drill.py", REQUIRED_STATUS_OUTAGE_RUNNER_TEXT)
     require_text(root / "scripts/verify-audit-replay-drill.py", REQUIRED_AUDIT_REPLAY_RUNNER_TEXT)
+    require_text(root / "scripts/verify-audit-integrity-drill.py", REQUIRED_AUDIT_INTEGRITY_RUNNER_TEXT)
     require_text(root / "scripts/verify-issuer-rollover-drill.py", REQUIRED_ISSUER_ROLLOVER_RUNNER_TEXT)
     require_text(root / "scripts/verify-postgres-recovery-drill.py", REQUIRED_POSTGRES_RECOVERY_RUNNER_TEXT)
     require_text(root / "scripts/verify-multi-node-reliability.py", REQUIRED_MULTI_NODE_RUNNER_TEXT)

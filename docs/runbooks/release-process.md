@@ -34,6 +34,9 @@ python scripts\test_verify_status_outage_drill.py
 python scripts\verify-status-outage-drill.py --out-dir .tmp\status-outage-evidence\full
 python scripts\test_verify_audit_replay_drill.py
 python scripts\verify-audit-replay-drill.py --out-dir .tmp\audit-replay-evidence\full
+python scripts\test_verify_audit_integrity_drill.py
+$env:ANOPKI_POSTGRES_TEST_DSN = "postgres://anopki:anopki@localhost:5432/anopki_test?sslmode=disable"
+python scripts\verify-audit-integrity-drill.py --require-postgres --out-dir .tmp\audit-integrity-evidence\full
 python scripts\test_verify_issuer_rollover_drill.py
 python scripts\verify-issuer-rollover-drill.py --out-dir .tmp\issuer-rollover-evidence\full
 python scripts\test_verify_multi_node_reliability.py
@@ -114,6 +117,7 @@ Certbot smoke requires Linux/WSL or elevated Windows with certbot installed.
    validated service/core archives, full-profile `anopki-go-verification.tar.gz`,
    `anopki-recovery-verification.tar.gz`, `anopki-status-outage-verification.tar.gz`,
    `anopki-audit-replay-verification.tar.gz`,
+   `anopki-audit-integrity-verification.tar.gz`,
    `anopki-issuer-rollover-verification.tar.gz`,
    `anopki-postgres-recovery-verification.tar.gz`,
    `anopki-multi-node-verification.tar.gz`,
