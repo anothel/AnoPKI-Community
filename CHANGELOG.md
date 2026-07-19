@@ -63,6 +63,7 @@ commands and known gaps before tagging.
 
 ### Changed
 
+- The optional generic request authorizer now has a bounded two-second default deadline with fail-closed timeout semantics, and `GET /debug/vars` requires operator scope in API-key mode.
 - Release-evidence validation now pins the canonical audit-replay minimum-Go tuple spelling and includes a regression test for formatting drift.
 - The full C++ repository now builds cleanly with `-Wall -Wextra -Wpedantic -Werror`; the OpenSSL parity harness no longer emits range-loop temporary-binding or unused-helper warnings.
 - `src/backends/openssl/issue.cpp`, `src/backends/openssl/crl.cpp`, and `src/backends/openssl/ocsp.cpp` no longer open or parse signing private-key files directly; each resolves one adapter-private provider and signs through the returned handle without changing the Core CLI JSON contract.

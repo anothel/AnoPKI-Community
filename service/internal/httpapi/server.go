@@ -38,12 +38,13 @@ var errACMEBadNonce = errors.New("acme bad nonce")
 const acmeRetryAfterSeconds = "5"
 
 const (
-	defaultJSONBodyLimit      = 1 << 20
-	defaultOCSPBodyLimit      = 16 << 10
-	defaultACMENonceTTL       = 10 * time.Minute
-	defaultACMENonceCacheSize = 1024
-	defaultACMERateLimit      = 120
-	defaultACMERateWindow     = time.Minute
+	defaultJSONBodyLimit        = 1 << 20
+	defaultOCSPBodyLimit        = 16 << 10
+	defaultACMENonceTTL         = 10 * time.Minute
+	defaultACMENonceCacheSize   = 1024
+	defaultACMERateLimit        = 120
+	defaultACMERateWindow       = time.Minute
+	defaultAuthorizationTimeout = 2 * time.Second
 )
 
 type AuthMode string
@@ -54,8 +55,9 @@ const (
 )
 
 type AuthConfig struct {
-	Mode           AuthMode
-	TrustedProxies []netip.Prefix
+	Mode                 AuthMode
+	TrustedProxies       []netip.Prefix
+	AuthorizationTimeout time.Duration
 }
 
 type RequestAuthorizer interface {
@@ -143,6 +145,9 @@ func NewWithAuthorizer(service *lifecycle.Service, auth AuthConfig, acme ACMECon
 	if auth.Mode == "" {
 		auth.Mode = AuthModeDev
 	}
+	if auth.AuthorizationTimeout <= 0 || auth.AuthorizationTimeout > defaultAuthorizationTimeout {
+		auth.AuthorizationTimeout = defaultAuthorizationTimeout
+	}
 	nonceStore := acme.NonceStore
 	if nonceStore == nil {
 		nonceStore = newACMEMemoryNonceStore(defaultACMENonceCacheSize)
@@ -200,7 +205,8 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			routePattern = pathPattern
 		}
 		if routePattern != "" {
-			result, err := s.authorizer.Authorize(r.Context(), AuthorizationInput{
+			authorizationContext, cancelAuthorization := context.WithTimeout(r.Context(), s.auth.AuthorizationTimeout)
+			result, err := s.authorizer.Authorize(authorizationContext, AuthorizationInput{
 				ActorID:              requestActor(r),
 				AuthenticationMethod: string(s.auth.Mode),
 				RequiredScope:        string(requiredScopeForRequest(r.Method, r.URL.Path)),
@@ -211,6 +217,7 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 				ClientIP:             auditMetadata.ClientIP,
 				UserAgent:            auditMetadata.UserAgent,
 			})
+			cancelAuthorization()
 			if err != nil || result.Outcome != AuthorizationOutcomeAllow {
 				s.writeError(rw, r, domain.ErrForbidden)
 				return
@@ -1364,7 +1371,7 @@ func acmeRateLimitClass(path string) string {
 }
 
 func requiredScopeForRequest(method string, path string) requiredScope {
-	if strings.HasPrefix(path, "/api-keys") || strings.HasPrefix(path, "/outbox/") || strings.HasPrefix(path, "/audit-events") || strings.HasPrefix(path, "/operator/") {
+	if path == "/debug/vars" || strings.HasPrefix(path, "/api-keys") || strings.HasPrefix(path, "/outbox/") || strings.HasPrefix(path, "/audit-events") || strings.HasPrefix(path, "/operator/") {
 		return requiredScopeOperator
 	}
 	if method == http.MethodPost && path == "/certificates/expiration-scan" {

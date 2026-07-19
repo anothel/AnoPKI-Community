@@ -11,6 +11,8 @@ Metrics are exposed at:
 GET /debug/vars
 ```
 
+In `api_key` authentication mode, this endpoint requires `operator` scope.
+
 The endpoint is registered on the service mux. Protect it at the deployment
 gateway if the service is reachable outside a trusted operator network.
 
