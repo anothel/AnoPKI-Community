@@ -12,13 +12,6 @@ import (
 	"github.com/anothel/anopki/service/internal/domain"
 )
 
-type auditChainState struct {
-	TailChainIndex  int64
-	TailEventID     string
-	TailEventHash   string
-	TotalEventCount int64
-}
-
 func (s *SQLStore) CreateAuditEvent(ctx context.Context, event domain.AuditEvent) error {
 	return s.WithinTx(ctx, func(repo Repository) error {
 		return repo.CreateAuditEvent(ctx, event)
@@ -33,6 +26,16 @@ func (s *SQLStore) ListAuditEventsQuery(ctx context.Context, query AuditEventQue
 	return s.repository().ListAuditEventsQuery(ctx, query)
 }
 
+func (s *SQLStore) VerifyAuditChain(ctx context.Context) (domain.AuditIntegrity, error) {
+	var report domain.AuditIntegrity
+	err := s.WithinTx(ctx, func(repo Repository) error {
+		var err error
+		report, err = repo.VerifyAuditChain(ctx)
+		return err
+	})
+	return report, err
+}
+
 func (s *SQLStore) DeleteAuditEventsBefore(ctx context.Context, before time.Time) (int, error) {
 	deleted := 0
 	err := s.WithinTx(ctx, func(repo Repository) error {
@@ -43,115 +46,61 @@ func (s *SQLStore) DeleteAuditEventsBefore(ctx context.Context, before time.Time
 	return deleted, err
 }
 
-func (s *SQLStore) VerifyAuditChain(ctx context.Context) (domain.AuditChainVerification, error) {
-	return s.repository().VerifyAuditChain(ctx)
-}
-
-func readAuditChainState(ctx context.Context, exec sqlExecutor) (auditChainState, error) {
-	var state auditChainState
-	err := exec.QueryRowContext(ctx, `
-SELECT tail_chain_index, tail_event_id, tail_event_hash, total_event_count
-FROM audit_chain_state
-WHERE id = 1`).Scan(&state.TailChainIndex, &state.TailEventID, &state.TailEventHash, &state.TotalEventCount)
-	if err != nil {
-		return auditChainState{}, fmt.Errorf("read audit chain state: %w", err)
-	}
-	return state, nil
-}
-
-func validateAuditTail(ctx context.Context, exec sqlExecutor, state auditChainState) error {
-	if state.TotalEventCount != state.TailChainIndex {
-		return domain.ErrAuditChainConflict
-	}
-	if state.TailChainIndex == 0 {
-		if state.TailEventID != "" || state.TailEventHash != "" || state.TotalEventCount != 0 {
-			return domain.ErrAuditChainConflict
-		}
-		return nil
-	}
-	var chainIndex int64
-	var eventHash string
-	err := exec.QueryRowContext(ctx, `
-SELECT chain_index, event_hash
-FROM audit_events
-WHERE id = $1`, state.TailEventID).Scan(&chainIndex, &eventHash)
-	if errors.Is(err, sql.ErrNoRows) {
-		var checkpointIndex int64
-		var checkpointHash string
-		err = exec.QueryRowContext(ctx, `
-SELECT through_chain_index, through_event_hash
-FROM audit_chain_checkpoints
-WHERE through_event_id = $1
-ORDER BY through_chain_index DESC
-LIMIT 1`, state.TailEventID).Scan(&checkpointIndex, &checkpointHash)
-		if err != nil || checkpointIndex != state.TailChainIndex || checkpointHash != state.TailEventHash {
-			return domain.ErrAuditChainConflict
-		}
-		return nil
-	}
-	if err != nil || chainIndex != state.TailChainIndex || eventHash != state.TailEventHash {
-		return domain.ErrAuditChainConflict
-	}
-	return nil
-}
-
 func (r sqlRepository) CreateAuditEvent(ctx context.Context, event domain.AuditEvent) error {
-	state, err := readAuditChainState(ctx, r.exec)
+	state, events, report, err := r.lockAndVerifyAuditChain(ctx)
 	if err != nil {
 		return err
 	}
-	if err := validateAuditTail(ctx, r.exec, state); err != nil {
-		return err
-	}
-	hashed, err := withAuditEventHash(state.TailEventHash, state.TailChainIndex+1, event)
+	prepared, err := withAuditEventHash(report.LastSequence+1, report.LastEventHash, event)
 	if err != nil {
 		return err
 	}
-	result, err := r.exec.ExecContext(ctx, `
-UPDATE audit_chain_state
-SET tail_chain_index = $1, tail_event_id = $2, tail_event_hash = $3,
-	total_event_count = total_event_count + 1, updated_at = $4
-WHERE id = 1 AND tail_chain_index = $5 AND tail_event_id = $6 AND tail_event_hash = $7`,
-		hashed.ChainIndex, hashed.ID, hashed.EventHash, formatSQLTime(time.Now()),
-		state.TailChainIndex, state.TailEventID, state.TailEventHash)
-	if err != nil {
-		return err
-	}
-	rows, err := result.RowsAffected()
-	if err != nil {
-		return err
-	}
-	if rows != 1 {
-		return domain.ErrAuditChainConflict
-	}
-	if _, err := r.exec.ExecContext(ctx, `
+	_, err = r.exec.ExecContext(ctx, `
 INSERT INTO audit_events (
-	id, actor, action, resource_type, resource_id, metadata_json,
-	chain_index, hash_algorithm, previous_event_hash, event_hash, created_at
+	id, sequence, actor, action, resource_type, resource_id, metadata_json,
+	hash_algorithm, previous_event_hash, event_hash, created_at
 ) VALUES (
 	$1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11
-)`, hashed.ID, hashed.Actor, hashed.Action, hashed.ResourceType, hashed.ResourceID, hashed.MetadataJSON,
-		hashed.ChainIndex, hashed.HashAlgorithm, hashed.PreviousEventHash, hashed.EventHash, formatSQLTime(hashed.CreatedAt)); err != nil {
+)`,
+		prepared.ID,
+		prepared.Sequence,
+		prepared.Actor,
+		prepared.Action,
+		prepared.ResourceType,
+		prepared.ResourceID,
+		prepared.MetadataJSON,
+		prepared.HashAlgorithm,
+		prepared.PreviousEventHash,
+		prepared.EventHash,
+		formatSQLTime(prepared.CreatedAt),
+	)
+	if err != nil {
 		return err
+	}
+	state.LatestSequence = prepared.Sequence
+	state.LatestEventHash = prepared.EventHash
+	state.UpdatedAt = time.Now()
+	if err := r.updateAuditChainState(ctx, state); err != nil {
+		return err
+	}
+	events = append(events, prepared)
+	if after := verifyAuditState(events, state); !after.Valid {
+		return auditIntegrityError(after)
 	}
 	return nil
 }
 
-const auditEventSelectColumns = `id, actor, action, resource_type, resource_id, metadata_json,
-	chain_index, hash_algorithm, previous_event_hash, event_hash, created_at`
-
 func (r sqlRepository) ListAuditEvents(ctx context.Context) ([]domain.AuditEvent, error) {
-	rows, err := r.exec.QueryContext(ctx, `SELECT `+auditEventSelectColumns+`
+	rows, err := r.exec.QueryContext(ctx, `
+SELECT id, sequence, actor, action, resource_type, resource_id, metadata_json,
+	hash_algorithm, previous_event_hash, event_hash, created_at
 FROM audit_events
-ORDER BY chain_index`)
+ORDER BY sequence`)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	return scanAuditEvents(rows)
-}
 
-func scanAuditEvents(rows *sql.Rows) ([]domain.AuditEvent, error) {
 	events := make([]domain.AuditEvent, 0)
 	for rows.Next() {
 		event, err := scanAuditEvent(rows)
@@ -168,7 +117,8 @@ func scanAuditEvents(rows *sql.Rows) ([]domain.AuditEvent, error) {
 
 func (r sqlRepository) ListAuditEventsQuery(ctx context.Context, query AuditEventQuery) ([]domain.AuditEvent, error) {
 	sqlQuery := strings.Builder{}
-	sqlQuery.WriteString(`SELECT ` + auditEventSelectColumns + `
+	sqlQuery.WriteString(`SELECT id, sequence, actor, action, resource_type, resource_id, metadata_json,
+	hash_algorithm, previous_event_hash, event_hash, created_at
 FROM audit_events`)
 	where := make([]string, 0)
 	args := make([]any, 0)
@@ -208,73 +158,61 @@ FROM audit_events`)
 			sqlQuery.WriteString(fmt.Sprintf(" OFFSET $%d", len(args)))
 		}
 	}
+
 	rows, err := r.exec.QueryContext(ctx, sqlQuery.String(), args...)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	return scanAuditEvents(rows)
+
+	events := make([]domain.AuditEvent, 0)
+	for rows.Next() {
+		event, err := scanAuditEvent(rows)
+		if err != nil {
+			return nil, err
+		}
+		events = append(events, event)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return events, nil
 }
 
-func latestAuditCheckpoint(ctx context.Context, exec sqlExecutor) (domain.AuditChainCheckpoint, error) {
-	var checkpoint domain.AuditChainCheckpoint
-	var cutoff any
-	var createdAt any
-	err := exec.QueryRowContext(ctx, `
-SELECT id, through_chain_index, through_event_id, through_event_hash, retention_cutoff, created_at
-FROM audit_chain_checkpoints
-ORDER BY through_chain_index DESC
-LIMIT 1`).Scan(&checkpoint.ID, &checkpoint.ThroughChainIndex, &checkpoint.ThroughEventID, &checkpoint.ThroughEventHash, &cutoff, &createdAt)
-	if errors.Is(err, sql.ErrNoRows) {
-		return domain.AuditChainCheckpoint{}, nil
+func (r sqlRepository) VerifyAuditChain(ctx context.Context) (domain.AuditIntegrity, error) {
+	if _, err := r.exec.ExecContext(ctx, `
+UPDATE audit_chain_state
+SET updated_at = updated_at
+WHERE singleton_id = 1`); err != nil {
+		return domain.AuditIntegrity{}, fmt.Errorf("lock audit chain state: %w", err)
 	}
+	state, err := r.readAuditChainState(ctx)
 	if err != nil {
-		return domain.AuditChainCheckpoint{}, err
+		return domain.AuditIntegrity{}, err
 	}
-	checkpoint.RetentionCutoff, err = parseSQLTime(cutoff)
+	events, err := r.listAuditEventsBySequence(ctx)
 	if err != nil {
-		return domain.AuditChainCheckpoint{}, err
+		return domain.AuditIntegrity{}, err
 	}
-	checkpoint.CreatedAt, err = parseSQLTime(createdAt)
-	if err != nil {
-		return domain.AuditChainCheckpoint{}, err
-	}
-	return checkpoint, nil
+	return verifyAuditState(events, state), nil
 }
 
 func (r sqlRepository) DeleteAuditEventsBefore(ctx context.Context, before time.Time) (int, error) {
-	verification, err := r.VerifyAuditChain(ctx)
+	state, events, _, err := r.lockAndVerifyAuditChain(ctx)
 	if err != nil {
 		return 0, err
 	}
-	if !verification.Verified {
-		return 0, domain.ErrAuditChainConflict
+	deleteCount := auditRetentionPrefixLength(events, before)
+	if deleteCount < 0 {
+		return 0, fmt.Errorf("%w: retention_cutoff_non_prefix", domain.ErrAuditIntegrity)
 	}
-	events, err := r.ListAuditEvents(ctx)
-	if err != nil {
-		return 0, err
-	}
-	deleted := 0
-	for deleted < len(events) && events[deleted].CreatedAt.Before(before) {
-		deleted++
-	}
-	if deleted == 0 {
+	if deleteCount == 0 {
 		return 0, nil
 	}
-	through := events[deleted-1]
-	checkpoint := domain.AuditChainCheckpoint{
-		ID:                auditCheckpointID(through.ChainIndex, through.ID, through.EventHash, before),
-		ThroughChainIndex: through.ChainIndex, ThroughEventID: through.ID, ThroughEventHash: through.EventHash,
-		RetentionCutoff: before.UTC(), CreatedAt: time.Now().UTC(),
-	}
-	if _, err := r.exec.ExecContext(ctx, `
-INSERT INTO audit_chain_checkpoints (
-	id, through_chain_index, through_event_id, through_event_hash, retention_cutoff, created_at
-) VALUES ($1, $2, $3, $4, $5, $6)`, checkpoint.ID, checkpoint.ThroughChainIndex, checkpoint.ThroughEventID,
-		checkpoint.ThroughEventHash, formatSQLTime(checkpoint.RetentionCutoff), formatSQLTime(checkpoint.CreatedAt)); err != nil {
-		return 0, err
-	}
-	result, err := r.exec.ExecContext(ctx, `DELETE FROM audit_events WHERE chain_index <= $1`, through.ChainIndex)
+	lastDeleted := events[deleteCount-1]
+	result, err := r.exec.ExecContext(ctx, `
+DELETE FROM audit_events
+WHERE sequence <= $1`, lastDeleted.Sequence)
 	if err != nil {
 		return 0, err
 	}
@@ -282,24 +220,122 @@ INSERT INTO audit_chain_checkpoints (
 	if err != nil {
 		return 0, err
 	}
-	if int(rows) != deleted {
-		return 0, domain.ErrAuditChainConflict
+	if rows != int64(deleteCount) {
+		return 0, fmt.Errorf("%w: prune_row_count_mismatch", domain.ErrAuditIntegrity)
 	}
-	return deleted, nil
+	state.CheckpointSequence = lastDeleted.Sequence
+	state.CheckpointEventHash = lastDeleted.EventHash
+	state.UpdatedAt = time.Now()
+	if err := r.updateAuditChainState(ctx, state); err != nil {
+		return 0, err
+	}
+	remaining := events[deleteCount:]
+	if after := verifyAuditState(remaining, state); !after.Valid {
+		return 0, auditIntegrityError(after)
+	}
+	return deleteCount, nil
 }
 
-func (r sqlRepository) VerifyAuditChain(ctx context.Context) (domain.AuditChainVerification, error) {
-	state, err := readAuditChainState(ctx, r.exec)
-	if err != nil {
-		return domain.AuditChainVerification{}, err
+func (r sqlRepository) lockAndVerifyAuditChain(ctx context.Context) (auditChainState, []domain.AuditEvent, domain.AuditIntegrity, error) {
+	if _, err := r.exec.ExecContext(ctx, `
+UPDATE audit_chain_state
+SET updated_at = updated_at
+WHERE singleton_id = 1`); err != nil {
+		return auditChainState{}, nil, domain.AuditIntegrity{}, fmt.Errorf("lock audit chain state: %w", err)
 	}
-	checkpoint, err := latestAuditCheckpoint(ctx, r.exec)
+	state, err := r.readAuditChainState(ctx)
 	if err != nil {
-		return domain.AuditChainVerification{}, err
+		return auditChainState{}, nil, domain.AuditIntegrity{}, err
 	}
-	events, err := r.ListAuditEvents(ctx)
+	events, err := r.listAuditEventsBySequence(ctx)
 	if err != nil {
-		return domain.AuditChainVerification{}, err
+		return auditChainState{}, nil, domain.AuditIntegrity{}, err
 	}
-	return verifyAuditChain(events, checkpoint, state.TailChainIndex, state.TailEventID, state.TailEventHash, state.TotalEventCount), nil
+	report := verifyAuditState(events, state)
+	if err := auditIntegrityError(report); err != nil {
+		return state, events, report, err
+	}
+	return state, events, report, nil
+}
+
+func (r sqlRepository) readAuditChainState(ctx context.Context) (auditChainState, error) {
+	var state auditChainState
+	var updatedAt any
+	err := r.exec.QueryRowContext(ctx, `
+SELECT hash_algorithm, latest_sequence, latest_event_hash,
+	checkpoint_sequence, checkpoint_event_hash, updated_at
+FROM audit_chain_state
+WHERE singleton_id = 1`).Scan(
+		&state.HashAlgorithm,
+		&state.LatestSequence,
+		&state.LatestEventHash,
+		&state.CheckpointSequence,
+		&state.CheckpointEventHash,
+		&updatedAt,
+	)
+	if errors.Is(err, sql.ErrNoRows) {
+		return auditChainState{}, fmt.Errorf("%w: state_missing", domain.ErrAuditIntegrity)
+	}
+	if err != nil {
+		return auditChainState{}, err
+	}
+	state.UpdatedAt, err = parseSQLTime(updatedAt)
+	if err != nil {
+		return auditChainState{}, err
+	}
+	return state, nil
+}
+
+func (r sqlRepository) listAuditEventsBySequence(ctx context.Context) ([]domain.AuditEvent, error) {
+	rows, err := r.exec.QueryContext(ctx, `
+SELECT id, sequence, actor, action, resource_type, resource_id, metadata_json,
+	hash_algorithm, previous_event_hash, event_hash, created_at
+FROM audit_events
+ORDER BY sequence`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	events := make([]domain.AuditEvent, 0)
+	for rows.Next() {
+		event, err := scanAuditEvent(rows)
+		if err != nil {
+			return nil, err
+		}
+		events = append(events, event)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return events, nil
+}
+
+func (r sqlRepository) updateAuditChainState(ctx context.Context, state auditChainState) error {
+	result, err := r.exec.ExecContext(ctx, `
+UPDATE audit_chain_state
+SET hash_algorithm = $1,
+	latest_sequence = $2,
+	latest_event_hash = $3,
+	checkpoint_sequence = $4,
+	checkpoint_event_hash = $5,
+	updated_at = $6
+WHERE singleton_id = 1`,
+		state.HashAlgorithm,
+		state.LatestSequence,
+		state.LatestEventHash,
+		state.CheckpointSequence,
+		state.CheckpointEventHash,
+		formatSQLTime(state.UpdatedAt),
+	)
+	if err != nil {
+		return err
+	}
+	rows, err := result.RowsAffected()
+	if err != nil {
+		return err
+	}
+	if rows != 1 {
+		return fmt.Errorf("%w: state_missing", domain.ErrAuditIntegrity)
+	}
+	return nil
 }

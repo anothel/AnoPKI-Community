@@ -144,8 +144,8 @@ type AuditRepository interface {
 	CreateAuditEvent(ctx context.Context, event domain.AuditEvent) error
 	ListAuditEvents(ctx context.Context) ([]domain.AuditEvent, error)
 	ListAuditEventsQuery(ctx context.Context, query AuditEventQuery) ([]domain.AuditEvent, error)
+	VerifyAuditChain(ctx context.Context) (domain.AuditIntegrity, error)
 	DeleteAuditEventsBefore(ctx context.Context, before time.Time) (int, error)
-	VerifyAuditChain(ctx context.Context) (domain.AuditChainVerification, error)
 }
 
 type AuditEventQuery struct {

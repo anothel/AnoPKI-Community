@@ -46,6 +46,6 @@ the source audit metadata redacts those fields before export.
   `auth_method` when present.
 - Preserve `api_key_id`, `api_key_actor`, `api_key_fingerprint`, and
   `api_key_scopes`; never export API key tokens or token hashes.
-- Include tamper-evidence hashes when the audit hash-chain plan is implemented.
+- Include Audit `sequence`, `hash_algorithm`, `previous_event_hash`, `event_hash`, and integrity/checkpoint state in controlled exports.
 - Treat exporter failure as an operator alert, not as a reason to block the
   lifecycle write path.

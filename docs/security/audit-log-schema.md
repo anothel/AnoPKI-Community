@@ -18,25 +18,18 @@ SIEM export format and starter detections are defined in
 - redacted secret handling
 - failure result code for rejected API requests
 
-## Retention And Query
+## Chain, Retention, And Query
 
-The service supports audit query filters, pagination, sorting, and retention
-pruning. Production deployments must define retention duration and export
-requirements.
+Every row carries a monotonic `sequence`, `hash_algorithm=sha256-v1`,
+`previous_event_hash`, and `event_hash`. `GET /audit-events/integrity` verifies
+the retained chain, latest state, and prune checkpoint. Retention verifies first,
+deletes only a contiguous prefix, advances the checkpoint, and fails closed on
+tamper.
+
+Production deployments must define retention duration, independent chain-anchor
+or export requirements, and incident handling for an invalid integrity report.
 
 ## Gaps
 
-- external immutable anchoring or signed SIEM export for the latest checkpoint
-  and chain tail
-
-
-## Tamper-Evidence Fields
-
-- `chain_index`: monotonic insertion order independent of event timestamp.
-- `hash_algorithm`: currently `sha256-v1`.
-- `previous_event_hash`: the prior retained or checkpointed event hash.
-- `event_hash`: canonical event digest.
-
-Retention checkpoints preserve the last removed event hash so verification can
-continue after pruning. Hashes are evidence fields and must not be rewritten in
-place.
+- independently anchored export or SIEM custody integration
+- evidence pack for policy changes

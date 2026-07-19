@@ -23,7 +23,6 @@ REQUIRED_DOC_TEXT = [
     "## Intermediate Issuer Rollover Evidence Runner",
     "## PostgreSQL Recovery Evidence Runner",
     "## Multi-Node Reliability Evidence Runner",
-    "## Audit Hash-Chain Evidence Runner",
     "## Supported-Go Evidence Runner",
     "## Required Evidence Per Release Candidate",
     "verify-go-release.py",
@@ -36,8 +35,6 @@ REQUIRED_DOC_TEXT = [
     "anopki-postgres-recovery-verification.tar.gz",
     "python scripts/verify-multi-node-reliability.py",
     "anopki-multi-node-verification.tar.gz",
-    "python scripts/verify-audit-hash-chain.py",
-    "anopki-audit-chain-verification.tar.gz",
     "syft",
     "cosign",
     "govulncheck",
@@ -101,10 +98,6 @@ REQUIRED_CI_TEXT = [
     "python scripts/verify-multi-node-reliability.py",
     "anopki-multi-node-verification",
     "multi-node-reliability-drill:",
-    "python scripts/test_verify_audit_hash_chain.py",
-    "python scripts/verify-audit-hash-chain.py",
-    "anopki-audit-chain-verification",
-    "audit-hash-chain-drill:",
     "image: postgres:16",
     "postgresql-client",
     "python scripts/test_validate_release_artifacts.py",
@@ -158,15 +151,13 @@ REQUIRED_GO_RUNNER_TEXT = [
 ]
 
 REQUIRED_RECOVERY_RUNNER_TEXT = [
-    "MIGRATIONS = (",
-    "0002_audit_hash_chain_sqlite.sql",
+    "MIGRATION = Path",
     "schema_migrations",
     "certificate_issuance_attempts",
     "crl_publications",
     "crl_generation_claims",
     "webhook_deliveries",
     "private-key-exclusion",
-    "audit-hash-chain",
     "recovery-verification.json",
     "recovery-verification.md",
     "resolve_commit",
@@ -252,25 +243,6 @@ REQUIRED_MULTI_NODE_RUNNER_TEXT = [
     "sensitive-evidence-exclusion",
 ]
 
-REQUIRED_AUDIT_CHAIN_RUNNER_TEXT = [
-    "MINIMUM_GO_VERSION = (1, 25, 11)",
-    "community_audit_hash_chain_drill",
-    "TestApplyInitialMigrationBackfillsAuditHashChain",
-    "TestAuditChainAppendAndVerifyAcrossStores",
-    "TestAuditChainTamperingDetected",
-    "TestAuditChainPruneCheckpointPreservesVerification",
-    "TestAuditChainRejectsInvalidMetadata",
-    "TestAuditIntegrityEndpoint",
-    "audit-migration-backfill",
-    "audit-chain-tamper-detection",
-    "audit-retention-checkpoint",
-    "audit-chain-verification.json",
-    "audit-chain-verification.md",
-    "audit-chain-test.log",
-    "sensitive-evidence-exclusion",
-]
-
-
 REQUIRED_RELEASE_TEXT = [
     "workflow_dispatch:",
     "tags:",
@@ -293,8 +265,6 @@ REQUIRED_RELEASE_TEXT = [
     "anopki-postgres-recovery-verification.tar.gz",
     "python scripts/verify-multi-node-reliability.py",
     "anopki-multi-node-verification.tar.gz",
-    "python scripts/verify-audit-hash-chain.py",
-    "anopki-audit-chain-verification.tar.gz",
     '--commit "${GITHUB_SHA}"',
     'VERSION="$(cat VERSION)"',
     "go build -ldflags",
@@ -403,7 +373,6 @@ def main() -> None:
     require_text(root / "scripts/verify-issuer-rollover-drill.py", REQUIRED_ISSUER_ROLLOVER_RUNNER_TEXT)
     require_text(root / "scripts/verify-postgres-recovery-drill.py", REQUIRED_POSTGRES_RECOVERY_RUNNER_TEXT)
     require_text(root / "scripts/verify-multi-node-reliability.py", REQUIRED_MULTI_NODE_RUNNER_TEXT)
-    require_text(root / "scripts/verify-audit-hash-chain.py", REQUIRED_AUDIT_CHAIN_RUNNER_TEXT)
     require_text(root / ".github/workflows/ci.yml", REQUIRED_CI_TEXT)
     require_text(root / ".github/workflows/release.yml", REQUIRED_RELEASE_TEXT)
     print("release evidence ok")

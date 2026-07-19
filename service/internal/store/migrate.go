@@ -18,11 +18,21 @@ import (
 var migrationFiles embed.FS
 
 const initialMigrationVersion = 1
-const auditHashMigrationVersion = 2
+const auditHashChainMigrationVersion = 2
 const sqliteMigrationBusyTimeoutMS = 5000
 const postgresMigrationAdvisoryLockID int64 = 5847545710944921361
 
 func ApplyInitialMigration(ctx context.Context, db *sql.DB, driver string) error {
+	path, err := initialMigrationPath(driver)
+	if err != nil {
+		return err
+	}
+
+	sqlBytes, err := migrationFiles.ReadFile(path)
+	if err != nil {
+		return fmt.Errorf("read initial migration: %w", err)
+	}
+
 	tx, err := beginMigrationTx(ctx, db, driver)
 	if err != nil {
 		return err
@@ -32,146 +42,63 @@ func ApplyInitialMigration(ctx context.Context, db *sql.DB, driver string) error
 	if err := createSchemaMigrationsTable(ctx, tx, driver); err != nil {
 		return err
 	}
-	migrations, err := migrationDefinitions(driver)
+	checksum := migrationChecksum(sqlBytes)
+	applied, err := checkSchemaMigration(ctx, tx, initialMigrationVersion, checksum)
 	if err != nil {
 		return err
 	}
-	for _, migration := range migrations {
-		sqlBytes, err := migrationFiles.ReadFile(migration.path)
-		if err != nil {
-			return fmt.Errorf("read migration %d: %w", migration.version, err)
-		}
-		checksum := migrationChecksum(sqlBytes)
-		applied, err := checkSchemaMigration(ctx, tx, migration.version, checksum)
-		if err != nil {
-			return err
-		}
-		if applied {
-			continue
-		}
-		if err := insertSchemaMigration(ctx, tx, driver, migration.version, checksum, true); err != nil {
+	if !applied {
+		if err := insertSchemaMigration(ctx, tx, driver, initialMigrationVersion, checksum, true); err != nil {
 			return err
 		}
 		if _, err := tx.ExecContext(ctx, string(sqlBytes)); err != nil {
-			return fmt.Errorf("execute migration %d: %w", migration.version, err)
+			return fmt.Errorf("execute initial migration: %w", err)
 		}
-		if migration.version == initialMigrationVersion {
-			if err := applyCompatibilityMigrations(ctx, tx, driver); err != nil {
-				return err
-			}
-		}
-		if migration.version == auditHashMigrationVersion {
-			if err := backfillAuditHashChain(ctx, tx); err != nil {
-				return err
-			}
-		}
-		if err := markSchemaMigrationClean(ctx, tx, driver, migration.version, checksum); err != nil {
+	}
+	if err := applyCompatibilityMigrations(ctx, tx, driver); err != nil {
+		return err
+	}
+	if !applied {
+		if err := markSchemaMigrationClean(ctx, tx, driver, initialMigrationVersion, checksum); err != nil {
 			return err
 		}
 	}
-	// Older databases may have version 1 applied before compatibility columns were added.
-	if err := applyCompatibilityMigrations(ctx, tx, driver); err != nil {
+	if err := applyAuditHashChainMigration(ctx, tx, driver); err != nil {
 		return err
 	}
 	return tx.Commit()
 }
 
 func CheckInitialMigration(ctx context.Context, db *sql.DB, driver string) error {
-	migrations, err := migrationDefinitions(driver)
+	path, err := initialMigrationPath(driver)
 	if err != nil {
 		return err
 	}
-	for _, migration := range migrations {
-		sqlBytes, err := migrationFiles.ReadFile(migration.path)
-		if err != nil {
-			return fmt.Errorf("read migration %d: %w", migration.version, err)
-		}
-		applied, err := checkSchemaMigration(ctx, db, migration.version, migrationChecksum(sqlBytes))
-		if err != nil {
-			return err
-		}
-		if !applied {
-			return fmt.Errorf("schema migration version %d is not applied", migration.version)
-		}
-	}
-	return nil
-}
-
-type migrationDefinition struct {
-	version int
-	path    string
-}
-
-func migrationDefinitions(driver string) ([]migrationDefinition, error) {
-	switch driver {
-	case "sqlite":
-		return []migrationDefinition{
-			{version: initialMigrationVersion, path: "migrations/0001_init_sqlite.sql"},
-			{version: auditHashMigrationVersion, path: "migrations/0002_audit_hash_chain_sqlite.sql"},
-		}, nil
-	case "pgx":
-		return []migrationDefinition{
-			{version: initialMigrationVersion, path: "migrations/0001_init.sql"},
-			{version: auditHashMigrationVersion, path: "migrations/0002_audit_hash_chain.sql"},
-		}, nil
-	default:
-		return nil, fmt.Errorf("unsupported database driver %q", driver)
-	}
-}
-
-func backfillAuditHashChain(ctx context.Context, exec sqlExecutor) error {
-	rows, err := exec.QueryContext(ctx, `
-SELECT id, actor, action, resource_type, resource_id, metadata_json, created_at
-FROM audit_events
-ORDER BY created_at, id`)
+	sqlBytes, err := migrationFiles.ReadFile(path)
 	if err != nil {
-		return fmt.Errorf("list audit events for hash backfill: %w", err)
+		return fmt.Errorf("read initial migration: %w", err)
 	}
-	events := make([]domain.AuditEvent, 0)
-	for rows.Next() {
-		event, err := scanLegacyAuditEvent(rows)
-		if err != nil {
-			_ = rows.Close()
-			return err
-		}
-		events = append(events, event)
+	applied, err := checkSchemaMigration(ctx, db, initialMigrationVersion, migrationChecksum(sqlBytes))
+	if err != nil {
+		return err
 	}
-	if err := rows.Err(); err != nil {
-		_ = rows.Close()
-		return fmt.Errorf("iterate audit events for hash backfill: %w", err)
+	if !applied {
+		return fmt.Errorf("schema migration version %d is not applied", initialMigrationVersion)
 	}
-	if err := rows.Close(); err != nil {
-		return fmt.Errorf("close audit events for hash backfill: %w", err)
+	auditPath, err := auditHashChainMigrationPath(driver)
+	if err != nil {
+		return err
 	}
-
-	previousHash := ""
-	var chainIndex int64
-	tailID := ""
-	for _, original := range events {
-		chainIndex++
-		event, err := withAuditEventHash(previousHash, chainIndex, original)
-		if err != nil {
-			return fmt.Errorf("hash audit event %s during migration: %w", original.ID, err)
-		}
-		if _, err := exec.ExecContext(ctx, `
-UPDATE audit_events
-SET chain_index = $1, hash_algorithm = $2, previous_event_hash = $3, event_hash = $4
-WHERE id = $5`, event.ChainIndex, event.HashAlgorithm, event.PreviousEventHash, event.EventHash, event.ID); err != nil {
-			return fmt.Errorf("backfill audit event %s: %w", event.ID, err)
-		}
-		previousHash = event.EventHash
-		tailID = event.ID
+	auditSQL, err := migrationFiles.ReadFile(auditPath)
+	if err != nil {
+		return fmt.Errorf("read audit hash-chain migration: %w", err)
 	}
-	if _, err := exec.ExecContext(ctx, `
-UPDATE audit_chain_state
-SET tail_chain_index = $1, tail_event_id = $2, tail_event_hash = $3, total_event_count = $4, updated_at = $5
-WHERE id = 1`, chainIndex, tailID, previousHash, chainIndex, formatSQLTime(time.Now())); err != nil {
-		return fmt.Errorf("initialize audit chain state: %w", err)
+	applied, err = checkSchemaMigration(ctx, db, auditHashChainMigrationVersion, migrationChecksum(auditSQL))
+	if err != nil {
+		return err
 	}
-	if _, err := exec.ExecContext(ctx, `
-CREATE UNIQUE INDEX IF NOT EXISTS idx_audit_events_chain_index
-ON audit_events(chain_index)`); err != nil {
-		return fmt.Errorf("create audit chain index: %w", err)
+	if !applied {
+		return fmt.Errorf("schema migration version %d is not applied", auditHashChainMigrationVersion)
 	}
 	return nil
 }
@@ -253,6 +180,28 @@ func (tx *migrationTx) Rollback() {
 	}
 	tx.done = true
 	_ = tx.rollback()
+}
+
+func initialMigrationPath(driver string) (string, error) {
+	switch driver {
+	case "sqlite":
+		return "migrations/0001_init_sqlite.sql", nil
+	case "pgx":
+		return "migrations/0001_init.sql", nil
+	default:
+		return "", fmt.Errorf("unsupported database driver %q", driver)
+	}
+}
+
+func auditHashChainMigrationPath(driver string) (string, error) {
+	switch driver {
+	case "sqlite":
+		return "migrations/0002_audit_hash_chain_sqlite.sql", nil
+	case "pgx":
+		return "migrations/0002_audit_hash_chain.sql", nil
+	default:
+		return "", fmt.Errorf("unsupported database driver %q", driver)
+	}
 }
 
 func migrationChecksum(sqlBytes []byte) string {
@@ -947,6 +896,135 @@ func applyPostgresCompatibilityMigrations(ctx context.Context, db sqlExecutor) e
 	for _, statement := range statements {
 		if _, err := db.ExecContext(ctx, statement); err != nil {
 			return fmt.Errorf("execute postgres compatibility migration: %w", err)
+		}
+	}
+	return nil
+}
+
+func applyAuditHashChainMigration(ctx context.Context, db sqlExecutor, driver string) error {
+	path, err := auditHashChainMigrationPath(driver)
+	if err != nil {
+		return err
+	}
+	sqlBytes, err := migrationFiles.ReadFile(path)
+	if err != nil {
+		return fmt.Errorf("read audit hash-chain migration: %w", err)
+	}
+	checksum := migrationChecksum(sqlBytes)
+	applied, err := checkSchemaMigration(ctx, db, auditHashChainMigrationVersion, checksum)
+	if err != nil {
+		return err
+	}
+	if applied {
+		return nil
+	}
+	if err := insertSchemaMigration(ctx, db, driver, auditHashChainMigrationVersion, checksum, true); err != nil {
+		return err
+	}
+	if _, err := db.ExecContext(ctx, string(sqlBytes)); err != nil {
+		return fmt.Errorf("execute audit hash-chain migration: %w", err)
+	}
+	if err := backfillAuditHashChain(ctx, db); err != nil {
+		return err
+	}
+	if err := finalizeAuditHashChainSchema(ctx, db, driver); err != nil {
+		return err
+	}
+	if err := markSchemaMigrationClean(ctx, db, driver, auditHashChainMigrationVersion, checksum); err != nil {
+		return err
+	}
+	return nil
+}
+
+func backfillAuditHashChain(ctx context.Context, db sqlExecutor) error {
+	rows, err := db.QueryContext(ctx, `
+SELECT id, actor, action, resource_type, resource_id, metadata_json, created_at
+FROM audit_events
+ORDER BY created_at, id`)
+	if err != nil {
+		return fmt.Errorf("read legacy audit events: %w", err)
+	}
+	events := make([]domain.AuditEvent, 0)
+	for rows.Next() {
+		var event domain.AuditEvent
+		var createdAt any
+		if err := rows.Scan(
+			&event.ID,
+			&event.Actor,
+			&event.Action,
+			&event.ResourceType,
+			&event.ResourceID,
+			&event.MetadataJSON,
+			&createdAt,
+		); err != nil {
+			rows.Close()
+			return fmt.Errorf("scan legacy audit event: %w", err)
+		}
+		parsedCreatedAt, err := parseSQLTime(createdAt)
+		if err != nil {
+			rows.Close()
+			return fmt.Errorf("parse legacy audit event time: %w", err)
+		}
+		event.CreatedAt = parsedCreatedAt
+		events = append(events, event)
+	}
+	if err := rows.Err(); err != nil {
+		rows.Close()
+		return fmt.Errorf("read legacy audit events: %w", err)
+	}
+	if err := rows.Close(); err != nil {
+		return fmt.Errorf("close legacy audit events: %w", err)
+	}
+
+	previousHash := ""
+	for index, event := range events {
+		prepared, err := withAuditEventHash(int64(index+1), previousHash, event)
+		if err != nil {
+			return fmt.Errorf("backfill audit event %q: %w", event.ID, err)
+		}
+		if _, err := db.ExecContext(ctx, `
+UPDATE audit_events
+SET sequence = $1, hash_algorithm = $2, previous_event_hash = $3, event_hash = $4
+WHERE id = $5`,
+			prepared.Sequence,
+			prepared.HashAlgorithm,
+			prepared.PreviousEventHash,
+			prepared.EventHash,
+			prepared.ID,
+		); err != nil {
+			return fmt.Errorf("backfill audit event %q: %w", event.ID, err)
+		}
+		previousHash = prepared.EventHash
+	}
+
+	latestSequence := int64(len(events))
+	if _, err := db.ExecContext(ctx, `
+INSERT INTO audit_chain_state (
+	singleton_id, hash_algorithm, latest_sequence, latest_event_hash,
+	checkpoint_sequence, checkpoint_event_hash, updated_at
+) VALUES (1, $1, $2, $3, 0, '', $4)`,
+		AuditHashAlgorithmSHA256V1,
+		latestSequence,
+		previousHash,
+		formatSQLTime(time.Now()),
+	); err != nil {
+		return fmt.Errorf("initialize audit chain state: %w", err)
+	}
+	return nil
+}
+
+func finalizeAuditHashChainSchema(ctx context.Context, db sqlExecutor, driver string) error {
+	statements := []string{
+		`CREATE UNIQUE INDEX idx_audit_events_sequence ON audit_events(sequence)`,
+	}
+	if driver == "pgx" {
+		statements = append([]string{
+			`ALTER TABLE audit_events ALTER COLUMN sequence SET NOT NULL`,
+		}, statements...)
+	}
+	for _, statement := range statements {
+		if _, err := db.ExecContext(ctx, statement); err != nil {
+			return fmt.Errorf("finalize audit hash-chain schema: %w", err)
 		}
 	}
 	return nil

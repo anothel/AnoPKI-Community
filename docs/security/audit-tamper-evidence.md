@@ -1,62 +1,65 @@
 # Audit Tamper Evidence
 
-AnoPKI stores audit events in a `sha256-v1` chain that is append-only between
-checkpointed retention operations.
+AnoPKI Community stores Audit events in a deterministic `sha256-v1` hash chain.
+The Memory, SQLite, and PostgreSQL repositories share the same append, verify,
+checkpoint, and retention contract.
 
-## Stored Fields
+## Chain Model
 
-Each event stores:
+Each row stores:
 
-- monotonic `chain_index`,
-- `hash_algorithm=sha256-v1`,
-- `previous_event_hash`,
-- `event_hash`.
+- `sequence`: a monotonic integer beginning at 1,
+- `hash_algorithm`: `sha256-v1`,
+- `previous_event_hash`: the previous row hash, or empty for the genesis row,
+- `event_hash`: the current row hash.
 
-The canonical payload includes the chain index, previous hash, event ID, actor,
-action, resource type and ID, canonical JSON metadata, and UTC timestamp. A
-domain separator prevents reuse as an unrelated SHA-256 payload.
+The hash is:
 
-## Write Semantics
+```text
+event_hash = SHA-256(previous_event_hash || canonical_event_json)
+```
 
-SQL writes update the event and singleton chain-tail state in one transaction.
-The tail update uses compare-and-swap semantics; concurrent or stale writers fail
-closed with an audit-chain conflict and the transaction rolls back. Invalid
-metadata JSON is rejected before hashing. Memory storage uses the same canonical
-hash implementation under its transaction lock.
+The canonical JSON commits the algorithm, sequence, event ID, actor, action,
+resource type, resource ID, parsed-and-remarshaled metadata JSON, and UTC
+RFC3339Nano timestamp. Database-local fields and export envelopes are excluded.
 
-## Retention Checkpoints
+## Migration
 
-Retention removes only a contiguous expired prefix. Before deletion, the store
-writes an immutable checkpoint containing the last removed chain index, event ID,
-event hash, cutoff, and creation time. Retained events continue from that hash.
-The chain tail and total event count are not reset by pruning.
+Schema migration v2 adds the chain columns and `audit_chain_state`. Existing
+Audit rows are read in deterministic `created_at, id` order and backfilled
+before the unique sequence index is created. A dirty, malformed, or
+non-canonical legacy row fails migration closed.
 
-## Verification
+`audit_chain_state` stores the latest sequence/hash and the retention checkpoint.
+PostgreSQL append and prune operations lock this singleton state row in the same
+transaction; SQLite serializes the same update through its transaction.
 
-`GET /audit-events/integrity` verifies:
+## Verification And Query
 
-- supported hash algorithm,
-- contiguous chain indexes,
-- previous-hash linkage,
-- recomputed event hashes,
-- latest checkpoint continuity,
-- persisted chain-tail state.
+`GET /audit-events/integrity` recomputes the retained chain and verifies it
+against the latest state and checkpoint. The response reports the algorithm,
+event count, first/last sequence, latest hash, checkpoint, and a stable failure
+reason when invalid.
 
-Verification never repairs hashes. A failure is an incident and the rows must be
-preserved for investigation. Retention pruning also verifies the chain first, so
-a damaged prefix cannot be deleted and replaced with a checkpoint that appears
-healthy.
+Append and retention prune verify the chain before changing state. A damaged
+row, sequence, latest state, or checkpoint returns `audit_integrity_failed` and
+no append or prune is committed.
 
-## Security Boundary
+## Retention Checkpoint
 
-The in-database chain detects accidental corruption and edits that are not
-coordinated with the chain state. It does not by itself defeat a privileged
-attacker who can rewrite events, checkpoints, and chain-tail state and then
-recompute every hash. Database access controls, backup evidence, and an external
-immutable anchor are still required for stronger tamper resistance.
+Retention deletes only a contiguous oldest prefix. Before deletion, the last
+removed row becomes the checkpoint. The first retained row must reference that
+checkpoint hash. The separate latest sequence/hash also detects checkpoint
+mutation when no retained rows remain.
 
-## Remaining Work
+The checkpoint preserves chain continuity across pruning; it is not an external
+notary. Operators that require independent proof should export or anchor the
+latest sequence/hash in controlled release or SIEM evidence.
 
-Release evidence records the exact-commit verification result. Exporting the
-latest checkpoint or tail hash to a third-party immutable anchor remains pending
-until a concrete operator or SIEM integration is selected.
+## Incident Handling
+
+- Treat any invalid integrity report as an incident.
+- Do not rewrite hashes or silently repair the chain.
+- Preserve the database and relevant backup evidence.
+- Stop append and retention operations until the cause is understood.
+- Recover only from a reviewed, integrity-verified source.

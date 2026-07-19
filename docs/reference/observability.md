@@ -129,5 +129,4 @@ and `elapsed_ms` when request context is available.
   histograms.
 - Distributed trace/span propagation is limited to preserving inbound
   `traceparent` in audit metadata.
-- Tamper-evident storage and SIEM export examples live in the security docs;
-  exporter/backend integration remains future work.
+- Audit hash-chain storage and integrity verification are implemented; SIEM export examples live in the security docs, while independent anchoring and exporter/backend integration remain future work.

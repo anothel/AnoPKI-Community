@@ -21,7 +21,7 @@ is tracked in [ROADMAP](../ROADMAP.md).
 | Shorter certificate lifetime | Expiration scan, expiry SLO, public TLS 200/100/47-day ceilings, ACME HTTP-01 flow. | Deployment adapters and full automated deployment/reload checks remain future work. |
 | Certificate profiles | Profile-as-code fields for validity, Basic Constraints, KU, EKU, SAN, SKI, AKI, key algorithm, key size, and signing algorithm; issued DER golden tests assert SAN, KU, EKU, Basic Constraints, AIA, CRL Distribution Points, SKI, and AKI. | Keep profile policy current when new algorithms are enabled. |
 | Key protection | `key_ref` model, production docs require external key provider, DB excludes private key material, HSM/KMS/PKCS#11 semantics selected. | Provider implementation, ceremony evidence, and non-exportable-key audit behavior remain future work. |
-| Audit log | Structured audit metadata, request context, API key fingerprint, query, retention, repair path, tamper-evidence plan, and SIEM export examples. | Tamper-evident hash-chain implementation and SIEM exporter integration remain future work. |
+| Audit log | Structured metadata, request context, API key fingerprint, query/retention/repair, `sha256-v1` chain, v2 legacy backfill, integrity API, prune checkpoints, recovery evidence, and SIEM examples. | Independently anchored chain export and SIEM exporter integration remain future work. |
 | Documentation | Architecture, policy, operations, security, ADR, runbook, compliance docs now have baseline files. | Keep detailed procedures current with implementation changes. |
 
 ## 2026-06-28 P0/P1 Findings

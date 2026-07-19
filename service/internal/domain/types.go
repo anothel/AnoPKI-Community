@@ -360,12 +360,12 @@ type CRLGenerationClaim struct {
 
 type AuditEvent struct {
 	ID                string
+	Sequence          int64
 	Actor             string
 	Action            string
 	ResourceType      string
 	ResourceID        string
 	MetadataJSON      string
-	ChainIndex        int64
 	HashAlgorithm     string
 	PreviousEventHash string
 	EventHash         string
@@ -373,25 +373,22 @@ type AuditEvent struct {
 }
 
 type AuditChainCheckpoint struct {
-	ID                string
-	ThroughChainIndex int64
-	ThroughEventID    string
-	ThroughEventHash  string
-	RetentionCutoff   time.Time
-	CreatedAt         time.Time
+	Sequence      int64
+	HashAlgorithm string
+	EventHash     string
+	CreatedAt     time.Time
 }
 
-type AuditChainVerification struct {
-	Verified           bool
-	HashAlgorithm      string
-	RetainedEventCount int
-	TotalEventCount    int64
-	TailChainIndex     int64
-	TailEventID        string
-	TailEventHash      string
-	Checkpoint         AuditChainCheckpoint
-	BrokenChainIndex   int64
-	Reason             string
+type AuditIntegrity struct {
+	Valid               bool
+	HashAlgorithm       string
+	EventCount          int
+	FirstSequence       int64
+	LastSequence        int64
+	LastEventHash       string
+	CheckpointSequence  int64
+	CheckpointEventHash string
+	FailureReason       string
 }
 
 type OutboxMessage struct {

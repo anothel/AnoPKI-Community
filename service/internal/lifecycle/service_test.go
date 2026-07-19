@@ -274,6 +274,7 @@ func TestAuditErrorCodeMapsPublicErrors(t *testing.T) {
 		{name: "acme challenge not found", err: domain.ErrACMEChallengeNotFound, want: "acme_challenge_not_found"},
 		{name: "acme order not found", err: domain.ErrACMEOrderNotFound, want: "acme_order_not_found"},
 		{name: "api key not found", err: domain.ErrAPIKeyNotFound, want: "api_key_not_found"},
+		{name: "audit integrity failed", err: domain.ErrAuditIntegrity, want: "audit_integrity_failed"},
 		{name: "certificate issuance failed", err: domain.ErrCertificateIssuanceFailed, want: "certificate_issuance_failed"},
 		{name: "certificate not found", err: domain.ErrCertificateNotFound, want: "certificate_not_found"},
 		{name: "certificate profile not found", err: domain.ErrCertificateProfileNotFound, want: "certificate_profile_not_found"},

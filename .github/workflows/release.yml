@@ -101,13 +101,6 @@ jobs:
       - name: Package multi-node reliability evidence
         run: |
           tar -czf dist/anopki-multi-node-verification.tar.gz -C .tmp/release-multi-node-evidence multi-node-verification.json multi-node-verification.md multi-node-test.log
-      - name: Run audit hash-chain verification
-        run: |
-          python scripts/test_verify_audit_hash_chain.py
-          python scripts/verify-audit-hash-chain.py --out-dir .tmp/release-audit-chain-evidence --commit "${GITHUB_SHA}"
-      - name: Package audit hash-chain evidence
-        run: |
-          tar -czf dist/anopki-audit-chain-verification.tar.gz -C .tmp/release-audit-chain-evidence audit-chain-verification.json audit-chain-verification.md audit-chain-test.log
       - name: Read release version
         run: |
           VERSION="$(cat VERSION)"

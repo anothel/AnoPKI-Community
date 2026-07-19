@@ -202,19 +202,24 @@ func TestMemoryStoreAuditEventHashChain(t *testing.T) {
 			t.Fatalf("CreateAuditEvent(%s) returned error: %v", event.ID, err)
 		}
 	}
+
 	events, err := repo.ListAuditEvents(ctx)
 	if err != nil {
-		t.Fatal(err)
+		t.Fatalf("ListAuditEvents returned error: %v", err)
 	}
-	if events[0].ChainIndex != 1 || events[0].PreviousEventHash != "" || events[0].EventHash == "" {
+	firstHash, err := auditEventHash("", events[0])
+	if err != nil {
+		t.Fatalf("auditEventHash(first) returned error: %v", err)
+	}
+	if events[0].Sequence != 1 || events[0].HashAlgorithm != AuditHashAlgorithmSHA256V1 || events[0].PreviousEventHash != "" || events[0].EventHash != firstHash {
 		t.Fatalf("first event hashes = %#v", events[0])
 	}
-	if events[1].ChainIndex != 2 || events[1].PreviousEventHash != events[0].EventHash || events[1].EventHash == "" {
-		t.Fatalf("second event hashes = %#v", events[1])
+	secondHash, err := auditEventHash(events[0].EventHash, events[1])
+	if err != nil {
+		t.Fatalf("auditEventHash(second) returned error: %v", err)
 	}
-	verification, err := repo.VerifyAuditChain(ctx)
-	if err != nil || !verification.Verified {
-		t.Fatalf("VerifyAuditChain = %#v, %v", verification, err)
+	if events[1].Sequence != 2 || events[1].HashAlgorithm != AuditHashAlgorithmSHA256V1 || events[1].PreviousEventHash != events[0].EventHash || events[1].EventHash != secondHash {
+		t.Fatalf("second event hashes = %#v after %#v", events[1], events[0])
 	}
 }
 

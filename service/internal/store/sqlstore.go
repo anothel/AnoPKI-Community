@@ -1398,31 +1398,18 @@ func scanIssuanceAttempt(scanner sqlScanner) (domain.IssuanceAttempt, error) {
 	return attempt, nil
 }
 
-func scanLegacyAuditEvent(scanner sqlScanner) (domain.AuditEvent, error) {
-	var event domain.AuditEvent
-	var createdAt any
-	if err := scanner.Scan(&event.ID, &event.Actor, &event.Action, &event.ResourceType, &event.ResourceID, &event.MetadataJSON, &createdAt); err != nil {
-		return domain.AuditEvent{}, err
-	}
-	parsedCreatedAt, err := parseSQLTime(createdAt)
-	if err != nil {
-		return domain.AuditEvent{}, err
-	}
-	event.CreatedAt = parsedCreatedAt
-	return event, nil
-}
-
 func scanAuditEvent(scanner sqlScanner) (domain.AuditEvent, error) {
 	var event domain.AuditEvent
 	var createdAt any
+
 	if err := scanner.Scan(
 		&event.ID,
+		&event.Sequence,
 		&event.Actor,
 		&event.Action,
 		&event.ResourceType,
 		&event.ResourceID,
 		&event.MetadataJSON,
-		&event.ChainIndex,
 		&event.HashAlgorithm,
 		&event.PreviousEventHash,
 		&event.EventHash,
@@ -1430,10 +1417,12 @@ func scanAuditEvent(scanner sqlScanner) (domain.AuditEvent, error) {
 	); err != nil {
 		return domain.AuditEvent{}, err
 	}
+
 	parsedCreatedAt, err := parseSQLTime(createdAt)
 	if err != nil {
 		return domain.AuditEvent{}, err
 	}
+
 	event.CreatedAt = parsedCreatedAt
 	return event, nil
 }

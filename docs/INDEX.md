@@ -50,7 +50,7 @@ This index is the public entry point for repository documentation. Keep it short
 | [Threat model](security/threat-model.md) | Main assets, threats, current controls, and gaps. |
 | [Access model](security/access-model.md) | Operator and API-key access assumptions. |
 | [Audit log schema](security/audit-log-schema.md) | Audit properties, retention, tamper-evidence, and SIEM export baseline. |
-| [Audit tamper evidence](security/audit-tamper-evidence.md) | Hash-chain and tamper-evidence direction. |
+| [Audit tamper evidence](security/audit-tamper-evidence.md) | Implemented hash-chain, migration, verification, checkpoint, and incident behavior. |
 | [SIEM detections](security/siem-detections.md) | Detection examples for security-relevant events. |
 | [CP/CPS map](policy/cp-cps-map.md) | Evidence-oriented CP/CPS coverage map. |
 | [Compliance matrix](reference/compliance-matrix.md) | RFC, CA/B Forum, Mozilla, and NIST coverage. |

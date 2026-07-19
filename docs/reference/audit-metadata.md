@@ -150,7 +150,17 @@ offset
 ```
 
 `from` and `to` use RFC3339 timestamps. `sort` accepts `asc` and `desc`.
-`offset` requires `limit`.
+`offset` requires `limit`. Responses also include `sequence`,
+`hash_algorithm=sha256-v1`, `previous_event_hash`, and `event_hash`.
+
+Integrity verification is explicit:
+
+```text
+GET /audit-events/integrity
+```
+
+The report includes the retained event count, first/last sequence, latest hash,
+prune checkpoint, and a stable failure reason when invalid.
 
 Retention pruning is explicit:
 
@@ -159,8 +169,10 @@ POST /audit-events/retention/prune
 {"before":"2026-01-01T00:00:00Z"}
 ```
 
-The cutoff must be before service current time. The service writes an
-`audit.retention_pruned` event after deleting older audit rows.
+The cutoff must be before service current time. The repository verifies the
+chain first, deletes only a contiguous oldest prefix, advances the checkpoint to
+the last deleted row, and fails closed on chain or checkpoint damage. The
+service then writes an `audit.retention_pruned` event in the same transaction.
 
 ## Lifecycle Identity Fields
 

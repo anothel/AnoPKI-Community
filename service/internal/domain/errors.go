@@ -34,6 +34,6 @@ var (
 	ErrOCSPDecodeFailed              = errors.New("ocsp decode failed")
 	ErrOCSPResponseFailed            = errors.New("ocsp response failed")
 	ErrOCSPResponderValidationFailed = errors.New("ocsp responder validation failed")
+	ErrAuditIntegrity                = errors.New("audit integrity check failed")
 	ErrStorageFailure                = errors.New("storage failure")
-	ErrAuditChainConflict            = errors.New("audit chain conflict")
 )

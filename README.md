@@ -153,13 +153,7 @@ python scripts\test_verify_multi_node_reliability.py
 # multi-node reliability drill tests passed: 5
 
 python scripts\verify-multi-node-reliability.py --out-dir .tmp\multi-node-evidence\verify-local
-# requires Go 1.25.11+ and proves single-writer certificate, CRL and Outbox lease semantics
-
-python scripts\test_verify_audit_hash_chain.py
-# audit hash-chain drill tests passed: 5
-
-python scripts\verify-audit-hash-chain.py --out-dir .tmp\audit-chain-evidence\verify-local
-# requires Go 1.25.11+ and proves migration, tamper detection, checkpoints and integrity reporting
+# requires Go 1.25.11+ and proves single-writer issuance, CRL and Outbox lease semantics
 
 python scripts\test_verify_postgres_recovery_drill.py
 # PostgreSQL recovery drill tests passed: 5

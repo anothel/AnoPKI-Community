@@ -90,9 +90,9 @@ Copy this table into release notes for each release candidate and replace
 
 `scripts/verify-recovery-drill.py` creates a deterministic current-schema SQLite
 database, backs it up, damages the live copy, restores from the backup and
-verifies migration cleanliness, foreign keys, active issuer/responder key
-references, CRL artifacts, signed issuance evidence, audit events, outbox/job
-attempts and webhook delivery state. Evidence is written as strict redacted JSON
+verifies both migration versions, foreign keys, active issuer/responder key
+references, CRL artifacts, signed issuance evidence, Audit rows, the `sha256-v1`
+latest/checkpoint state, outbox/job attempts and webhook delivery state. Evidence is written as strict redacted JSON
 and Markdown and is packaged as `anopki-recovery-verification.tar.gz`. Release
 validation requires `result=passed` and the exact same Community commit as
 `anopki-release-metadata.json`. Database files and raw sensitive values are not
@@ -104,8 +104,9 @@ packaged.
 `psql`, `pg_dump`, and `pg_restore`. It creates isolated source and restore
 databases, applies the real Go migration path, proves failed migration
 transactions roll back without dirty rows or probe tables, rejects an explicit
-dirty migration, seeds representative issuer/responder, signing, CRL, audit,
-outbox and webhook state, takes a custom-format backup, damages the source, and
+dirty migration, seeds representative issuer/responder, signing, CRL, Audit
+rows plus the `sha256-v1` latest/checkpoint state, outbox and webhook state,
+takes a custom-format backup, damages the source, and
 restores into a fresh database. Strict JSON, Markdown and one redacted test log
 are packaged as `anopki-postgres-recovery-verification.tar.gz`. Release
 validation requires PostgreSQL major 16, exact commit binding, matching before
@@ -155,18 +156,6 @@ is packaged as `anopki-multi-node-verification.tar.gz` and must match the exact
 Community release commit. This is deterministic contract evidence; real
 PostgreSQL multi-node failover and traffic-shift drills remain separate pending
 evidence.
-
-## Audit Hash-Chain Evidence Runner
-
-`scripts/verify-audit-hash-chain.py` runs exact store and HTTP regressions for
-migration backfill, canonical `sha256-v1` hashing, monotonic chain indexes,
-tamper detection, retention checkpoints, tail-state verification, invalid
-metadata rejection and the operator integrity endpoint. Evidence is strict
-redacted JSON, Markdown and one test log, packaged as
-`anopki-audit-chain-verification.tar.gz`. Release validation requires all tests
-and named checks to pass on the exact same Community commit as release metadata.
-Raw metadata payloads, credentials, key references and private-key material are
-not evidence fields.
 
 ## Supported-Go Evidence Runner
 
@@ -312,8 +301,6 @@ evidence still needs release workflow artifacts containing archives,
 - `python scripts/verify-postgres-recovery-drill.py --out-dir .tmp\postgres-recovery-evidence\verify-local`
 - `python scripts/test_verify_multi_node_reliability.py`
 - `python scripts/verify-multi-node-reliability.py --out-dir .tmp\multi-node-evidence\verify-local`
-- `python scripts/test_verify_audit_hash_chain.py`
-- `python scripts/verify-audit-hash-chain.py --out-dir .tmp\audit-chain-evidence\verify-local`
 - `python scripts/test_validate_release_artifacts.py`
 - `python scripts/test_validate_service_contracts.py`
 - `python scripts/validate-service-contracts.py`

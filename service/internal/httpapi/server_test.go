@@ -153,7 +153,6 @@ func TestPublicErrorMessageAndStatusForErrorMapping(t *testing.T) {
 		{name: "ocsp response failed", err: domain.ErrOCSPResponseFailed, wantMessage: domain.ErrOCSPResponseFailed.Error(), wantStatus: http.StatusBadGateway},
 		{name: "storage failure", err: domain.ErrStorageFailure, wantMessage: domain.ErrStorageFailure.Error(), wantStatus: http.StatusInternalServerError},
 		{name: "invalid transition", err: domain.ErrInvalidTransition, wantMessage: domain.ErrInvalidTransition.Error(), wantStatus: http.StatusConflict},
-		{name: "audit chain conflict", err: domain.ErrAuditChainConflict, wantMessage: domain.ErrAuditChainConflict.Error(), wantStatus: http.StatusConflict},
 		{name: "issuance attempt not found internal only", err: domain.ErrIssuanceAttemptNotFound, wantMessage: "internal server error", wantStatus: http.StatusInternalServerError},
 		{name: "webhook delivery not found internal only", err: domain.ErrWebhookDeliveryNotFound, wantMessage: "internal server error", wantStatus: http.StatusInternalServerError},
 		{name: "unknown", err: errors.New("unexpected"), wantMessage: "internal server error", wantStatus: http.StatusInternalServerError},
@@ -3149,14 +3148,20 @@ func TestListAuditEvents(t *testing.T) {
 	}
 }
 
-func TestAuditIntegrityEndpoint(t *testing.T) {
+func TestGetAuditIntegrity(t *testing.T) {
 	api := newTestAPI(t)
-	api.createIssuer(t)
-	var verification auditChainVerificationResponse
-	status := api.doJSON(t, http.MethodGet, "/audit-events/integrity", "operator", nil, &verification)
+	if err := api.repo.CreateAuditEvent(api.ctx, testHTTPAuditEvent("audit-integrity-1", "alice", "identity.created", "identity", "identity-1", testNow)); err != nil {
+		t.Fatalf("CreateAuditEvent returned error: %v", err)
+	}
+	if err := api.repo.CreateAuditEvent(api.ctx, testHTTPAuditEvent("audit-integrity-2", "alice", "enrollment.created", "enrollment", "enrollment-1", testNow.Add(time.Minute))); err != nil {
+		t.Fatalf("CreateAuditEvent returned error: %v", err)
+	}
+
+	var report apiAuditIntegrity
+	status := api.doJSON(t, http.MethodGet, "/audit-events/integrity", "", nil, &report)
 	assertStatus(t, status, http.StatusOK)
-	if !verification.Verified || verification.HashAlgorithm != "sha256-v1" || verification.RetainedEventCount == 0 || verification.TailEventHash == "" {
-		t.Fatalf("audit integrity response = %#v", verification)
+	if !report.Valid || report.HashAlgorithm != store.AuditHashAlgorithmSHA256V1 || report.EventCount != 2 || report.FirstSequence != 1 || report.LastSequence != 2 || report.LastEventHash == "" || report.CheckpointSequence != 0 || report.CheckpointEventHash != "" || report.FailureReason != "" {
+		t.Fatalf("audit integrity report = %#v", report)
 	}
 }
 
@@ -5014,16 +5019,28 @@ type apiCRLPublication struct {
 
 type apiAuditEvent struct {
 	ID                string    `json:"id"`
+	Sequence          int64     `json:"sequence"`
 	Actor             string    `json:"actor"`
 	Action            string    `json:"action"`
 	ResourceType      string    `json:"resource_type"`
 	ResourceID        string    `json:"resource_id"`
 	MetadataJSON      string    `json:"metadata_json"`
-	ChainIndex        int64     `json:"chain_index"`
 	HashAlgorithm     string    `json:"hash_algorithm"`
 	PreviousEventHash string    `json:"previous_event_hash"`
 	EventHash         string    `json:"event_hash"`
 	CreatedAt         time.Time `json:"created_at"`
+}
+
+type apiAuditIntegrity struct {
+	Valid               bool   `json:"valid"`
+	HashAlgorithm       string `json:"hash_algorithm"`
+	EventCount          int    `json:"event_count"`
+	FirstSequence       int64  `json:"first_sequence"`
+	LastSequence        int64  `json:"last_sequence"`
+	LastEventHash       string `json:"last_event_hash"`
+	CheckpointSequence  int64  `json:"checkpoint_sequence"`
+	CheckpointEventHash string `json:"checkpoint_event_hash"`
+	FailureReason       string `json:"failure_reason"`
 }
 
 type ocspResponderValidationRequest struct {

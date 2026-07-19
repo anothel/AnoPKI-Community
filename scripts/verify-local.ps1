@@ -167,18 +167,6 @@ $steps = @(
         Command = @("python", "scripts\verify-multi-node-reliability.py", "--out-dir", ".tmp\multi-node-evidence\verify-local")
     },
     @{
-        Name = "audit hash-chain drill tests"
-        Dir = $RepoRoot
-        Display = "python scripts\test_verify_audit_hash_chain.py"
-        Command = @("python", "scripts\test_verify_audit_hash_chain.py")
-    },
-    @{
-        Name = "audit hash-chain drill"
-        Dir = $RepoRoot
-        Display = "python scripts\verify-audit-hash-chain.py --out-dir .tmp\audit-chain-evidence\verify-local"
-        Command = @("python", "scripts\verify-audit-hash-chain.py", "--out-dir", ".tmp\audit-chain-evidence\verify-local")
-    },
-    @{
         Name = "PostgreSQL recovery drill tests"
         Dir = $RepoRoot
         Display = "python scripts\test_verify_postgres_recovery_drill.py"

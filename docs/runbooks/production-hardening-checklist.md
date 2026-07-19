@@ -36,6 +36,7 @@ this checklist does not make a deployment production-stable by itself.
 
 - `GET /readyz` passes after migration.
 - `GET /version` reports expected release metadata.
+- `GET /audit-events/integrity` reports `valid=true` before backup, release, and retention work.
 - `python scripts/security-baseline-scan.py` passes before release.
 - `powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\verify-local.ps1`
   passes on the release candidate host or equivalent CI evidence exists.
@@ -45,6 +46,6 @@ this checklist does not make a deployment production-stable by itself.
 ## Open Gaps To Accept
 
 - File-provider signing is isolated and rejected in production, but no real non-exportable HSM/KMS/PKCS#11 provider is implemented.
-- Tamper-evident audit hash-chain is planned, not implemented.
+- The local Audit hash chain is implemented, but independent external anchoring and SIEM export remain deployment-specific gaps.
 - DNS-01 and EAB are deferred until real integrations exist.
 - Deploy adapters and post-deployment synthetic checks wait for selected targets.

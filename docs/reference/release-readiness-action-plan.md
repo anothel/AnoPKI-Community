@@ -51,7 +51,7 @@ Raise production-operating confidence:
 - HSM/KMS/PKCS#11 semantics and file-provider split.
 - Non-exportable-key API and audit behavior.
 - Key ceremony and intermediate rollover drill evidence.
-- Tamper-evident audit hash-chain implementation.
+- Independent Audit-chain anchoring/export after an operator integration is selected.
 - First-class role/ABAC enforcement after an operator directory exists.
 - Synthetic CRL/OCSP/ACME/deployment health checks after a deploy target exists.
 
@@ -84,7 +84,7 @@ Exit criteria:
 | Strengthen issuance consistency tests. | Signer/DB failure, lease race, serial collision, and PostgreSQL parity coverage exist. |
 | Add parser fuzzing. | CI and optional local libFuzzer targets exist for CSR, OCSP, and CRL parser boundaries. |
 | Strengthen webhook/outbox safety tests. | Receiver replay/signature, timeout, unsafe redirect/egress, retry, and dead-letter coverage exist. |
-| Add audit tamper-evidence. | Tamper-evidence plan exists; hash-chain implementation remains in P2 Audit, Access, And Operations. |
+| Add audit tamper-evidence. | `sha256-v1` sequence/hash chaining, v2 legacy backfill, checkpoints, fail-closed append/prune, integrity API, and recovery snapshots are implemented. |
 | Add HSM/KMS/PKCS#11 boundary. | P2 Key Boundary. |
 | Add SBOM/release signing/SAST/SCA. | Release evidence selects syft, cosign, go vet, staticcheck, gosec, Go race detector, and govulncheck; tagged release workflow builds archives, checksums, SBOM, and cosign signatures. |
 | Do not refactor large files prematurely. | HTTP API and SQL store splits now follow tested ACME, certificate, audit, outbox/webhook, and ACME persistence boundaries. |

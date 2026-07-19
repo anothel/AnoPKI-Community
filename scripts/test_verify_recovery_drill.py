@@ -22,11 +22,13 @@ SPEC.loader.exec_module(MODULE)
 
 
 def context(work_dir: Path):
-    migration = b"\x00".join((ROOT / path).read_bytes() for path in MODULE.MIGRATIONS)
+    migration = (ROOT / MODULE.MIGRATION).read_bytes()
+    audit_migration = (ROOT / MODULE.AUDIT_MIGRATION).read_bytes()
     return MODULE.DrillContext(
         root=ROOT,
         work_dir=work_dir,
         migration_checksum=MODULE.sha256_bytes(migration),
+        audit_migration_checksum=MODULE.sha256_bytes(audit_migration),
         commit="a" * 40,
     )
 

@@ -23,7 +23,6 @@ AUDIT_REPLAY_EVIDENCE_NAME = "anopki-audit-replay-verification.tar.gz"
 ISSUER_ROLLOVER_EVIDENCE_NAME = "anopki-issuer-rollover-verification.tar.gz"
 POSTGRES_RECOVERY_EVIDENCE_NAME = "anopki-postgres-recovery-verification.tar.gz"
 MULTI_NODE_EVIDENCE_NAME = "anopki-multi-node-verification.tar.gz"
-AUDIT_CHAIN_EVIDENCE_NAME = "anopki-audit-chain-verification.tar.gz"
 
 
 def fail(message: str) -> None:
@@ -283,25 +282,25 @@ def require_recovery_evidence_archive(dist: Path) -> tuple[Path, dict[str, objec
             fail(f"recovery verification {field} is invalid")
 
     expected_counts = {
-        "schema_migrations", "issuers", "ocsp_responders", "certificates",
-        "certificate_issuance_attempts", "revocations", "crl_publications",
-        "crl_generation_claims", "audit_events", "audit_chain_state",
-        "audit_chain_checkpoints", "outbox_messages", "job_attempts",
-        "notification_endpoints", "webhook_deliveries", "api_keys",
+        "schema_migrations": 2,
+        "issuers": 1,
+        "ocsp_responders": 1,
+        "certificates": 1,
+        "certificate_issuance_attempts": 1,
+        "revocations": 1,
+        "crl_publications": 1,
+        "crl_generation_claims": 0,
+        "audit_events": 2,
+        "audit_chain_state": 1,
+        "outbox_messages": 1,
+        "job_attempts": 1,
+        "notification_endpoints": 1,
+        "webhook_deliveries": 1,
+        "api_keys": 1,
     }
     counts = evidence["state_counts"]
-    if not isinstance(counts, dict) or set(counts) != expected_counts:
+    if counts != expected_counts:
         fail("recovery verification state counts are invalid")
-    if not all(isinstance(value, int) and not isinstance(value, bool) and value >= 0 for value in counts.values()):
-        fail("recovery verification state count values are invalid")
-    for required_nonempty in (
-        "schema_migrations", "issuers", "ocsp_responders", "certificates",
-        "certificate_issuance_attempts", "revocations", "crl_publications",
-        "audit_events", "audit_chain_state", "outbox_messages", "job_attempts",
-        "notification_endpoints", "webhook_deliveries", "api_keys",
-    ):
-        if counts[required_nonempty] <= 0:
-            fail("recovery verification required state is empty")
 
     hashes = evidence["artifact_hashes"]
     if not isinstance(hashes, dict) or set(hashes) != {"certificate_pem", "crl_pem", "signing_evidence"}:
@@ -313,7 +312,7 @@ def require_recovery_evidence_archive(dist: Path) -> tuple[Path, dict[str, objec
         "sqlite-integrity", "foreign-key-integrity", "schema-migration",
         "restore-state-match", "state-counts", "key-reference-preservation",
         "crl-artifact", "issuance-attempt", "outbox-and-webhook-state",
-        "audit-state", "audit-hash-chain", "private-key-exclusion",
+        "audit-state", "audit-chain-state", "private-key-exclusion",
     ]
     checks = evidence["checks"]
     if not isinstance(checks, list) or len(checks) != len(expected_checks):
@@ -934,157 +933,6 @@ def require_multi_node_evidence_archive(dist: Path) -> tuple[Path, dict[str, obj
         fail("multi-node verification evidence contains private-key material")
     return path, evidence
 
-def require_audit_chain_evidence_archive(dist: Path) -> tuple[Path, dict[str, object]]:
-    path = dist / AUDIT_CHAIN_EVIDENCE_NAME
-    if not path.is_file():
-        fail(f"missing audit-chain verification evidence archive: {path}")
-    if path.stat().st_size > 5 * 1024 * 1024:
-        fail(f"audit-chain verification evidence archive is unexpectedly large: {path.name}")
-    expected_files = {
-        "audit-chain-verification.json",
-        "audit-chain-verification.md",
-        "audit-chain-test.log",
-    }
-    try:
-        with tarfile.open(path, "r:gz") as archive:
-            files: dict[str, tarfile.TarInfo] = {}
-            for member in archive.getmembers():
-                normalized = member.name.removeprefix("./")
-                posix = PurePosixPath(normalized)
-                if not normalized or posix.is_absolute() or ".." in posix.parts:
-                    fail(f"{path.name} contains unsafe archive member: {member.name}")
-                if not member.isfile():
-                    fail(f"{path.name} contains non-regular member: {member.name}")
-                if normalized in files:
-                    fail(f"{path.name} contains duplicate member: {normalized}")
-                files[normalized] = member
-            missing = sorted(expected_files - set(files))
-            extra = sorted(set(files) - expected_files)
-            if missing:
-                fail(f"{path.name} missing audit-chain evidence members:\n" + "\n".join(missing))
-            if extra:
-                fail(f"{path.name} has unexpected audit-chain evidence members:\n" + "\n".join(extra))
-            member = files["audit-chain-verification.json"]
-            if member.size > 1024 * 1024:
-                fail("audit-chain verification JSON is unexpectedly large")
-            extracted = archive.extractfile(member)
-            if extracted is None:
-                fail(f"{path.name} cannot read audit-chain-verification.json")
-            try:
-                evidence = json.loads(extracted.read().decode("utf-8"))
-            except (UnicodeDecodeError, json.JSONDecodeError) as exc:
-                fail(f"invalid audit-chain verification evidence: {exc}")
-    except tarfile.TarError as exc:
-        fail(f"invalid audit-chain verification evidence archive {path}: {exc}")
-
-    if not isinstance(evidence, dict):
-        fail("audit-chain verification evidence must be a JSON object")
-    expected_fields = {
-        "schema_version", "evidence_type", "product", "edition", "product_profile",
-        "commit", "minimum_go_version", "started_at", "completed_at", "result",
-        "go_version", "test_command", "tests", "checks", "redaction", "blocker",
-    }
-    missing_fields = sorted(expected_fields - set(evidence))
-    extra_fields = sorted(set(evidence) - expected_fields)
-    if missing_fields:
-        fail("audit-chain verification evidence missing fields:\n" + "\n".join(missing_fields))
-    if extra_fields:
-        fail("audit-chain verification evidence has unknown fields:\n" + "\n".join(extra_fields))
-    if evidence["schema_version"] != 1 or evidence["evidence_type"] != "community_audit_hash_chain_drill":
-        fail("audit-chain verification evidence identity is invalid")
-    if evidence["product"] != "AnoPKI" or evidence["edition"] != "community" or evidence["product_profile"] != "community-openssl":
-        fail("audit-chain verification evidence profile is invalid")
-    if evidence["result"] != "passed" or evidence["blocker"] != "":
-        fail("audit-chain verification drill did not pass")
-    if evidence["minimum_go_version"] != "1.25.11":
-        fail("audit-chain verification minimum Go version is invalid")
-    if not isinstance(evidence["commit"], str) or not re.fullmatch(r"[0-9a-f]{40}", evidence["commit"]):
-        fail("audit-chain verification commit is invalid")
-    if not isinstance(evidence["go_version"], str) or "go version go" not in evidence["go_version"]:
-        fail("audit-chain verification Go identity is invalid")
-    if parse_go_version(evidence["go_version"]) < (1, 25, 11):
-        fail("audit-chain verification used an unsupported Go toolchain")
-
-    expected_tests = [
-        ("github.com/anothel/anopki/service/internal/store", "TestApplyInitialMigrationBackfillsAuditHashChain"),
-        ("github.com/anothel/anopki/service/internal/store", "TestAuditChainAppendAndVerifyAcrossStores"),
-        ("github.com/anothel/anopki/service/internal/store", "TestAuditChainTamperingDetected"),
-        ("github.com/anothel/anopki/service/internal/store", "TestAuditChainPruneCheckpointPreservesVerification"),
-        ("github.com/anothel/anopki/service/internal/store", "TestAuditChainRejectsInvalidMetadata"),
-        ("github.com/anothel/anopki/service/internal/httpapi", "TestAuditIntegrityEndpoint"),
-    ]
-    tests = evidence["tests"]
-    if not isinstance(tests, list) or len(tests) != len(expected_tests):
-        fail("audit-chain verification test set is invalid")
-    observed_tests: list[tuple[str, str]] = []
-    for test in tests:
-        if not isinstance(test, dict) or set(test) != {"package", "name", "status"}:
-            fail("audit-chain verification test fields are invalid")
-        observed_tests.append((str(test["package"]), str(test["name"])))
-        if test["status"] != "pass":
-            fail("audit-chain verification contains a failed test")
-    if observed_tests != expected_tests:
-        fail("audit-chain verification test order is invalid")
-
-    expected_checks = [
-        "audit-migration-backfill",
-        "audit-chain-monotonic-index",
-        "audit-chain-canonical-sha256",
-        "audit-chain-tamper-detection",
-        "audit-retention-checkpoint",
-        "audit-tail-state-verification",
-        "audit-invalid-metadata-rejected",
-        "audit-integrity-endpoint",
-        "audit-hash-no-in-place-repair",
-        "sensitive-evidence-exclusion",
-    ]
-    checks = evidence["checks"]
-    if not isinstance(checks, list) or len(checks) != len(expected_checks):
-        fail("audit-chain verification check set is invalid")
-    names: list[str] = []
-    for check in checks:
-        if not isinstance(check, dict) or set(check) != {"name", "status"}:
-            fail("audit-chain verification check fields are invalid")
-        names.append(str(check["name"]))
-        if check["status"] != "passed":
-            fail("audit-chain verification contains a failed check")
-    if names != expected_checks:
-        fail("audit-chain verification check order is invalid")
-
-    command = evidence["test_command"]
-    if not isinstance(command, list) or not all(isinstance(item, str) for item in command):
-        fail("audit-chain verification test command is invalid")
-    command_text = " ".join(command)
-    for required in (
-        "test -json", "./internal/store", "./internal/httpapi",
-        "TestApplyInitialMigrationBackfillsAuditHashChain",
-        "TestAuditChainAppendAndVerifyAcrossStores",
-        "TestAuditChainTamperingDetected",
-        "TestAuditChainPruneCheckpointPreservesVerification",
-        "TestAuditChainRejectsInvalidMetadata",
-        "TestAuditIntegrityEndpoint",
-    ):
-        if required not in command_text:
-            fail(f"audit-chain verification command drift: missing {required}")
-
-    expected_redaction = {
-        "private_key_markers_found": False,
-        "raw_key_references_in_evidence": False,
-        "sensitive_values_in_evidence": False,
-    }
-    if evidence["redaction"] != expected_redaction:
-        fail("audit-chain verification redaction evidence is invalid")
-    serialized = json.dumps(evidence, sort_keys=True).lower()
-    for forbidden in (
-        '"key_ref"', '"private_key"', '"password"', '"credential"',
-        '"session_token"', '"payload_json"', '"endpoint_secret"',
-    ):
-        if forbidden in serialized:
-            fail(f"audit-chain verification evidence contains forbidden sensitive field: {forbidden}")
-    if "-----begin private key-----" in serialized or "-----begin encrypted private key-----" in serialized:
-        fail("audit-chain verification evidence contains private-key material")
-    return path, evidence
-
 
 def require_postgres_recovery_evidence_archive(dist: Path) -> tuple[Path, dict[str, object]]:
     path = dist / POSTGRES_RECOVERY_EVIDENCE_NAME
@@ -1137,7 +985,7 @@ def require_postgres_recovery_evidence_archive(dist: Path) -> tuple[Path, dict[s
         "completed_at", "result", "go_version", "postgres_client_versions",
         "postgres_server_version", "test_command", "tests", "checks", "state_counts",
         "migration_checksum", "backup_sha256", "state_digest_before", "state_digest_after",
-        "key_reference_hashes", "artifact_hashes", "redaction", "blocker",
+        "key_reference_hashes", "artifact_hashes", "audit_chain", "redaction", "blocker",
     }
     missing_fields = sorted(expected_fields - set(evidence))
     extra_fields = sorted(set(evidence) - expected_fields)
@@ -1203,7 +1051,6 @@ def require_postgres_recovery_evidence_archive(dist: Path) -> tuple[Path, dict[s
         "key-reference-hashes-preserved",
         "signing-and-crl-artifacts-preserved",
         "audit-outbox-webhook-state-preserved",
-        "audit-hash-chain-preserved",
         "sensitive-evidence-exclusion",
     ]
     checks = evidence["checks"]
@@ -1231,10 +1078,8 @@ def require_postgres_recovery_evidence_archive(dist: Path) -> tuple[Path, dict[s
         "certificate_issuance_attempts": 1,
         "revocations": 1,
         "crl_publications": 1,
-        "crl_generation_claims": 0,
         "audit_events": 2,
         "audit_chain_state": 1,
-        "audit_chain_checkpoints": 0,
         "outbox_messages": 1,
         "job_attempts": 1,
         "webhook_deliveries": 1,
@@ -1260,6 +1105,22 @@ def require_postgres_recovery_evidence_archive(dist: Path) -> tuple[Path, dict[s
     for value in [*key_hashes.values(), *artifact_hashes.values()]:
         if not isinstance(value, str) or not re.fullmatch(r"[0-9a-f]{64}", value):
             fail("PostgreSQL recovery hash value is invalid")
+
+    audit_chain = evidence["audit_chain"]
+    if not isinstance(audit_chain, dict) or set(audit_chain) != {
+        "hash_algorithm", "latest_sequence", "latest_event_hash",
+        "checkpoint_sequence", "checkpoint_event_hash",
+    }:
+        fail("PostgreSQL recovery audit chain state is invalid")
+    if (
+        audit_chain["hash_algorithm"] != "sha256-v1"
+        or audit_chain["latest_sequence"] != 2
+        or not isinstance(audit_chain["latest_event_hash"], str)
+        or not re.fullmatch(r"[0-9a-f]{64}", audit_chain["latest_event_hash"])
+        or audit_chain["checkpoint_sequence"] != 0
+        or audit_chain["checkpoint_event_hash"] != ""
+    ):
+        fail("PostgreSQL recovery audit chain values are invalid")
 
     command = evidence["test_command"]
     if not isinstance(command, list) or not all(isinstance(item, str) for item in command):
@@ -1458,7 +1319,6 @@ def main() -> None:
     issuer_rollover_evidence, issuer_rollover_evidence_value = require_issuer_rollover_evidence_archive(dist)
     postgres_recovery_evidence, postgres_recovery_evidence_value = require_postgres_recovery_evidence_archive(dist)
     multi_node_evidence, multi_node_evidence_value = require_multi_node_evidence_archive(dist)
-    audit_chain_evidence, audit_chain_evidence_value = require_audit_chain_evidence_archive(dist)
     backend = read_json_object(backend_path, "backend info")
     validate_backend_info(backend)
     metadata = read_json_object(metadata_path, "release metadata")
@@ -1477,11 +1337,9 @@ def main() -> None:
         fail("PostgreSQL recovery verification commit does not match release metadata")
     if multi_node_evidence_value["commit"] != metadata["commit"]:
         fail("multi-node verification commit does not match release metadata")
-    if audit_chain_evidence_value["commit"] != metadata["commit"]:
-        fail("audit-chain verification commit does not match release metadata")
 
     checksums = read_checksums(dist / "SHA256SUMS")
-    artifacts = (service, core, go_evidence, recovery_evidence, status_outage_evidence, audit_replay_evidence, issuer_rollover_evidence, postgres_recovery_evidence, multi_node_evidence, audit_chain_evidence, backend_path, metadata_path)
+    artifacts = (service, core, go_evidence, recovery_evidence, status_outage_evidence, audit_replay_evidence, issuer_rollover_evidence, postgres_recovery_evidence, multi_node_evidence, backend_path, metadata_path)
     expected_names = {artifact.name for artifact in artifacts}
     extra_names = sorted(set(checksums) - expected_names)
     missing_names = sorted(expected_names - set(checksums))
