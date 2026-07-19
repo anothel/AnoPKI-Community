@@ -21,6 +21,7 @@ REQUIRED_DOC_TEXT = [
     "## CRL And OCSP Outage Evidence Runner",
     "## Audit Repair And Dead-Letter Replay Evidence Runner",
     "## Audit Hash-Chain Integrity Evidence Runner",
+    "## Generic Authorization Boundary Evidence Runner",
     "## Intermediate Issuer Rollover Evidence Runner",
     "## PostgreSQL Recovery Evidence Runner",
     "## Multi-Node Reliability Evidence Runner",
@@ -33,6 +34,8 @@ REQUIRED_DOC_TEXT = [
     "anopki-audit-replay-verification.tar.gz",
     "python scripts/verify-audit-integrity-drill.py",
     "anopki-audit-integrity-verification.tar.gz",
+    "python scripts/verify-authorization-boundary.py",
+    "anopki-authorization-boundary-verification.tar.gz",
     "anopki-issuer-rollover-verification.tar.gz",
     "python scripts/verify-postgres-recovery-drill.py",
     "anopki-postgres-recovery-verification.tar.gz",
@@ -95,6 +98,10 @@ REQUIRED_CI_TEXT = [
     "--require-postgres",
     "anopki-audit-integrity-verification",
     "audit-integrity-drill:",
+    "python scripts/test_verify_authorization_boundary.py",
+    "python scripts/verify-authorization-boundary.py",
+    "anopki-authorization-boundary-verification",
+    "authorization-boundary-drill:",
     "python scripts/test_verify_issuer_rollover_drill.py",
     "python scripts/verify-issuer-rollover-drill.py",
     "anopki-issuer-rollover-verification",
@@ -223,6 +230,26 @@ REQUIRED_AUDIT_INTEGRITY_RUNNER_TEXT = [
 ]
 
 
+REQUIRED_AUTHORIZATION_BOUNDARY_RUNNER_TEXT = [
+    "MINIMUM_GO_VERSION = (1, 25, 11)",
+    "community_authorization_boundary_drill",
+    "TestRequestAuthorizerRunsAfterAuthenticationAndScopeAndSkipsPublicRoutes",
+    "TestRequestAuthorizerTimeoutFailsClosed",
+    "TestRequestAuthorizerConcurrentDecisionsDoNotLeak",
+    "TestDebugVarsRequiresOperatorScope",
+    "TestRequestAuthorizerAllowDecisionCorrelatesLifecycleAudit",
+    "TestRequestAuthorizerDenyDecisionCorrelatesFailureAudit",
+    "TestRequestAuthorizerTimeoutAuditDoesNotExposeEvaluatorError",
+    "TestRequestsWithoutAuthorizerDoNotClaimAuthorizationEvidence",
+    "authorization-boundary-verification.json",
+    "authorization-boundary-verification.md",
+    "authorization-boundary-baseline.log",
+    "authorization-boundary-race.log",
+    "focused-race-clean",
+    "sensitive-evidence-exclusion",
+]
+
+
 REQUIRED_ISSUER_ROLLOVER_RUNNER_TEXT = [
     "MINIMUM_GO_VERSION = (1, 25, 11)",
     "community_issuer_rollover_drill",
@@ -294,6 +321,8 @@ REQUIRED_RELEASE_TEXT = [
     "python scripts/verify-audit-integrity-drill.py",
     "--require-postgres",
     "anopki-audit-integrity-verification.tar.gz",
+    "python scripts/verify-authorization-boundary.py",
+    "anopki-authorization-boundary-verification.tar.gz",
     "python scripts/verify-issuer-rollover-drill.py",
     "anopki-issuer-rollover-verification.tar.gz",
     "python scripts/verify-postgres-recovery-drill.py",
@@ -406,6 +435,7 @@ def main() -> None:
     require_text(root / "scripts/verify-status-outage-drill.py", REQUIRED_STATUS_OUTAGE_RUNNER_TEXT)
     require_text(root / "scripts/verify-audit-replay-drill.py", REQUIRED_AUDIT_REPLAY_RUNNER_TEXT)
     require_text(root / "scripts/verify-audit-integrity-drill.py", REQUIRED_AUDIT_INTEGRITY_RUNNER_TEXT)
+    require_text(root / "scripts/verify-authorization-boundary.py", REQUIRED_AUTHORIZATION_BOUNDARY_RUNNER_TEXT)
     require_text(root / "scripts/verify-issuer-rollover-drill.py", REQUIRED_ISSUER_ROLLOVER_RUNNER_TEXT)
     require_text(root / "scripts/verify-postgres-recovery-drill.py", REQUIRED_POSTGRES_RECOVERY_RUNNER_TEXT)
     require_text(root / "scripts/verify-multi-node-reliability.py", REQUIRED_MULTI_NODE_RUNNER_TEXT)

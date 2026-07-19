@@ -149,6 +149,12 @@ python scripts\test_verify_audit_integrity_drill.py
 python scripts\verify-audit-integrity-drill.py --out-dir .tmp\audit-integrity-evidence\verify-local
 # requires Go 1.25.11+; local run proves Memory/SQLite/API integrity and release CI additionally requires PostgreSQL parity
 
+python scripts\test_verify_authorization_boundary.py
+# authorization boundary drill tests passed: 7
+
+python scripts\verify-authorization-boundary.py --out-dir .tmp\authorization-boundary-evidence\verify-local
+# requires Go 1.25.11+ and proves authentication/scope ordering, timeout, redaction, Audit correlation and race-clean behavior
+
 python scripts\test_verify_issuer_rollover_drill.py
 # issuer rollover drill tests passed: 5
 

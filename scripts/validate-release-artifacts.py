@@ -21,6 +21,7 @@ RECOVERY_EVIDENCE_NAME = "anopki-recovery-verification.tar.gz"
 STATUS_OUTAGE_EVIDENCE_NAME = "anopki-status-outage-verification.tar.gz"
 AUDIT_REPLAY_EVIDENCE_NAME = "anopki-audit-replay-verification.tar.gz"
 AUDIT_INTEGRITY_EVIDENCE_NAME = "anopki-audit-integrity-verification.tar.gz"
+AUTHORIZATION_BOUNDARY_EVIDENCE_NAME = "anopki-authorization-boundary-verification.tar.gz"
 ISSUER_ROLLOVER_EVIDENCE_NAME = "anopki-issuer-rollover-verification.tar.gz"
 POSTGRES_RECOVERY_EVIDENCE_NAME = "anopki-postgres-recovery-verification.tar.gz"
 MULTI_NODE_EVIDENCE_NAME = "anopki-multi-node-verification.tar.gz"
@@ -826,6 +827,202 @@ def require_audit_integrity_evidence_archive(dist: Path) -> tuple[Path, dict[str
     return path, evidence
 
 
+
+def require_authorization_boundary_evidence_archive(dist: Path) -> tuple[Path, dict[str, object]]:
+    path = dist / AUTHORIZATION_BOUNDARY_EVIDENCE_NAME
+    if not path.is_file():
+        fail(f"missing authorization boundary verification evidence archive: {path}")
+    if path.stat().st_size > 10 * 1024 * 1024:
+        fail(f"authorization boundary verification evidence archive is unexpectedly large: {path.name}")
+    expected_files = {
+        "authorization-boundary-verification.json",
+        "authorization-boundary-verification.md",
+        "authorization-boundary-baseline.log",
+        "authorization-boundary-race.log",
+    }
+    try:
+        with tarfile.open(path, "r:gz") as archive:
+            files: dict[str, tarfile.TarInfo] = {}
+            for member in archive.getmembers():
+                normalized = member.name.removeprefix("./")
+                posix = PurePosixPath(normalized)
+                if not normalized or posix.is_absolute() or ".." in posix.parts:
+                    fail(f"{path.name} contains unsafe archive member: {member.name}")
+                if not member.isfile():
+                    fail(f"{path.name} contains non-regular member: {member.name}")
+                if normalized in files:
+                    fail(f"{path.name} contains duplicate member: {normalized}")
+                files[normalized] = member
+            missing = sorted(expected_files - set(files))
+            extra = sorted(set(files) - expected_files)
+            if missing:
+                fail(f"{path.name} missing authorization boundary evidence members:\n" + "\n".join(missing))
+            if extra:
+                fail(f"{path.name} has unexpected authorization boundary evidence members:\n" + "\n".join(extra))
+            contents: dict[str, str] = {}
+            forbidden_archive_text = (
+                "raw-api-key-secret", "raw-token-secret", "cookie-secret",
+                "body-secret", "query-secret", "path-secret",
+                "authorization: bearer", '"password"', '"credential"',
+                '"session_token"', '"request_body"', '"query_string"',
+                '"raw_evaluator_error"', "evaluator-internal-secret",
+                "-----begin private key-----", "-----begin encrypted private key-----",
+            )
+            for name, archive_member in files.items():
+                maximum_size = 1024 * 1024 if name.endswith(".json") else 5 * 1024 * 1024
+                if archive_member.size > maximum_size:
+                    fail(f"authorization boundary verification member is unexpectedly large: {name}")
+                extracted = archive.extractfile(archive_member)
+                if extracted is None:
+                    fail(f"{path.name} cannot read {name}")
+                try:
+                    contents[name] = extracted.read().decode("utf-8")
+                except UnicodeDecodeError as exc:
+                    fail(f"authorization boundary verification member is not UTF-8: {name}: {exc}")
+                lowered_member = contents[name].lower()
+                for forbidden in forbidden_archive_text:
+                    if forbidden in lowered_member:
+                        fail(f"authorization boundary verification archive contains forbidden sensitive content: {name}: {forbidden}")
+            try:
+                evidence = json.loads(contents["authorization-boundary-verification.json"])
+            except json.JSONDecodeError as exc:
+                fail(f"invalid authorization boundary verification evidence: {exc}")
+    except tarfile.TarError as exc:
+        fail(f"invalid authorization boundary verification evidence archive {path}: {exc}")
+
+    if not isinstance(evidence, dict):
+        fail("authorization boundary verification evidence must be a JSON object")
+    expected_fields = {
+        "schema_version", "evidence_type", "product", "edition", "product_profile",
+        "commit", "minimum_go_version", "started_at", "completed_at", "result",
+        "go_version", "test_commands", "tests", "checks", "redaction", "blocker",
+    }
+    missing_fields = sorted(expected_fields - set(evidence))
+    extra_fields = sorted(set(evidence) - expected_fields)
+    if missing_fields:
+        fail("authorization boundary verification evidence missing fields:\n" + "\n".join(missing_fields))
+    if extra_fields:
+        fail("authorization boundary verification evidence has unknown fields:\n" + "\n".join(extra_fields))
+    if evidence["schema_version"] != 1 or evidence["evidence_type"] != "community_authorization_boundary_drill":
+        fail("authorization boundary verification evidence identity is invalid")
+    if evidence["product"] != "AnoPKI" or evidence["edition"] != "community" or evidence["product_profile"] != "community-openssl":
+        fail("authorization boundary verification evidence profile is invalid")
+    if evidence["result"] != "passed" or evidence["blocker"] != "":
+        fail("authorization boundary verification drill did not pass")
+    if evidence["minimum_go_version"] != "1.25.11":
+        fail("authorization boundary verification minimum Go version is invalid")
+    if not isinstance(evidence["commit"], str) or not re.fullmatch(r"[0-9a-f]{40}", evidence["commit"]):
+        fail("authorization boundary verification commit is invalid")
+    if not isinstance(evidence["go_version"], str) or "go version go" not in evidence["go_version"]:
+        fail("authorization boundary verification Go identity is invalid")
+    if parse_go_version(evidence["go_version"]) < (1, 25, 11):
+        fail("authorization boundary verification used an unsupported Go toolchain")
+
+    expected_names = [
+        "TestRequestAuthorizerRunsAfterAuthenticationAndScopeAndSkipsPublicRoutes",
+        "TestRequestAuthorizerReceivesMinimalAuditContextWithoutSecrets",
+        "TestRequestAuthorizerOutcomesFailClosed",
+        "TestRequestAuthorizerReceivesCanceledContext",
+        "TestRequestAuthorizerConcurrentDecisionsDoNotLeak",
+        "TestRequestAuthorizationRouteFixture",
+        "TestRequiredScopeCompatibilityFixture",
+        "TestRequestAuthorizerDefaultTimeout",
+        "TestRequestAuthorizerTimeoutIsCapped",
+        "TestRequestAuthorizerTimeoutFailsClosed",
+        "TestRequestAuthorizerRunsAfterLegacyScopeAndSkipsPublicRoutes",
+        "TestRequestAuthorizerInputExcludesRequestSecrets",
+        "TestDebugVarsRequiresOperatorScope",
+        "TestRequiredScopeHardeningFixture",
+        "TestAuthorizationAuditMetadataClassification",
+        "TestRequestAuthorizerAllowDecisionCorrelatesLifecycleAudit",
+        "TestRequestAuthorizerDenyDecisionCorrelatesFailureAudit",
+        "TestRequestAuthorizerTimeoutAuditDoesNotExposeEvaluatorError",
+        "TestRequestAuthorizerInvalidReferencesAreOmitted",
+        "TestRequestsWithoutAuthorizerDoNotClaimAuthorizationEvidence",
+    ]
+    expected_tests = [(phase, "github.com/anothel/anopki/service/internal/httpapi", name) for phase in ("baseline", "race") for name in expected_names]
+    tests = evidence["tests"]
+    if not isinstance(tests, list) or len(tests) != len(expected_tests):
+        fail("authorization boundary verification test set is invalid")
+    observed_tests: list[tuple[str, str, str]] = []
+    for test in tests:
+        if not isinstance(test, dict) or set(test) != {"phase", "package", "name", "status"}:
+            fail("authorization boundary verification test fields are invalid")
+        observed_tests.append((str(test["phase"]), str(test["package"]), str(test["name"])))
+        if test["status"] != "pass":
+            fail("authorization boundary verification contains a failed or skipped test")
+    if observed_tests != expected_tests:
+        fail("authorization boundary verification test order is invalid")
+
+    expected_checks = [
+        "authentication-before-authorizer",
+        "legacy-scope-before-authorizer",
+        "public-route-authorizer-exclusion",
+        "canonical-route-and-request-secret-exclusion",
+        "fail-closed-outcome-matrix",
+        "bounded-timeout-and-context-cancellation",
+        "concurrent-decision-isolation",
+        "route-classification-and-debug-operator-scope",
+        "allow-decision-audit-correlation",
+        "deny-decision-failure-audit-correlation",
+        "timeout-error-redaction",
+        "invalid-reference-omission",
+        "absent-authorizer-no-evidence-claim",
+        "focused-race-clean",
+        "sensitive-evidence-exclusion",
+    ]
+    checks = evidence["checks"]
+    if not isinstance(checks, list) or len(checks) != len(expected_checks):
+        fail("authorization boundary verification check set is invalid")
+    names: list[str] = []
+    for check in checks:
+        if not isinstance(check, dict) or set(check) != {"name", "status"}:
+            fail("authorization boundary verification check fields are invalid")
+        names.append(str(check["name"]))
+        if check["status"] != "passed":
+            fail("authorization boundary verification contains a failed or skipped check")
+    if names != expected_checks:
+        fail("authorization boundary verification check order is invalid")
+
+    commands = evidence["test_commands"]
+    if not isinstance(commands, dict) or set(commands) != {"baseline", "race"}:
+        fail("authorization boundary verification command set is invalid")
+    for name in ("baseline", "race"):
+        command = commands[name]
+        if not isinstance(command, list) or not all(isinstance(item, str) for item in command):
+            fail(f"authorization boundary verification {name} command is invalid")
+        command_text = " ".join(command)
+        for required in (
+            "test", "-json", "./internal/httpapi",
+            "TestRequestAuthorizerTimeoutFailsClosed",
+            "TestRequestAuthorizerAllowDecisionCorrelatesLifecycleAudit",
+            "TestRequestsWithoutAuthorizerDoNotClaimAuthorizationEvidence",
+        ):
+            if required not in command_text:
+                fail(f"authorization boundary verification {name} command drift: missing {required}")
+    if "-race" not in commands["race"] or "-race" in commands["baseline"]:
+        fail("authorization boundary verification race command is invalid")
+
+    expected_redaction = {
+        "credential_markers_found": False,
+        "request_payload_values_found": False,
+        "raw_evaluator_errors_found": False,
+        "sensitive_values_in_evidence": False,
+    }
+    if evidence["redaction"] != expected_redaction:
+        fail("authorization boundary verification redaction evidence is invalid")
+    serialized = json.dumps(evidence, sort_keys=True).lower()
+    for forbidden in (
+        "raw-api-key-secret", "raw-token-secret", "cookie-secret", "body-secret",
+        "query-secret", "path-secret", "authorization: bearer", '"password"',
+        '"credential"', '"session_token"', '"request_body"', '"query_string"',
+        '"raw_evaluator_error"', "evaluator-internal-secret",
+        "-----begin private key-----", "-----begin encrypted private key-----",
+    ):
+        if forbidden in serialized:
+            fail(f"authorization boundary verification evidence contains forbidden sensitive content: {forbidden}")
+    return path, evidence
+
 def require_issuer_rollover_evidence_archive(dist: Path) -> tuple[Path, dict[str, object]]:
     path = dist / ISSUER_ROLLOVER_EVIDENCE_NAME
     if not path.is_file():
@@ -1505,6 +1702,7 @@ def main() -> None:
     status_outage_evidence, status_outage_evidence_value = require_status_outage_evidence_archive(dist)
     audit_replay_evidence, audit_replay_evidence_value = require_audit_replay_evidence_archive(dist)
     audit_integrity_evidence, audit_integrity_evidence_value = require_audit_integrity_evidence_archive(dist)
+    authorization_boundary_evidence, authorization_boundary_evidence_value = require_authorization_boundary_evidence_archive(dist)
     issuer_rollover_evidence, issuer_rollover_evidence_value = require_issuer_rollover_evidence_archive(dist)
     postgres_recovery_evidence, postgres_recovery_evidence_value = require_postgres_recovery_evidence_archive(dist)
     multi_node_evidence, multi_node_evidence_value = require_multi_node_evidence_archive(dist)
@@ -1522,6 +1720,8 @@ def main() -> None:
         fail("audit/replay verification commit does not match release metadata")
     if audit_integrity_evidence_value["commit"] != metadata["commit"]:
         fail("Audit integrity verification commit does not match release metadata")
+    if authorization_boundary_evidence_value["commit"] != metadata["commit"]:
+        fail("authorization boundary verification commit does not match release metadata")
     if issuer_rollover_evidence_value["commit"] != metadata["commit"]:
         fail("issuer rollover verification commit does not match release metadata")
     if postgres_recovery_evidence_value["commit"] != metadata["commit"]:
@@ -1530,7 +1730,7 @@ def main() -> None:
         fail("multi-node verification commit does not match release metadata")
 
     checksums = read_checksums(dist / "SHA256SUMS")
-    artifacts = (service, core, go_evidence, recovery_evidence, status_outage_evidence, audit_replay_evidence, audit_integrity_evidence, issuer_rollover_evidence, postgres_recovery_evidence, multi_node_evidence, backend_path, metadata_path)
+    artifacts = (service, core, go_evidence, recovery_evidence, status_outage_evidence, audit_replay_evidence, audit_integrity_evidence, authorization_boundary_evidence, issuer_rollover_evidence, postgres_recovery_evidence, multi_node_evidence, backend_path, metadata_path)
     expected_names = {artifact.name for artifact in artifacts}
     extra_names = sorted(set(checksums) - expected_names)
     missing_names = sorted(expected_names - set(checksums))

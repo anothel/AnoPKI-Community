@@ -422,6 +422,108 @@ def write_audit_integrity_evidence_archive(
             archive.add(root / "unexpected.txt", arcname="unexpected.txt")
 
 
+
+def write_authorization_boundary_evidence_archive(
+    path: Path,
+    *,
+    result: str = "passed",
+    commit: str = "0123456789abcdef0123456789abcdef01234567",
+    extra_field: bool = False,
+    extra_member: bool = False,
+    sensitive_log: bool = False,
+    race_failed: bool = False,
+) -> None:
+    root = path.parent / "authorization-boundary-evidence"
+    if root.exists():
+        shutil.rmtree(root)
+    root.mkdir(parents=True, exist_ok=True)
+    names = [
+        "TestRequestAuthorizerRunsAfterAuthenticationAndScopeAndSkipsPublicRoutes",
+        "TestRequestAuthorizerReceivesMinimalAuditContextWithoutSecrets",
+        "TestRequestAuthorizerOutcomesFailClosed",
+        "TestRequestAuthorizerReceivesCanceledContext",
+        "TestRequestAuthorizerConcurrentDecisionsDoNotLeak",
+        "TestRequestAuthorizationRouteFixture",
+        "TestRequiredScopeCompatibilityFixture",
+        "TestRequestAuthorizerDefaultTimeout",
+        "TestRequestAuthorizerTimeoutIsCapped",
+        "TestRequestAuthorizerTimeoutFailsClosed",
+        "TestRequestAuthorizerRunsAfterLegacyScopeAndSkipsPublicRoutes",
+        "TestRequestAuthorizerInputExcludesRequestSecrets",
+        "TestDebugVarsRequiresOperatorScope",
+        "TestRequiredScopeHardeningFixture",
+        "TestAuthorizationAuditMetadataClassification",
+        "TestRequestAuthorizerAllowDecisionCorrelatesLifecycleAudit",
+        "TestRequestAuthorizerDenyDecisionCorrelatesFailureAudit",
+        "TestRequestAuthorizerTimeoutAuditDoesNotExposeEvaluatorError",
+        "TestRequestAuthorizerInvalidReferencesAreOmitted",
+        "TestRequestsWithoutAuthorizerDoNotClaimAuthorizationEvidence",
+    ]
+    checks = [
+        "authentication-before-authorizer",
+        "legacy-scope-before-authorizer",
+        "public-route-authorizer-exclusion",
+        "canonical-route-and-request-secret-exclusion",
+        "fail-closed-outcome-matrix",
+        "bounded-timeout-and-context-cancellation",
+        "concurrent-decision-isolation",
+        "route-classification-and-debug-operator-scope",
+        "allow-decision-audit-correlation",
+        "deny-decision-failure-audit-correlation",
+        "timeout-error-redaction",
+        "invalid-reference-omission",
+        "absent-authorizer-no-evidence-claim",
+        "focused-race-clean",
+        "sensitive-evidence-exclusion",
+    ]
+    regex = "^(" + "|".join(names) + ")$"
+    tests = []
+    for phase in ("baseline", "race"):
+        for name in names:
+            status = "fail" if phase == "race" and race_failed else "pass"
+            tests.append({"phase": phase, "package": "github.com/anothel/anopki/service/internal/httpapi", "name": name, "status": status})
+    evidence = {
+        "schema_version": 1,
+        "evidence_type": "community_authorization_boundary_drill",
+        "product": "AnoPKI",
+        "edition": "community",
+        "product_profile": "community-openssl",
+        "commit": commit,
+        "minimum_go_version": "1.25.11",
+        "started_at": "2026-07-19T02:00:00Z",
+        "completed_at": "2026-07-19T02:00:01Z",
+        "result": result if not race_failed else "failed",
+        "go_version": "go version go1.25.12 linux/amd64",
+        "test_commands": {
+            "baseline": ["go", "test", "-json", "-count=1", "-run", regex, "./internal/httpapi"],
+            "race": ["go", "test", "-race", "-json", "-count=1", "-run", regex, "./internal/httpapi"],
+        },
+        "tests": tests,
+        "checks": [{"name": name, "status": "failed" if result != "passed" or race_failed else "passed"} for name in checks],
+        "redaction": {
+            "credential_markers_found": False,
+            "request_payload_values_found": False,
+            "raw_evaluator_errors_found": False,
+            "sensitive_values_in_evidence": False,
+        },
+        "blocker": "" if result == "passed" and not race_failed else "test failure",
+    }
+    if extra_field:
+        evidence["unexpected"] = "drift"
+    (root / "authorization-boundary-verification.json").write_text(json.dumps(evidence), encoding="utf-8")
+    (root / "authorization-boundary-verification.md").write_text("# Authorization boundary evidence\n", encoding="utf-8")
+    (root / "authorization-boundary-baseline.log").write_text("raw-token-secret\n" if sensitive_log else "pass\n", encoding="utf-8")
+    (root / "authorization-boundary-race.log").write_text("pass\n", encoding="utf-8")
+    if extra_member:
+        (root / "unexpected.txt").write_text("unexpected\n", encoding="utf-8")
+    with tarfile.open(path, "w:gz") as archive:
+        archive.add(root / "authorization-boundary-verification.json", arcname="authorization-boundary-verification.json")
+        archive.add(root / "authorization-boundary-verification.md", arcname="authorization-boundary-verification.md")
+        archive.add(root / "authorization-boundary-baseline.log", arcname="authorization-boundary-baseline.log")
+        archive.add(root / "authorization-boundary-race.log", arcname="authorization-boundary-race.log")
+        if extra_member:
+            archive.add(root / "unexpected.txt", arcname="unexpected.txt")
+
 def write_issuer_rollover_evidence_archive(
     path: Path,
     *,
@@ -759,6 +861,7 @@ def write_valid_dist(dist: Path) -> tuple[Path, Path]:
     write_status_outage_evidence_archive(dist / "anopki-status-outage-verification.tar.gz")
     write_audit_replay_evidence_archive(dist / "anopki-audit-replay-verification.tar.gz")
     write_audit_integrity_evidence_archive(dist / "anopki-audit-integrity-verification.tar.gz")
+    write_authorization_boundary_evidence_archive(dist / "anopki-authorization-boundary-verification.tar.gz")
     write_issuer_rollover_evidence_archive(dist / "anopki-issuer-rollover-verification.tar.gz")
     write_postgres_recovery_evidence_archive(dist / "anopki-postgres-recovery-verification.tar.gz")
     write_multi_node_evidence_archive(dist / "anopki-multi-node-verification.tar.gz")
@@ -1285,6 +1388,83 @@ def test_audit_integrity_postgres_must_be_required() -> None:
     assert "must require PostgreSQL" in result.stderr
 
 
+
+def test_missing_authorization_boundary_evidence_fails() -> None:
+    with tempfile.TemporaryDirectory() as tmp:
+        dist = Path(tmp)
+        write_valid_dist(dist)
+        (dist / "anopki-authorization-boundary-verification.tar.gz").unlink()
+        rewrite_checksums(dist)
+        result = run_validator(dist)
+    assert result.returncode == 1
+    assert "missing authorization boundary verification evidence archive" in result.stderr
+
+
+def test_failed_authorization_boundary_evidence_fails() -> None:
+    with tempfile.TemporaryDirectory() as tmp:
+        dist = Path(tmp)
+        write_valid_dist(dist)
+        write_authorization_boundary_evidence_archive(dist / "anopki-authorization-boundary-verification.tar.gz", result="failed")
+        rewrite_checksums(dist)
+        result = run_validator(dist)
+    assert result.returncode == 1
+    assert "authorization boundary verification drill did not pass" in result.stderr
+
+
+def test_authorization_boundary_commit_mismatch_fails() -> None:
+    with tempfile.TemporaryDirectory() as tmp:
+        dist = Path(tmp)
+        write_valid_dist(dist)
+        write_authorization_boundary_evidence_archive(dist / "anopki-authorization-boundary-verification.tar.gz", commit="f" * 40)
+        rewrite_checksums(dist)
+        result = run_validator(dist)
+    assert result.returncode == 1
+    assert "authorization boundary verification commit does not match" in result.stderr
+
+
+def test_unknown_authorization_boundary_field_fails() -> None:
+    with tempfile.TemporaryDirectory() as tmp:
+        dist = Path(tmp)
+        write_valid_dist(dist)
+        write_authorization_boundary_evidence_archive(dist / "anopki-authorization-boundary-verification.tar.gz", extra_field=True)
+        rewrite_checksums(dist)
+        result = run_validator(dist)
+    assert result.returncode == 1
+    assert "authorization boundary verification evidence has unknown fields" in result.stderr
+
+
+def test_unexpected_authorization_boundary_member_fails() -> None:
+    with tempfile.TemporaryDirectory() as tmp:
+        dist = Path(tmp)
+        write_valid_dist(dist)
+        write_authorization_boundary_evidence_archive(dist / "anopki-authorization-boundary-verification.tar.gz", extra_member=True)
+        rewrite_checksums(dist)
+        result = run_validator(dist)
+    assert result.returncode == 1
+    assert "unexpected authorization boundary evidence members" in result.stderr
+
+
+def test_authorization_boundary_sensitive_log_fails() -> None:
+    with tempfile.TemporaryDirectory() as tmp:
+        dist = Path(tmp)
+        write_valid_dist(dist)
+        write_authorization_boundary_evidence_archive(dist / "anopki-authorization-boundary-verification.tar.gz", sensitive_log=True)
+        rewrite_checksums(dist)
+        result = run_validator(dist)
+    assert result.returncode == 1
+    assert "forbidden sensitive content" in result.stderr
+
+
+def test_authorization_boundary_race_failure_fails() -> None:
+    with tempfile.TemporaryDirectory() as tmp:
+        dist = Path(tmp)
+        write_valid_dist(dist)
+        write_authorization_boundary_evidence_archive(dist / "anopki-authorization-boundary-verification.tar.gz", race_failed=True)
+        rewrite_checksums(dist)
+        result = run_validator(dist)
+    assert result.returncode == 1
+    assert "authorization boundary verification drill did not pass" in result.stderr
+
 def test_missing_issuer_rollover_evidence_fails() -> None:
     with tempfile.TemporaryDirectory() as tmp:
         dist = Path(tmp)
@@ -1514,6 +1694,13 @@ def main() -> None:
     test_unexpected_audit_integrity_member_fails()
     test_audit_integrity_sensitive_log_fails()
     test_audit_integrity_postgres_must_be_required()
+    test_missing_authorization_boundary_evidence_fails()
+    test_failed_authorization_boundary_evidence_fails()
+    test_authorization_boundary_commit_mismatch_fails()
+    test_unknown_authorization_boundary_field_fails()
+    test_unexpected_authorization_boundary_member_fails()
+    test_authorization_boundary_sensitive_log_fails()
+    test_authorization_boundary_race_failure_fails()
     test_missing_issuer_rollover_evidence_fails()
     test_failed_issuer_rollover_evidence_fails()
     test_issuer_rollover_commit_mismatch_fails()

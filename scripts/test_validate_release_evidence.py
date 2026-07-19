@@ -25,8 +25,8 @@ def require_release_workflow() -> None:
         "id-token: write", 'go-version: "1.25.12"',
         "python scripts/verify-go-release.py", "--profile full",
         "anopki-go-verification.tar.gz", "anopki-recovery-verification.tar.gz",
-        "anopki-status-outage-verification.tar.gz", "anopki-audit-replay-verification.tar.gz", "anopki-audit-integrity-verification.tar.gz", "anopki-issuer-rollover-verification.tar.gz", "anopki-postgres-recovery-verification.tar.gz", "anopki-multi-node-verification.tar.gz",
-        "python scripts/verify-recovery-drill.py", "python scripts/verify-status-outage-drill.py", "python scripts/verify-audit-replay-drill.py", "python scripts/verify-audit-integrity-drill.py", "python scripts/verify-issuer-rollover-drill.py", "python scripts/verify-postgres-recovery-drill.py", "python scripts/verify-multi-node-reliability.py",
+        "anopki-status-outage-verification.tar.gz", "anopki-audit-replay-verification.tar.gz", "anopki-audit-integrity-verification.tar.gz", "anopki-authorization-boundary-verification.tar.gz", "anopki-issuer-rollover-verification.tar.gz", "anopki-postgres-recovery-verification.tar.gz", "anopki-multi-node-verification.tar.gz",
+        "python scripts/verify-recovery-drill.py", "python scripts/verify-status-outage-drill.py", "python scripts/verify-audit-replay-drill.py", "python scripts/verify-audit-integrity-drill.py", "python scripts/verify-authorization-boundary.py", "python scripts/verify-issuer-rollover-drill.py", "python scripts/verify-postgres-recovery-drill.py", "python scripts/verify-multi-node-reliability.py",
         "cmake --build build-release --config Release", 'VERSION="$(cat VERSION)"',
         "go build -ldflags", "anopki-service-v${VERSION}-linux-amd64.tar.gz",
         "anopki-core-v${VERSION}-linux-amd64.tar.gz",
@@ -52,6 +52,7 @@ def copy_release_evidence_inputs(dst: Path) -> None:
         "scripts/verify-status-outage-drill.py",
         "scripts/verify-audit-replay-drill.py",
         "scripts/verify-audit-integrity-drill.py",
+        "scripts/verify-authorization-boundary.py",
         "scripts/verify-issuer-rollover-drill.py",
         "scripts/verify-postgres-recovery-drill.py",
         "scripts/verify-multi-node-reliability.py",
@@ -275,6 +276,22 @@ def test_missing_release_audit_integrity_evidence_fails(tmp_path: Path) -> None:
     assert "anopki-audit-integrity-verification.tar.gz" in result.stderr
 
 
+def test_missing_authorization_boundary_runner_fails(tmp_path: Path) -> None:
+    copy_release_evidence_inputs(tmp_path)
+    mutate(tmp_path / "scripts/verify-authorization-boundary.py", "community_authorization_boundary_drill")
+    result = run_validator(tmp_path)
+    assert result.returncode == 1
+    assert "community_authorization_boundary_drill" in result.stderr
+
+
+def test_missing_release_authorization_boundary_evidence_fails(tmp_path: Path) -> None:
+    copy_release_evidence_inputs(tmp_path)
+    mutate(tmp_path / ".github/workflows/release.yml", "anopki-authorization-boundary-verification.tar.gz")
+    result = run_validator(tmp_path)
+    assert result.returncode == 1
+    assert "anopki-authorization-boundary-verification.tar.gz" in result.stderr
+
+
 def test_missing_issuer_rollover_runner_fails(tmp_path: Path) -> None:
     copy_release_evidence_inputs(tmp_path)
     mutate(tmp_path / "scripts/verify-issuer-rollover-drill.py", "same-parent-chain-required")
@@ -362,6 +379,8 @@ def main() -> None:
         test_missing_release_audit_replay_evidence_fails,
         test_missing_audit_integrity_runner_fails,
         test_missing_release_audit_integrity_evidence_fails,
+        test_missing_authorization_boundary_runner_fails,
+        test_missing_release_authorization_boundary_evidence_fails,
         test_missing_issuer_rollover_runner_fails,
         test_missing_release_issuer_rollover_evidence_fails,
         test_postgres_client_major_enforcement_drift_fails,

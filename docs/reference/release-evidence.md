@@ -16,6 +16,7 @@ Current draft: [v0.1.0-alpha.0 candidate evidence](release-candidate-v0.1.0-alph
 | Go dependency vulnerability scan | `govulncheck` v1.1.4 | `verify-go-release.py --profile analysis` in CI. |
 | PostgreSQL | PostgreSQL 16 integration and recovery | CI `postgres-integration` records client/server versions; `postgres-recovery-drill` proves migration rollback and `pg_dump`/`pg_restore` recovery. |
 | Audit integrity | Focused Memory, SQLite, PostgreSQL, migration and HTTP regressions | CI `audit-integrity-drill` and release artifact `anopki-audit-integrity-verification.tar.gz`. |
+| Authorization boundary | Focused authentication, scope, timeout, redaction, Audit correlation and race regressions | CI `authorization-boundary-drill` and release artifact `anopki-authorization-boundary-verification.tar.gz`. |
 | C++ parser fuzz/sanitizer smoke | Clang/libFuzzer with AddressSanitizer | CI `cpp-fuzz-smoke` job builds CSR, OCSP, and CRL parser targets and runs each for at most 20 seconds. |
 | Community boundary | `scripts/validate-community-boundary.py` | CI `community-boundary` job. |
 | Secret baseline | `scripts/security-baseline-scan.py` | CI `secret-baseline` job and README smoke checklist. |
@@ -31,6 +32,7 @@ Pre-1.0 releases distribute archives, not installers or container images:
 - `anopki-core` CLI binary archive,
 - `anopki-go-verification.tar.gz` containing full-profile JSON, Markdown and redacted logs,
 - `anopki-audit-integrity-verification.tar.gz` containing exact Memory, SQLite, PostgreSQL, migration, API, tamper, checkpoint and retention evidence,
+- `anopki-authorization-boundary-verification.tar.gz` containing exact authentication/scope ordering, timeout, redaction, Audit correlation and focused race evidence,
 - `anopki-postgres-recovery-verification.tar.gz` containing PostgreSQL 16 backup/restore and migration-rollback evidence,
 - `anopki-multi-node-verification.tar.gz` containing issuance, CRL and Outbox single-writer evidence,
 - `anopki-backend-info.json` from the built Core artifact,
@@ -145,6 +147,21 @@ Evidence is strict JSON, Markdown and two redacted logs, packaged as
 PostgreSQL evidence, failed or missing tests, command drift, unknown fields,
 extra archive members, commit mismatch, DSNs, database credentials, raw key
 references, and private-key material.
+
+## Generic Authorization Boundary Evidence Runner
+
+`scripts/verify-authorization-boundary.py` runs the exact protected-route
+regressions for authentication-before-policy ordering, legacy scope enforcement,
+public-route exclusion, canonical route patterns, request-secret redaction,
+bounded timeout and cancellation, fail-closed outcomes, concurrent decision
+isolation, operator-only debug metrics, successful and failed Audit correlation,
+invalid-reference omission, and no evidence claim when the optional authorizer is
+absent. Baseline and focused race executions are bound to one exact Community
+commit. Evidence is strict JSON, Markdown and two redacted logs, packaged as
+`anopki-authorization-boundary-verification.tar.gz`. Release validation rejects
+missing or skipped tests, command drift, unknown fields, extra members, commit
+mismatch, credentials, request payload values, raw evaluator errors and private-key
+material.
 
 ## Intermediate Issuer Rollover Evidence Runner
 
@@ -313,6 +330,8 @@ evidence still needs release workflow artifacts containing archives,
 - `python scripts/verify-audit-replay-drill.py --out-dir .tmp\audit-replay-evidence\verify-local`
 - `python scripts/test_verify_audit_integrity_drill.py`
 - `python scripts/verify-audit-integrity-drill.py --out-dir .tmp\audit-integrity-evidence\verify-local`
+- `python scripts/test_verify_authorization_boundary.py`
+- `python scripts/verify-authorization-boundary.py --out-dir .tmp\authorization-boundary-evidence\verify-local`
 - `python scripts/test_verify_issuer_rollover_drill.py`
 - `python scripts/verify-issuer-rollover-drill.py --out-dir .tmp\issuer-rollover-evidence\verify-local`
 - `python scripts/test_verify_postgres_recovery_drill.py`
@@ -348,6 +367,7 @@ evidence still needs release workflow artifacts containing archives,
 - `./build-fuzz/anopki_core_crl_fuzz -runs=1`
 - release workflow artifact `anopki-go-verification.tar.gz` with passing baseline evidence
 - release workflow artifact `anopki-audit-integrity-verification.tar.gz` with passing Memory, SQLite, PostgreSQL and API integrity evidence
+- release workflow artifact `anopki-authorization-boundary-verification.tar.gz` with passing authentication, scope, timeout, redaction, Audit correlation and race evidence
 - release workflow artifact containing SBOM output from `syft`
 - release workflow artifact containing signature output from `cosign`
 - compatibility matrix row evidence
