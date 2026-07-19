@@ -85,7 +85,10 @@ const (
 )
 
 type AuthorizationResult struct {
-	Outcome AuthorizationOutcome
+	Outcome        AuthorizationOutcome
+	DecisionID     string
+	ReasonCode     string
+	PolicyRevision string
 }
 
 type ACMEConfig struct {
@@ -217,7 +220,12 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 				ClientIP:             auditMetadata.ClientIP,
 				UserAgent:            auditMetadata.UserAgent,
 			})
+			authorizationContextErr := authorizationContext.Err()
 			cancelAuthorization()
+			r = r.WithContext(lifecycle.WithAuthorizationAuditMetadata(
+				r.Context(),
+				authorizationAuditMetadata(result, err, authorizationContextErr),
+			))
 			if err != nil || result.Outcome != AuthorizationOutcomeAllow {
 				s.writeError(rw, r, domain.ErrForbidden)
 				return
@@ -230,6 +238,35 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	s.mux.ServeHTTP(rw, r)
+}
+
+func authorizationAuditMetadata(result AuthorizationResult, err error, contextErr error) lifecycle.AuthorizationAuditMetadata {
+	metadata := lifecycle.AuthorizationAuditMetadata{
+		DecisionID:      result.DecisionID,
+		ReasonCode:      result.ReasonCode,
+		PolicyRevision:  result.PolicyRevision,
+		EvaluatorStatus: "ok",
+	}
+	switch {
+	case errors.Is(contextErr, context.DeadlineExceeded), errors.Is(err, context.DeadlineExceeded):
+		metadata.Outcome = "error"
+		metadata.EvaluatorStatus = "timeout"
+	case errors.Is(contextErr, context.Canceled), errors.Is(err, context.Canceled):
+		metadata.Outcome = "error"
+		metadata.EvaluatorStatus = "canceled"
+	case err != nil:
+		metadata.Outcome = "error"
+		metadata.EvaluatorStatus = "error"
+	default:
+		switch result.Outcome {
+		case AuthorizationOutcomeAllow, AuthorizationOutcomeDeny, AuthorizationOutcomeApprovalRequired:
+			metadata.Outcome = string(result.Outcome)
+		default:
+			metadata.Outcome = "invalid"
+			metadata.EvaluatorStatus = "invalid_result"
+		}
+	}
+	return metadata
 }
 
 func requestBodyLimit(r *http.Request) int64 {

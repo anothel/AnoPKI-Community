@@ -57,6 +57,15 @@ honor context cancellation and must not fall back to another policy engine. Publ
 CRL, OCSP, and RFC 8555 protocol routes keep their existing protocol controls and do
 not invoke this seam. `GET /debug/vars` is operator-scoped in API-key mode.
 
+When the seam is present, successful lifecycle audits and failed-request audits may
+include `authorization_outcome`, `authorization_evaluator_status`, and bounded
+`authorization_decision_id`, `authorization_reason_code`, and
+`authorization_policy_revision`. These values are correlation references only. They
+must use stable non-secret identifiers and must not contain credentials, identity
+claims, request payloads, query values, path parameter values, or raw evaluator
+errors. When the seam is absent, Community audit records do not claim external
+authorization evidence.
+
 This boundary is not a Community RBAC/ABAC, OIDC/SAML, approval-workflow, or
 commercial entitlement implementation. Product-specific policy remains outside the
 Community repository.

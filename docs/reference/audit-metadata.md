@@ -347,6 +347,32 @@ validated_at
 validation_reuse_expires_at
 ```
 
+## Generic Authorization Decision Correlation
+
+When an optional `httpapi.RequestAuthorizer` evaluates a protected route, audit
+metadata can include:
+
+```text
+authorization_outcome
+authorization_evaluator_status
+authorization_decision_id
+authorization_reason_code
+authorization_policy_revision
+```
+
+`authorization_outcome` is one of `allow`, `deny`, `approval_required`, `error`,
+or `invalid`. `authorization_evaluator_status` is one of `ok`, `timeout`,
+`canceled`, `error`, or `invalid_result`. The decision, reason, and policy fields
+are optional bounded correlation references. Values containing whitespace,
+control characters, unsupported punctuation, or more than 128 bytes are omitted.
+Raw evaluator errors, credentials, claims, bodies, query values, path parameter
+values, and product-specific policy data are prohibited.
+
+Allowed decisions are attached to the lifecycle audit event created by the
+handler. Denied, approval-required, timeout, canceled, evaluator-error, and invalid
+results are attached to the fail-closed `api.request_failed` event. When no
+authorizer is configured, no `authorization_*` field is emitted.
+
 ## Error Codes
 
 Current stable error codes:

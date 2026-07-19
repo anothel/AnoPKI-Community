@@ -153,6 +153,14 @@ type APIKeyAuditMetadata struct {
 	Scopes      []domain.APIKeyScope
 }
 
+type AuthorizationAuditMetadata struct {
+	Outcome         string
+	DecisionID      string
+	ReasonCode      string
+	PolicyRevision  string
+	EvaluatorStatus string
+}
+
 type policyDecisionError struct {
 	reason       string
 	evidenceRefs []string
@@ -177,6 +185,7 @@ type AuditEventQuery = store.AuditEventQuery
 
 type auditRequestMetadataContextKey struct{}
 type apiKeyAuditMetadataContextKey struct{}
+type authorizationAuditMetadataContextKey struct{}
 
 type CreateIdentityRequest struct {
 	Type               domain.IdentityType
@@ -772,6 +781,10 @@ func WithAuditRequestMetadata(ctx context.Context, metadata AuditRequestMetadata
 
 func WithAPIKeyAuditMetadata(ctx context.Context, metadata APIKeyAuditMetadata) context.Context {
 	return context.WithValue(ctx, apiKeyAuditMetadataContextKey{}, metadata)
+}
+
+func WithAuthorizationAuditMetadata(ctx context.Context, metadata AuthorizationAuditMetadata) context.Context {
+	return context.WithValue(ctx, authorizationAuditMetadataContextKey{}, metadata)
 }
 
 func HashAPIKeyToken(token string) string {
@@ -4246,6 +4259,23 @@ func auditMetadataJSON(ctx context.Context, fields map[string]any, resultCode st
 			metadata["elapsed_ms"] = time.Since(requestMetadata.StartedAt).Milliseconds()
 		}
 	}
+	if authorizationMetadata, ok := ctx.Value(authorizationAuditMetadataContextKey{}).(AuthorizationAuditMetadata); ok {
+		if outcome := auditDecisionReference(authorizationMetadata.Outcome); outcome != "" {
+			metadata["authorization_outcome"] = outcome
+		}
+		if decisionID := auditDecisionReference(authorizationMetadata.DecisionID); decisionID != "" {
+			metadata["authorization_decision_id"] = decisionID
+		}
+		if reasonCode := auditDecisionReference(authorizationMetadata.ReasonCode); reasonCode != "" {
+			metadata["authorization_reason_code"] = reasonCode
+		}
+		if policyRevision := auditDecisionReference(authorizationMetadata.PolicyRevision); policyRevision != "" {
+			metadata["authorization_policy_revision"] = policyRevision
+		}
+		if evaluatorStatus := auditDecisionReference(authorizationMetadata.EvaluatorStatus); evaluatorStatus != "" {
+			metadata["authorization_evaluator_status"] = evaluatorStatus
+		}
+	}
 	if keyMetadata, ok := ctx.Value(apiKeyAuditMetadataContextKey{}).(APIKeyAuditMetadata); ok {
 		if keyMetadata.ID != "" {
 			metadata["api_key_id"] = keyMetadata.ID
@@ -4268,6 +4298,23 @@ func auditMetadataJSON(ctx context.Context, fields map[string]any, resultCode st
 		return "{}"
 	}
 	return string(encoded)
+}
+
+func auditDecisionReference(value string) string {
+	value = strings.TrimSpace(value)
+	if value == "" || len(value) > 128 {
+		return ""
+	}
+	for _, char := range value {
+		if (char >= 'a' && char <= 'z') ||
+			(char >= 'A' && char <= 'Z') ||
+			(char >= '0' && char <= '9') ||
+			strings.ContainsRune("-._:/@+", char) {
+			continue
+		}
+		return ""
+	}
+	return value
 }
 
 func auditMetadataValue(key string, value any) any {
