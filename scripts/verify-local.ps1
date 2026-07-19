@@ -191,6 +191,12 @@ $steps = @(
         Command = @("python", "scripts\verify-multi-node-reliability.py", "--out-dir", ".tmp\multi-node-evidence\verify-local")
     },
     @{
+        Name = "PostgreSQL multi-node failover drill tests"
+        Dir = $RepoRoot
+        Display = "python scripts\test_verify_postgres_multi_node_failover.py"
+        Command = @("python", "scripts\test_verify_postgres_multi_node_failover.py")
+    },
+    @{
         Name = "PostgreSQL recovery drill tests"
         Dir = $RepoRoot
         Display = "python scripts\test_verify_postgres_recovery_drill.py"

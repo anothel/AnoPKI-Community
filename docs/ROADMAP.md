@@ -43,7 +43,8 @@ Completed backend and FileKeyProvider work is intentionally omitted.
 - Keep the intermediate issuer rollover and rollback drill and release evidence contract current.
 - Keep the PostgreSQL 16 backup/restore and migration-rollback drill and release evidence contract current.
 - Keep multi-node issuance, CRL and Outbox single-writer evidence current.
-- Expand real multi-node PostgreSQL, failover and traffic-shift evidence.
+- Keep PostgreSQL multi-node lease-expiry failover and traffic-shift evidence current across issuance, CRL and Outbox.
+- Add infrastructure-level PostgreSQL primary failover, network-partition and load-balancer traffic-shift evidence after a concrete deployment target exists.
 - Add independently anchored Audit-chain export evidence when a concrete SIEM or release-custody integration is selected.
 
 ## P2 — Refactor safety

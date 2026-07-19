@@ -660,6 +660,86 @@ def write_multi_node_evidence_archive(
             archive.add(root / "unexpected.txt", arcname="unexpected.txt")
 
 
+
+def write_postgres_multi_node_failover_evidence_archive(
+    path: Path,
+    *,
+    result: str = "passed",
+    commit: str = "0123456789abcdef0123456789abcdef01234567",
+    extra_field: bool = False,
+    extra_member: bool = False,
+    sensitive_log: bool = False,
+    skipped_test: bool = False,
+) -> None:
+    root = path.parent / "postgres-multi-node-failover-evidence"
+    if root.exists():
+        shutil.rmtree(root)
+    root.mkdir(parents=True, exist_ok=True)
+    tests = [
+        ("github.com/anothel/anopki/service/internal/lifecycle", "TestPostgresMultiNodeIssuanceFailoverIntegration"),
+        ("github.com/anothel/anopki/service/internal/lifecycle", "TestPostgresMultiNodeCRLFailoverIntegration"),
+        ("github.com/anothel/anopki/service/internal/lifecycle", "TestPostgresMultiNodeOutboxTrafficShiftIntegration"),
+    ]
+    checks = [
+        "independent-postgres-node-connections",
+        "issuance-active-lease-not-stolen",
+        "issuance-expired-lease-takeover",
+        "issuance-stale-writer-cas-rejected",
+        "issuance-finalization-idempotent-without-resign",
+        "crl-active-lease-not-stolen",
+        "crl-expired-lease-takeover",
+        "crl-stale-completion-cas-rejected",
+        "crl-numbering-contiguous-after-failover",
+        "outbox-active-lease-not-stolen",
+        "outbox-expired-lease-traffic-shift",
+        "outbox-stale-completion-cas-rejected",
+        "outbox-exactly-once-handler-and-attempt",
+        "sensitive-evidence-exclusion",
+    ]
+    regex = "^(" + "|".join(name for _, name in tests) + ")$"
+    test_values = [
+        {"package": package, "name": name, "status": "skip" if skipped_test and index == 0 else "pass"}
+        for index, (package, name) in enumerate(tests)
+    ]
+    evidence = {
+        "schema_version": 1,
+        "evidence_type": "community_postgres_multi_node_failover_drill",
+        "product": "AnoPKI",
+        "edition": "community",
+        "product_profile": "community-openssl",
+        "commit": commit,
+        "minimum_go_version": "1.25.11",
+        "postgres_required": True,
+        "started_at": "2026-07-19T01:00:00Z",
+        "completed_at": "2026-07-19T01:00:01Z",
+        "result": result,
+        "go_version": "go version go1.25.12 linux/amd64",
+        "test_command": ["go", "test", "-json", "-count=1", "-run", regex, "./internal/lifecycle"],
+        "tests": test_values,
+        "checks": [{"name": name, "status": "passed"} for name in checks],
+        "redaction": {
+            "postgres_dsn_found": False,
+            "database_credentials_found": False,
+            "raw_key_references_found": False,
+            "private_key_markers_found": False,
+        },
+        "blocker": "" if result == "passed" else "test failure",
+    }
+    if extra_field:
+        evidence["unexpected"] = "drift"
+    (root / "postgres-multi-node-failover-verification.json").write_text(json.dumps(evidence), encoding="utf-8")
+    (root / "postgres-multi-node-failover-verification.md").write_text("# PostgreSQL multi-node failover evidence\n", encoding="utf-8")
+    log_text = "postgres://operator:secret@localhost:5432/anopki\n" if sensitive_log else "pass\n"
+    (root / "postgres-multi-node-failover-test.log").write_text(log_text, encoding="utf-8")
+    if extra_member:
+        (root / "unexpected.txt").write_text("unexpected\n", encoding="utf-8")
+    with tarfile.open(path, "w:gz") as archive:
+        archive.add(root / "postgres-multi-node-failover-verification.json", arcname="postgres-multi-node-failover-verification.json")
+        archive.add(root / "postgres-multi-node-failover-verification.md", arcname="postgres-multi-node-failover-verification.md")
+        archive.add(root / "postgres-multi-node-failover-test.log", arcname="postgres-multi-node-failover-test.log")
+        if extra_member:
+            archive.add(root / "unexpected.txt", arcname="unexpected.txt")
+
 def write_postgres_recovery_evidence_archive(
     path: Path,
     *,
@@ -865,6 +945,7 @@ def write_valid_dist(dist: Path) -> tuple[Path, Path]:
     write_issuer_rollover_evidence_archive(dist / "anopki-issuer-rollover-verification.tar.gz")
     write_postgres_recovery_evidence_archive(dist / "anopki-postgres-recovery-verification.tar.gz")
     write_multi_node_evidence_archive(dist / "anopki-multi-node-verification.tar.gz")
+    write_postgres_multi_node_failover_evidence_archive(dist / "anopki-postgres-multi-node-failover-verification.tar.gz")
     backend = backend_info()
     (dist / "anopki-backend-info.json").write_text(json.dumps(backend), encoding="utf-8")
     (dist / "anopki-release-metadata.json").write_text(json.dumps(release_metadata(backend)), encoding="utf-8")
@@ -1638,6 +1719,95 @@ def test_unexpected_postgres_recovery_member_fails() -> None:
     assert "unexpected PostgreSQL recovery evidence members" in result.stderr
 
 
+
+def test_missing_postgres_multi_node_failover_evidence_fails() -> None:
+    with tempfile.TemporaryDirectory() as tmp:
+        dist = Path(tmp)
+        write_valid_dist(dist)
+        (dist / "anopki-postgres-multi-node-failover-verification.tar.gz").unlink()
+        rewrite_checksums(dist)
+        result = run_validator(dist)
+    assert result.returncode == 1
+    assert "missing PostgreSQL multi-node failover" in result.stderr
+
+
+def test_failed_postgres_multi_node_failover_evidence_fails() -> None:
+    with tempfile.TemporaryDirectory() as tmp:
+        dist = Path(tmp)
+        write_valid_dist(dist)
+        write_postgres_multi_node_failover_evidence_archive(
+            dist / "anopki-postgres-multi-node-failover-verification.tar.gz", result="failed"
+        )
+        rewrite_checksums(dist)
+        result = run_validator(dist)
+    assert result.returncode == 1
+    assert "did not pass" in result.stderr
+
+
+def test_postgres_multi_node_failover_commit_mismatch_fails() -> None:
+    with tempfile.TemporaryDirectory() as tmp:
+        dist = Path(tmp)
+        write_valid_dist(dist)
+        write_postgres_multi_node_failover_evidence_archive(
+            dist / "anopki-postgres-multi-node-failover-verification.tar.gz", commit="f" * 40
+        )
+        rewrite_checksums(dist)
+        result = run_validator(dist)
+    assert result.returncode == 1
+    assert "commit does not match" in result.stderr
+
+
+def test_unknown_postgres_multi_node_failover_field_fails() -> None:
+    with tempfile.TemporaryDirectory() as tmp:
+        dist = Path(tmp)
+        write_valid_dist(dist)
+        write_postgres_multi_node_failover_evidence_archive(
+            dist / "anopki-postgres-multi-node-failover-verification.tar.gz", extra_field=True
+        )
+        rewrite_checksums(dist)
+        result = run_validator(dist)
+    assert result.returncode == 1
+    assert "unknown fields" in result.stderr
+
+
+def test_unexpected_postgres_multi_node_failover_member_fails() -> None:
+    with tempfile.TemporaryDirectory() as tmp:
+        dist = Path(tmp)
+        write_valid_dist(dist)
+        write_postgres_multi_node_failover_evidence_archive(
+            dist / "anopki-postgres-multi-node-failover-verification.tar.gz", extra_member=True
+        )
+        rewrite_checksums(dist)
+        result = run_validator(dist)
+    assert result.returncode == 1
+    assert "unexpected PostgreSQL multi-node failover evidence members" in result.stderr
+
+
+def test_postgres_multi_node_failover_sensitive_log_fails() -> None:
+    with tempfile.TemporaryDirectory() as tmp:
+        dist = Path(tmp)
+        write_valid_dist(dist)
+        write_postgres_multi_node_failover_evidence_archive(
+            dist / "anopki-postgres-multi-node-failover-verification.tar.gz", sensitive_log=True
+        )
+        rewrite_checksums(dist)
+        result = run_validator(dist)
+    assert result.returncode == 1
+    assert "forbidden sensitive content" in result.stderr
+
+
+def test_postgres_multi_node_failover_skipped_test_fails() -> None:
+    with tempfile.TemporaryDirectory() as tmp:
+        dist = Path(tmp)
+        write_valid_dist(dist)
+        write_postgres_multi_node_failover_evidence_archive(
+            dist / "anopki-postgres-multi-node-failover-verification.tar.gz", skipped_test=True
+        )
+        rewrite_checksums(dist)
+        result = run_validator(dist)
+    assert result.returncode == 1
+    assert "failed or skipped test" in result.stderr
+
 def test_postgres_recovery_client_major_mismatch_fails() -> None:
     with tempfile.TemporaryDirectory() as tmp:
         dist = Path(tmp)
@@ -1711,6 +1881,13 @@ def main() -> None:
     test_multi_node_commit_mismatch_fails()
     test_unknown_multi_node_field_fails()
     test_unexpected_multi_node_member_fails()
+    test_missing_postgres_multi_node_failover_evidence_fails()
+    test_failed_postgres_multi_node_failover_evidence_fails()
+    test_postgres_multi_node_failover_commit_mismatch_fails()
+    test_unknown_postgres_multi_node_failover_field_fails()
+    test_unexpected_postgres_multi_node_failover_member_fails()
+    test_postgres_multi_node_failover_sensitive_log_fails()
+    test_postgres_multi_node_failover_skipped_test_fails()
     test_missing_postgres_recovery_evidence_fails()
     test_failed_postgres_recovery_evidence_fails()
     test_postgres_recovery_commit_mismatch_fails()

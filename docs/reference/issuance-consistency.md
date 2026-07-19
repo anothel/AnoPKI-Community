@@ -6,7 +6,7 @@ Certificate issuance uses a DB-backed `certificate_issuance_attempts` record key
 
 Before calling the core signer, the service creates or takes a `signing` attempt with a short lease. A second service node that sees an unexpired `signing` lease rejects the request with an invalid lifecycle transition and does not call the signer.
 
-Expired `signing` leases can be taken over by a later request. This is the recovery path for a service process that stopped before storing signed material.
+Expired `signing` leases can be taken over by a later request. This is the recovery path for a service process that stopped before storing signed material. Two independent PostgreSQL connections exercise this takeover contract: the renewed lease rejects the original node's stale persistence attempt, and successful finalization is reused by later retries without a second signer call. Managed-primary failover and network-partition behavior remain deployment-specific evidence.
 
 ## Signed Material Recovery
 

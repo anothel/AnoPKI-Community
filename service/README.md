@@ -88,7 +88,7 @@ Certificate inventory and expiry views are available for operators:
 - `GET /operator/certificate-inventory?owner=platform&service=payments&environment=prod&issuer_id=issuer-1&profile_id=profile-1&sort=asc&limit=50&offset=0`
 - `GET /operator/expiry-slo`
 
-Issuance uses a DB-backed enrollment claim to prevent duplicate signing across service nodes. If signing succeeds but DB finalization fails, retry finalizes from stored signed material without calling the signer again. If `certificate.issued` audit repair is needed after finalized state is stored, operators can call:
+Issuance uses a DB-backed enrollment claim to prevent duplicate signing across service nodes. With shared PostgreSQL, an active lease cannot be stolen, an expired lease can be taken over by another node, and a stale node cannot persist or finalize against the renewed compare-and-swap state. If signing succeeds but DB finalization fails, retry finalizes from stored signed material without calling the signer again. If `certificate.issued` audit repair is needed after finalized state is stored, operators can call:
 
 - `POST /audit-events/repair/issuance`
 - `GET /audit-events?actor=operator&resource_type=certificate&sort=desc&limit=50&offset=0`
@@ -120,7 +120,7 @@ Outbox operations expose delivery state for operators:
 - `POST /outbox/messages/{id}/retry`
 - `POST /outbox/messages/dead-letter/replay`
 
-Webhook delivery uses bounded retry with capped backoff: 1 minute, 5 minutes, 15 minutes, then 1 hour. Messages move to `dead_letter` after the configured max attempts. Manual retry resets a failed or dead-letter message to `pending`. Bulk dead-letter replay requires `event_type`, `created_from`, `created_to`, and `limit`, and only replays matching dead-letter messages inside that time window.
+Webhook delivery uses bounded retry with capped backoff: 1 minute, 5 minutes, 15 minutes, then 1 hour. Messages move to `dead_letter` after the configured max attempts. Manual retry resets a failed or dead-letter message to `pending`. Bulk dead-letter replay requires `event_type`, `created_from`, `created_to`, and `limit`, and only replays matching dead-letter messages inside that time window. With shared PostgreSQL, an active processing lease is not visible as due to another node; after lease expiry, one node may recover and complete the message while stale completion is rejected by compare-and-swap.
 
 OCSP responders can be registered with `POST /issuers/{id}/ocsp-responders`, listed with `GET /issuers/{id}/ocsp-responders`, disabled with `POST /issuers/{id}/ocsp-responders/{responderID}/disable`, and atomically rotated with `POST /issuers/{id}/ocsp-responders/rotate`.
 

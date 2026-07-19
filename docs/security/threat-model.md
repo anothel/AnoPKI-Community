@@ -19,8 +19,8 @@
 | Provider confusion or fallback | One selected provider is acquired once; resolver checks readiness, production exportability, provider/operation evidence, and `fallback_used=false`. Test-only software-token coverage exercises failure and mismatch paths. | Provider-result audit correlation is implemented for the Community file-provider path; a real non-exportable provider remains pending outside the Community runtime scope. |
 | Privilege abuse | API key scopes, access model, break-glass rules, and audit metadata. | First-class role/ABAC enforcement waits for an operator directory. |
 | Audit tampering | Monotonic `sha256-v1` chain, latest/checkpoint state, fail-closed append and prune, integrity API, migration backfill, and recovery verification. | Independent external anchoring and SIEM custody remain deployment-specific. |
-| Replay/duplicate issuance | Issuance attempts, active signing claims, ACME nonce handling and focused multi-node single-writer evidence. | Real PostgreSQL multi-node failover and partition smoke coverage. |
-| Status outage | CRL/OCSP backed by service state, fail-closed signer-outage recovery, and leased multi-node CRL publication that prevents duplicate signing. | Real multi-node HA and traffic-shift drills. |
+| Replay/duplicate issuance | Issuance attempts, active signing claims, ACME nonce handling and focused multi-node single-writer evidence. | PostgreSQL lease-expiry failover is covered; managed-primary failover and network-partition smoke remain deployment-specific. |
+| Status outage | CRL/OCSP backed by service state, fail-closed signer-outage recovery, and leased multi-node CRL publication that prevents duplicate signing. | PostgreSQL lease-expiry traffic shift is covered; infrastructure-level HA and load-balancer drills remain deployment-specific. |
 | Supply chain compromise | CI builds/tests, secret baseline scan, govulncheck, SBOM, and release signing workflow. | Full SAST/SCA plus container/IaC scans after tool choices. |
 
 ## Review Triggers

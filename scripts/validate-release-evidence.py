@@ -25,6 +25,7 @@ REQUIRED_DOC_TEXT = [
     "## Intermediate Issuer Rollover Evidence Runner",
     "## PostgreSQL Recovery Evidence Runner",
     "## Multi-Node Reliability Evidence Runner",
+    "## PostgreSQL Multi-Node Failover Evidence Runner",
     "## Supported-Go Evidence Runner",
     "## Required Evidence Per Release Candidate",
     "verify-go-release.py",
@@ -41,6 +42,8 @@ REQUIRED_DOC_TEXT = [
     "anopki-postgres-recovery-verification.tar.gz",
     "python scripts/verify-multi-node-reliability.py",
     "anopki-multi-node-verification.tar.gz",
+    "python scripts/verify-postgres-multi-node-failover.py",
+    "anopki-postgres-multi-node-failover-verification.tar.gz",
     "syft",
     "cosign",
     "govulncheck",
@@ -113,6 +116,11 @@ REQUIRED_CI_TEXT = [
     "python scripts/verify-multi-node-reliability.py",
     "anopki-multi-node-verification",
     "multi-node-reliability-drill:",
+    "python scripts/test_verify_postgres_multi_node_failover.py",
+    "python scripts/verify-postgres-multi-node-failover.py",
+    "anopki-postgres-multi-node-failover-verification",
+    "postgres-multi-node-failover-drill:",
+    "ANOPKI_POSTGRES_FAILOVER_DSN",
     "image: postgres:16",
     "postgresql-client",
     "python scripts/test_validate_release_artifacts.py",
@@ -302,6 +310,22 @@ REQUIRED_MULTI_NODE_RUNNER_TEXT = [
     "sensitive-evidence-exclusion",
 ]
 
+REQUIRED_POSTGRES_MULTI_NODE_FAILOVER_RUNNER_TEXT = [
+    "MINIMUM_GO_VERSION = (1, 25, 11)",
+    "community_postgres_multi_node_failover_drill",
+    'DSN_ENV = "ANOPKI_POSTGRES_FAILOVER_DSN"',
+    "TestPostgresMultiNodeIssuanceFailoverIntegration",
+    "TestPostgresMultiNodeCRLFailoverIntegration",
+    "TestPostgresMultiNodeOutboxTrafficShiftIntegration",
+    "issuance-expired-lease-takeover",
+    "crl-stale-completion-cas-rejected",
+    "outbox-expired-lease-traffic-shift",
+    "postgres-multi-node-failover-verification.json",
+    "postgres-multi-node-failover-verification.md",
+    "postgres-multi-node-failover-test.log",
+    "sensitive-evidence-exclusion",
+]
+
 REQUIRED_RELEASE_TEXT = [
     "workflow_dispatch:",
     "tags:",
@@ -329,6 +353,9 @@ REQUIRED_RELEASE_TEXT = [
     "anopki-postgres-recovery-verification.tar.gz",
     "python scripts/verify-multi-node-reliability.py",
     "anopki-multi-node-verification.tar.gz",
+    "python scripts/verify-postgres-multi-node-failover.py",
+    "anopki-postgres-multi-node-failover-verification.tar.gz",
+    "ANOPKI_POSTGRES_FAILOVER_DSN",
     '--commit "${GITHUB_SHA}"',
     'VERSION="$(cat VERSION)"',
     "go build -ldflags",
@@ -439,6 +466,7 @@ def main() -> None:
     require_text(root / "scripts/verify-issuer-rollover-drill.py", REQUIRED_ISSUER_ROLLOVER_RUNNER_TEXT)
     require_text(root / "scripts/verify-postgres-recovery-drill.py", REQUIRED_POSTGRES_RECOVERY_RUNNER_TEXT)
     require_text(root / "scripts/verify-multi-node-reliability.py", REQUIRED_MULTI_NODE_RUNNER_TEXT)
+    require_text(root / "scripts/verify-postgres-multi-node-failover.py", REQUIRED_POSTGRES_MULTI_NODE_FAILOVER_RUNNER_TEXT)
     require_text(root / ".github/workflows/ci.yml", REQUIRED_CI_TEXT)
     require_text(root / ".github/workflows/release.yml", REQUIRED_RELEASE_TEXT)
     print("release evidence ok")

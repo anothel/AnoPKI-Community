@@ -35,6 +35,7 @@ Pre-1.0 releases distribute archives, not installers or container images:
 - `anopki-authorization-boundary-verification.tar.gz` containing exact authentication/scope ordering, timeout, redaction, Audit correlation and focused race evidence,
 - `anopki-postgres-recovery-verification.tar.gz` containing PostgreSQL 16 backup/restore and migration-rollback evidence,
 - `anopki-multi-node-verification.tar.gz` containing issuance, CRL and Outbox single-writer evidence,
+- `anopki-postgres-multi-node-failover-verification.tar.gz` containing PostgreSQL lease-expiry takeover, stale-node CAS rejection and traffic-shift evidence,
 - `anopki-backend-info.json` from the built Core artifact,
 - `anopki-release-metadata.json` binding version/commit, product profile,
   backend evidence, and Community KeyProvider policy,
@@ -186,9 +187,23 @@ not steal an active delivery lease. It also pins compare-and-swap rejection for
 stale claims, exact-once handler execution in the tested lease window, no
 automatic provider/backend fallback, and sensitive-evidence exclusion. Evidence
 is packaged as `anopki-multi-node-verification.tar.gz` and must match the exact
-Community release commit. This is deterministic contract evidence; real
-PostgreSQL multi-node failover and traffic-shift drills remain separate pending
-evidence.
+Community release commit. This remains the fast in-memory contract guard.
+
+## PostgreSQL Multi-Node Failover Evidence Runner
+
+`scripts/verify-postgres-multi-node-failover.py` opens two independent PostgreSQL
+connections to one current-schema database and executes focused lifecycle
+integration tests. It proves that active issuance, CRL and Outbox leases cannot be
+stolen; expired leases can be taken over by another node; stale-node completion is
+rejected by compare-and-swap; issuance finalization is reused without re-signing;
+CRL numbering remains contiguous; and an expired Outbox lease traffic-shifts to one
+handler with one durable job attempt. Evidence is strict JSON, Markdown and one
+redacted log packaged as `anopki-postgres-multi-node-failover-verification.tar.gz`.
+The runner requires an exact commit, Go 1.25.11 or newer and
+`ANOPKI_POSTGRES_FAILOVER_DSN`; release validation rejects missing, failed or skipped
+tests, unknown fields, extra archive members, commit mismatch, DSNs, credentials,
+raw key references and private-key material. Managed-primary failover, network
+partition and load-balancer behavior remain deployment-target evidence.
 
 ## Supported-Go Evidence Runner
 
@@ -338,6 +353,8 @@ evidence still needs release workflow artifacts containing archives,
 - `python scripts/verify-postgres-recovery-drill.py --out-dir .tmp\postgres-recovery-evidence\verify-local`
 - `python scripts/test_verify_multi_node_reliability.py`
 - `python scripts/verify-multi-node-reliability.py --out-dir .tmp\multi-node-evidence\verify-local`
+- `python scripts/test_verify_postgres_multi_node_failover.py`
+- `python scripts/verify-postgres-multi-node-failover.py --out-dir .tmp\postgres-multi-node-failover-evidence\verify-local`
 - `python scripts/test_validate_release_artifacts.py`
 - `python scripts/test_validate_service_contracts.py`
 - `python scripts/validate-service-contracts.py`
@@ -366,6 +383,7 @@ evidence still needs release workflow artifacts containing archives,
 - `./build-fuzz/anopki_core_ocsp_fuzz -runs=1`
 - `./build-fuzz/anopki_core_crl_fuzz -runs=1`
 - release workflow artifact `anopki-go-verification.tar.gz` with passing baseline evidence
+- release workflow artifact `anopki-postgres-multi-node-failover-verification.tar.gz` with passing issuance, CRL and Outbox PostgreSQL failover evidence
 - release workflow artifact `anopki-audit-integrity-verification.tar.gz` with passing Memory, SQLite, PostgreSQL and API integrity evidence
 - release workflow artifact `anopki-authorization-boundary-verification.tar.gz` with passing authentication, scope, timeout, redaction, Audit correlation and race evidence
 - release workflow artifact containing SBOM output from `syft`

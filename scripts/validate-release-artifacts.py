@@ -25,6 +25,7 @@ AUTHORIZATION_BOUNDARY_EVIDENCE_NAME = "anopki-authorization-boundary-verificati
 ISSUER_ROLLOVER_EVIDENCE_NAME = "anopki-issuer-rollover-verification.tar.gz"
 POSTGRES_RECOVERY_EVIDENCE_NAME = "anopki-postgres-recovery-verification.tar.gz"
 MULTI_NODE_EVIDENCE_NAME = "anopki-multi-node-verification.tar.gz"
+POSTGRES_MULTI_NODE_FAILOVER_EVIDENCE_NAME = "anopki-postgres-multi-node-failover-verification.tar.gz"
 
 
 def fail(message: str) -> None:
@@ -1319,6 +1320,162 @@ def require_multi_node_evidence_archive(dist: Path) -> tuple[Path, dict[str, obj
     return path, evidence
 
 
+
+def require_postgres_multi_node_failover_evidence_archive(dist: Path) -> tuple[Path, dict[str, object]]:
+    path = dist / POSTGRES_MULTI_NODE_FAILOVER_EVIDENCE_NAME
+    if not path.is_file():
+        fail(f"missing PostgreSQL multi-node failover verification evidence archive: {path}")
+    if path.stat().st_size > 5 * 1024 * 1024:
+        fail(f"PostgreSQL multi-node failover evidence archive is unexpectedly large: {path.name}")
+    expected_files = {
+        "postgres-multi-node-failover-verification.json",
+        "postgres-multi-node-failover-verification.md",
+        "postgres-multi-node-failover-test.log",
+    }
+    try:
+        with tarfile.open(path, "r:gz") as archive:
+            files: dict[str, tarfile.TarInfo] = {}
+            contents: dict[str, str] = {}
+            for member in archive.getmembers():
+                normalized = member.name.removeprefix("./")
+                posix = PurePosixPath(normalized)
+                if not normalized or posix.is_absolute() or ".." in posix.parts:
+                    fail(f"{path.name} contains unsafe archive member: {member.name}")
+                if not member.isfile():
+                    fail(f"{path.name} contains non-regular member: {member.name}")
+                if normalized in files:
+                    fail(f"{path.name} contains duplicate member: {normalized}")
+                files[normalized] = member
+            missing = sorted(expected_files - set(files))
+            extra = sorted(set(files) - expected_files)
+            if missing:
+                fail(f"{path.name} missing PostgreSQL multi-node failover evidence members:\n" + "\n".join(missing))
+            if extra:
+                fail(f"{path.name} has unexpected PostgreSQL multi-node failover evidence members:\n" + "\n".join(extra))
+            for name, member in files.items():
+                if member.size > 1024 * 1024:
+                    fail(f"PostgreSQL multi-node failover evidence member is unexpectedly large: {name}")
+                extracted = archive.extractfile(member)
+                if extracted is None:
+                    fail(f"{path.name} cannot read {name}")
+                try:
+                    contents[name] = extracted.read().decode("utf-8")
+                except UnicodeDecodeError as exc:
+                    fail(f"invalid PostgreSQL multi-node failover evidence text: {exc}")
+            try:
+                evidence = json.loads(contents["postgres-multi-node-failover-verification.json"])
+            except json.JSONDecodeError as exc:
+                fail(f"invalid PostgreSQL multi-node failover verification evidence: {exc}")
+    except tarfile.TarError as exc:
+        fail(f"invalid PostgreSQL multi-node failover evidence archive {path}: {exc}")
+
+    if not isinstance(evidence, dict):
+        fail("PostgreSQL multi-node failover evidence must be a JSON object")
+    expected_fields = {
+        "schema_version", "evidence_type", "product", "edition", "product_profile",
+        "commit", "minimum_go_version", "postgres_required", "started_at",
+        "completed_at", "result", "go_version", "test_command", "tests", "checks",
+        "redaction", "blocker",
+    }
+    missing_fields = sorted(expected_fields - set(evidence))
+    extra_fields = sorted(set(evidence) - expected_fields)
+    if missing_fields:
+        fail("PostgreSQL multi-node failover evidence missing fields:\n" + "\n".join(missing_fields))
+    if extra_fields:
+        fail("PostgreSQL multi-node failover evidence has unknown fields:\n" + "\n".join(extra_fields))
+    if evidence["schema_version"] != 1 or evidence["evidence_type"] != "community_postgres_multi_node_failover_drill":
+        fail("PostgreSQL multi-node failover evidence identity is invalid")
+    if evidence["product"] != "AnoPKI" or evidence["edition"] != "community" or evidence["product_profile"] != "community-openssl":
+        fail("PostgreSQL multi-node failover evidence profile is invalid")
+    if evidence["result"] != "passed" or evidence["blocker"] != "" or evidence["postgres_required"] is not True:
+        fail("PostgreSQL multi-node failover drill did not pass")
+    if evidence["minimum_go_version"] != "1.25.11":
+        fail("PostgreSQL multi-node failover minimum Go version is invalid")
+    if not isinstance(evidence["commit"], str) or not re.fullmatch(r"[0-9a-f]{40}", evidence["commit"]):
+        fail("PostgreSQL multi-node failover commit is invalid")
+    if not isinstance(evidence["go_version"], str) or "go version go" not in evidence["go_version"]:
+        fail("PostgreSQL multi-node failover Go identity is invalid")
+    if parse_go_version(evidence["go_version"]) < (1, 25, 11):
+        fail("PostgreSQL multi-node failover used an unsupported Go toolchain")
+
+    expected_tests = [
+        ("github.com/anothel/anopki/service/internal/lifecycle", "TestPostgresMultiNodeIssuanceFailoverIntegration"),
+        ("github.com/anothel/anopki/service/internal/lifecycle", "TestPostgresMultiNodeCRLFailoverIntegration"),
+        ("github.com/anothel/anopki/service/internal/lifecycle", "TestPostgresMultiNodeOutboxTrafficShiftIntegration"),
+    ]
+    tests = evidence["tests"]
+    if not isinstance(tests, list) or len(tests) != len(expected_tests):
+        fail("PostgreSQL multi-node failover test set is invalid")
+    observed_tests: list[tuple[str, str]] = []
+    for test in tests:
+        if not isinstance(test, dict) or set(test) != {"package", "name", "status"}:
+            fail("PostgreSQL multi-node failover test fields are invalid")
+        observed_tests.append((str(test["package"]), str(test["name"])))
+        if test["status"] != "pass":
+            fail("PostgreSQL multi-node failover contains a failed or skipped test")
+    if observed_tests != expected_tests:
+        fail("PostgreSQL multi-node failover test order is invalid")
+
+    expected_checks = [
+        "independent-postgres-node-connections",
+        "issuance-active-lease-not-stolen",
+        "issuance-expired-lease-takeover",
+        "issuance-stale-writer-cas-rejected",
+        "issuance-finalization-idempotent-without-resign",
+        "crl-active-lease-not-stolen",
+        "crl-expired-lease-takeover",
+        "crl-stale-completion-cas-rejected",
+        "crl-numbering-contiguous-after-failover",
+        "outbox-active-lease-not-stolen",
+        "outbox-expired-lease-traffic-shift",
+        "outbox-stale-completion-cas-rejected",
+        "outbox-exactly-once-handler-and-attempt",
+        "sensitive-evidence-exclusion",
+    ]
+    checks = evidence["checks"]
+    if not isinstance(checks, list) or len(checks) != len(expected_checks):
+        fail("PostgreSQL multi-node failover check set is invalid")
+    names: list[str] = []
+    for check in checks:
+        if not isinstance(check, dict) or set(check) != {"name", "status"}:
+            fail("PostgreSQL multi-node failover check fields are invalid")
+        names.append(str(check["name"]))
+        if check["status"] != "passed":
+            fail("PostgreSQL multi-node failover contains a failed check")
+    if names != expected_checks:
+        fail("PostgreSQL multi-node failover check order is invalid")
+
+    command = evidence["test_command"]
+    if not isinstance(command, list) or not all(isinstance(item, str) for item in command):
+        fail("PostgreSQL multi-node failover test command is invalid")
+    command_text = " ".join(command)
+    for required in (
+        "test -json", "./internal/lifecycle",
+        "TestPostgresMultiNodeIssuanceFailoverIntegration",
+        "TestPostgresMultiNodeCRLFailoverIntegration",
+        "TestPostgresMultiNodeOutboxTrafficShiftIntegration",
+    ):
+        if required not in command_text:
+            fail(f"PostgreSQL multi-node failover command drift: missing {required}")
+
+    expected_redaction = {
+        "postgres_dsn_found": False,
+        "database_credentials_found": False,
+        "raw_key_references_found": False,
+        "private_key_markers_found": False,
+    }
+    if evidence["redaction"] != expected_redaction:
+        fail("PostgreSQL multi-node failover redaction evidence is invalid")
+    combined = "\n".join(contents.values()).lower()
+    for forbidden in (
+        "postgres://", "postgresql://", "password=", "pgpassword",
+        "file:local-dev-only", '"key_ref"', '"private_key"', '"credential"',
+        "-----begin private key-----", "-----begin encrypted private key-----",
+    ):
+        if forbidden in combined:
+            fail(f"PostgreSQL multi-node failover evidence contains forbidden sensitive content: {forbidden}")
+    return path, evidence
+
 def require_postgres_recovery_evidence_archive(dist: Path) -> tuple[Path, dict[str, object]]:
     path = dist / POSTGRES_RECOVERY_EVIDENCE_NAME
     if not path.is_file():
@@ -1706,6 +1863,7 @@ def main() -> None:
     issuer_rollover_evidence, issuer_rollover_evidence_value = require_issuer_rollover_evidence_archive(dist)
     postgres_recovery_evidence, postgres_recovery_evidence_value = require_postgres_recovery_evidence_archive(dist)
     multi_node_evidence, multi_node_evidence_value = require_multi_node_evidence_archive(dist)
+    postgres_multi_node_failover_evidence, postgres_multi_node_failover_evidence_value = require_postgres_multi_node_failover_evidence_archive(dist)
     backend = read_json_object(backend_path, "backend info")
     validate_backend_info(backend)
     metadata = read_json_object(metadata_path, "release metadata")
@@ -1728,9 +1886,11 @@ def main() -> None:
         fail("PostgreSQL recovery verification commit does not match release metadata")
     if multi_node_evidence_value["commit"] != metadata["commit"]:
         fail("multi-node verification commit does not match release metadata")
+    if postgres_multi_node_failover_evidence_value["commit"] != metadata["commit"]:
+        fail("PostgreSQL multi-node failover verification commit does not match release metadata")
 
     checksums = read_checksums(dist / "SHA256SUMS")
-    artifacts = (service, core, go_evidence, recovery_evidence, status_outage_evidence, audit_replay_evidence, audit_integrity_evidence, authorization_boundary_evidence, issuer_rollover_evidence, postgres_recovery_evidence, multi_node_evidence, backend_path, metadata_path)
+    artifacts = (service, core, go_evidence, recovery_evidence, status_outage_evidence, audit_replay_evidence, audit_integrity_evidence, authorization_boundary_evidence, issuer_rollover_evidence, postgres_recovery_evidence, multi_node_evidence, postgres_multi_node_failover_evidence, backend_path, metadata_path)
     expected_names = {artifact.name for artifact in artifacts}
     extra_names = sorted(set(checksums) - expected_names)
     missing_names = sorted(expected_names - set(checksums))

@@ -9,6 +9,7 @@ commands and known gaps before tagging.
 
 ### Added
 
+- Exact-commit PostgreSQL multi-node failover and traffic-shift evidence using independent database connections for issuance, CRL and Outbox lease takeover, stale-node CAS rejection, contiguous CRL numbering, idempotent issuance finalization and exactly-once Outbox completion.
 - Exact-commit generic authorization boundary evidence covering authentication/scope ordering, public-route exclusion, bounded timeout, fail-closed outcomes, canonical-route redaction, decision Audit correlation, focused race execution and strict release artifact validation.
 - Generic authorization decision audit correlation for successful and failed protected requests, with bounded decision/reason/revision references, stable evaluator status, fail-closed timeout/error evidence, and no default Community claim when no authorizer is configured.
 - A tamper-evident `sha256-v1` Audit chain with monotonic sequence, legacy migration backfill, Memory/SQLite/PostgreSQL verification, fail-closed append and retention, prune checkpoints, integrity API, and recovery-state evidence.

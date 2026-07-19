@@ -167,6 +167,13 @@ python scripts\test_verify_multi_node_reliability.py
 python scripts\verify-multi-node-reliability.py --out-dir .tmp\multi-node-evidence\verify-local
 # requires Go 1.25.11+ and proves single-writer issuance, CRL and Outbox lease semantics
 
+python scripts\test_verify_postgres_multi_node_failover.py
+# PostgreSQL multi-node failover drill tests passed: 8
+
+$env:ANOPKI_POSTGRES_FAILOVER_DSN = "postgres://anopki:anopki@localhost:5432/anopki_test?sslmode=disable"
+python scripts\verify-postgres-multi-node-failover.py --out-dir .tmp\postgres-multi-node-failover-evidence\verify-local
+# requires Go 1.25.11+ and PostgreSQL; proves lease-expiry takeover, stale-writer rejection and traffic shift
+
 python scripts\test_verify_postgres_recovery_drill.py
 # PostgreSQL recovery drill tests passed: 5
 

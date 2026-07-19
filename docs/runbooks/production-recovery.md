@@ -107,6 +107,8 @@ failures map correctly, CRL numbering resumes without a skipped publication and
 recovered operations return through the normal signing-evidence contract. The audit/replay drill separately proves idempotent issuance-audit reconstruction, scoped dead-letter selection, preserved job/webhook history, and successful completion only after receiver recovery. The issuer-rollover drill proves an atomic same-root intermediate transition, overlap operation for old certificates and CRLs, stale-retry rejection, and explicit rollback without duplicate audit or outbox events.
 
 These drills cover deterministic SQLite and PostgreSQL 16 backup/restore,
-transactional migration rollback, intermediate rollover, and single-node
-CRL/OCSP signer-outage semantics. Multi-node traffic and real key-provider
-recovery remain separate operational evidence.
+transactional migration rollback, intermediate rollover, single-node CRL/OCSP
+signer-outage semantics, and shared-PostgreSQL lease-expiry takeover with stale-node
+rejection for issuance, CRL and Outbox. Infrastructure-level primary failover,
+network-partition traffic and real key-provider recovery remain separate operational
+evidence.

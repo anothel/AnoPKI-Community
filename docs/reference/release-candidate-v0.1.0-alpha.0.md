@@ -120,7 +120,7 @@ toolchain evidence.
   archives, `SHA256SUMS`, SBOM, and explicit signing-skip evidence remain
   pending; tagging and publishing are outside this milestone.
 - No HSM/KMS/PKCS#11 production provider or non-exportable signing path exists.
-- Audit tamper-evidence storage and SIEM exporter integration remain incomplete.
+- Audit hash-chain storage and exact-commit integrity evidence are implemented; independent anchoring and SIEM exporter integration remain incomplete.
 - Backend parity currently uses semantic comparisons; no deterministic exact-DER
   case is active.
 - AnoCrypto remains intended future work only.

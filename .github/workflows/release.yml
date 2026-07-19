@@ -117,6 +117,15 @@ jobs:
       - name: Package multi-node reliability evidence
         run: |
           tar -czf dist/anopki-multi-node-verification.tar.gz -C .tmp/release-multi-node-evidence multi-node-verification.json multi-node-verification.md multi-node-test.log
+      - name: Run PostgreSQL multi-node failover verification
+        run: |
+          python scripts/test_verify_postgres_multi_node_failover.py
+          python scripts/verify-postgres-multi-node-failover.py --out-dir .tmp/release-postgres-multi-node-failover-evidence --commit "${GITHUB_SHA}"
+        env:
+          ANOPKI_POSTGRES_FAILOVER_DSN: postgres://anopki:anopki@localhost:5432/anopki_recovery_control?sslmode=disable
+      - name: Package PostgreSQL multi-node failover evidence
+        run: |
+          tar -czf dist/anopki-postgres-multi-node-failover-verification.tar.gz -C .tmp/release-postgres-multi-node-failover-evidence postgres-multi-node-failover-verification.json postgres-multi-node-failover-verification.md postgres-multi-node-failover-test.log
       - name: Read release version
         run: |
           VERSION="$(cat VERSION)"

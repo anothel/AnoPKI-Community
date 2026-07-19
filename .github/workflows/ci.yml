@@ -269,6 +269,48 @@ jobs:
           path: .tmp/multi-node-evidence/ci/
           if-no-files-found: error
 
+  postgres-multi-node-failover-drill:
+    name: PostgreSQL multi-node failover drill
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_DB: anopki_failover
+          POSTGRES_USER: anopki
+          POSTGRES_PASSWORD: anopki
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U anopki -d anopki_failover"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.25.12"
+          cache-dependency-path: |
+            service/go.mod
+            service/go.sum
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.x"
+      - run: python scripts/test_verify_postgres_multi_node_failover.py
+      - name: Run PostgreSQL multi-node failover drill
+        run: >-
+          python scripts/verify-postgres-multi-node-failover.py
+          --out-dir .tmp/postgres-multi-node-failover-evidence/ci
+          --commit "${GITHUB_SHA}"
+        env:
+          ANOPKI_POSTGRES_FAILOVER_DSN: postgres://anopki:anopki@localhost:5432/anopki_failover?sslmode=disable
+      - uses: actions/upload-artifact@v4
+        with:
+          name: anopki-postgres-multi-node-failover-verification
+          path: .tmp/postgres-multi-node-failover-evidence/ci/
+          if-no-files-found: error
+
   secret-baseline:
     name: Secret baseline scan
     runs-on: ubuntu-latest
