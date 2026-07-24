@@ -20,7 +20,7 @@ MODULE = importlib.util.module_from_spec(SPEC)
 SPEC.loader.exec_module(MODULE)
 
 
-def fake_go(root: Path, *, version: str = "go1.25.12", fail: str = "", omit: str = "", race_fail: bool = False, sensitive: str = "") -> Path:
+def fake_go(root: Path, *, version: str = "go1.25.12", fail: str = "", omit: str = "", race_fail: bool = False, sensitive: str = "") -> list[str]:
     root.mkdir(parents=True, exist_ok=True)
     script = root / "fake-go.py"
     payload = {
@@ -50,47 +50,42 @@ def fake_go(root: Path, *, version: str = "go1.25.12", fail: str = "", omit: str
         "raise SystemExit(code)\n",
         encoding="utf-8",
     )
-    script.chmod(0o755)
-    if os.name == "nt":
-        launcher = root / "fake-go.cmd"
-        launcher.write_text(f'@"{os.sys.executable}" "%~dp0fake-go.py" %*\n', encoding="utf-8")
-        return launcher
-    return script
+    return [os.sys.executable, str(script)]
 
 
 def main() -> None:
     with tempfile.TemporaryDirectory() as dirname:
         root = Path(dirname)
-        evidence = MODULE.run_drill(ROOT, root / "out", str(fake_go(root / "go")), "a" * 40)
+        evidence = MODULE.run_drill(ROOT, root / "out", fake_go(root / "go"), "a" * 40)
         assert evidence["result"] == "passed"
         assert len(evidence["tests"]) == len(MODULE.TESTS) * 2
         assert all(check["status"] == "passed" for check in evidence["checks"])
 
     with tempfile.TemporaryDirectory() as dirname:
         root = Path(dirname)
-        evidence = MODULE.run_drill(ROOT, root / "out", str(fake_go(root / "go", version="go1.23.2")), "b" * 40)
+        evidence = MODULE.run_drill(ROOT, root / "out", fake_go(root / "go", version="go1.23.2"), "b" * 40)
         assert evidence["result"] == "failed"
         assert not evidence["tests"]
 
     with tempfile.TemporaryDirectory() as dirname:
         root = Path(dirname)
-        evidence = MODULE.run_drill(ROOT, root / "out", str(fake_go(root / "go", fail=MODULE.TESTS[0])), "c" * 40)
+        evidence = MODULE.run_drill(ROOT, root / "out", fake_go(root / "go", fail=MODULE.TESTS[0]), "c" * 40)
         assert evidence["result"] == "failed"
 
     with tempfile.TemporaryDirectory() as dirname:
         root = Path(dirname)
-        evidence = MODULE.run_drill(ROOT, root / "out", str(fake_go(root / "go", omit=MODULE.TESTS[1])), "d" * 40)
+        evidence = MODULE.run_drill(ROOT, root / "out", fake_go(root / "go", omit=MODULE.TESTS[1]), "d" * 40)
         assert evidence["result"] == "failed"
 
     with tempfile.TemporaryDirectory() as dirname:
         root = Path(dirname)
-        evidence = MODULE.run_drill(ROOT, root / "out", str(fake_go(root / "go", race_fail=True)), "e" * 40)
+        evidence = MODULE.run_drill(ROOT, root / "out", fake_go(root / "go", race_fail=True), "e" * 40)
         assert evidence["result"] == "failed"
         assert evidence["checks"][-2]["status"] == "failed"
 
     with tempfile.TemporaryDirectory() as dirname:
         root = Path(dirname)
-        evidence = MODULE.run_drill(ROOT, root / "out", str(fake_go(root / "go", sensitive="raw-token-secret")), "f" * 40)
+        evidence = MODULE.run_drill(ROOT, root / "out", fake_go(root / "go", sensitive="raw-token-secret"), "f" * 40)
         assert evidence["result"] == "failed"
         assert evidence["redaction"]["request_payload_values_found"] is True
 

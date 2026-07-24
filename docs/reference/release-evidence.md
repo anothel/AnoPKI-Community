@@ -1,9 +1,14 @@
 # Release Evidence
 
-This file records release artifact, supply-chain, and compatibility decisions.
-Release candidates attach evidence here by command output or CI run URL.
+This file preserves historical release artifact, supply-chain, and
+compatibility decisions. It is inactive conditional reference material, not an
+active release plan. Reuse requires a new product decision.
 
-Current draft: [v0.1.0-alpha.0 candidate evidence](release-candidate-v0.1.0-alpha.0.md).
+Closeout record:
+[v0.1.0-alpha.0 closeout evidence](release-candidate-v0.1.0-alpha.0.md).
+
+Current state: `PUBLIC_RELEASE=NOT_PUBLISHED`,
+`ACTIVE_NEXT_WORK=NONE`, `FUTURE_WORK=DEFERRED_NOT_SELECTED`.
 
 ## Tool Decisions
 
@@ -326,6 +331,10 @@ evidence still needs release workflow artifacts containing archives,
 `SHA256SUMS`, CycloneDX SBOM, cosign signatures, and cosign certificates.
 
 ## Required Evidence Per Release Candidate
+
+This required heading and the commands below are retained only as a dormant,
+conditional checklist for a future release candidate. They do not authorize a
+tag, release, dry-run, publication, or new engineering work.
 
 - `python scripts/validate-docs.py`
 - `python scripts/test_validate_docs.py`

@@ -8,7 +8,7 @@ This index is the public entry point for repository documentation. Keep it short
 | --- | --- |
 | [Project scope](reference/project-scope.md) | You need to understand what AnoPKI is, what it is not, and where the current service boundaries are. |
 | [Project identity and license](reference/project-identity-and-license.md) | You need canonical naming, technical identifiers, or MPL-2.0 license wording. |
-| [Roadmap](ROADMAP.md) | You need future-only priorities and deferred work. |
+| [Roadmap](ROADMAP.md) | You need the frozen status, deferred work, or reopening rule. |
 | [Security policy](../SECURITY.md) | You need security status, reporting guidance, production expectations, or known constraints. |
 | [Contributing guide](../CONTRIBUTING.md) | You need local verification commands and contribution expectations. |
 | [Service README](../service/README.md) | You need service behavior, endpoints, configuration, auth, workers, or ACME details. |
@@ -80,9 +80,9 @@ This index is the public entry point for repository documentation. Keep it short
 
 | Document | Purpose |
 | --- | --- |
-| [Release readiness action plan](reference/release-readiness-action-plan.md) | Current grouped execution plan from repository analysis. |
-| [v0.1.0-alpha.0 candidate evidence](reference/release-candidate-v0.1.0-alpha.0.md) | Local draft checks, known gaps, and blockers; no publication status. |
-| [Release evidence](reference/release-evidence.md) | Release artifact and supply-chain evidence requirements. |
+| [Release readiness action plan](reference/release-readiness-action-plan.md) | Closed historical execution record; no active next work. |
+| [v0.1.0-alpha.0 closeout evidence](reference/release-candidate-v0.1.0-alpha.0.md) | Frozen baseline status, local validation, and explicit non-publication state. |
+| [Release evidence](reference/release-evidence.md) | Inactive conditional reference for a future, separately authorized release decision. |
 | [Observability](reference/observability.md) | Structured logs, expvar counters, request IDs, and remaining observability gaps. |
 | [Fuzzing](reference/fuzzing.md) | Parser fuzzing scope and local invocation. |
 | [Issuance consistency](reference/issuance-consistency.md) | Signing claim, retry, and audit repair behavior. |

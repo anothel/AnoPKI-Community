@@ -17,9 +17,9 @@ Current implementation includes:
 - Audit metadata, lifecycle outbox events, webhook notification endpoints, bounded retry, and dead-letter handling.
 - ACME-shaped protocol adapter with account, order, authorization, HTTP-01 challenge, finalize, and certificate download flows.
 
-See [docs/ROADMAP.md](docs/ROADMAP.md) for future work and
+See [docs/ROADMAP.md](docs/ROADMAP.md) for deferred, unselected work and
 [Release readiness action plan](docs/reference/release-readiness-action-plan.md)
-for the current execution order derived from the uploaded analysis reports.
+for the closed historical execution record.
 
 ## Repository Layout
 
@@ -298,7 +298,7 @@ Start with the [Documentation Index](docs/INDEX.md). It is the canonical map for
 Most-used docs:
 
 - [Service README](service/README.md): API behavior, configuration, ACME status, auth, workers, and operator endpoints.
-- [Roadmap](docs/ROADMAP.md): future-only priorities, defer/delete rules, and remaining risk areas.
+- [Roadmap](docs/ROADMAP.md): deferred, unselected work and the rule for reopening engineering.
 - [Security policy](SECURITY.md): reporting, supported status, production expectations, known constraints, and disclosure process.
 - [Contributing guide](CONTRIBUTING.md): prerequisites, local verification, roadmap rules, documentation expectations, and commit guidance.
 - [Project scope](docs/reference/project-scope.md): supported PKI domains, explicit non-goals, and current boundaries.
@@ -308,7 +308,9 @@ Most-used docs:
 - [Release evidence](docs/reference/release-evidence.md): artifact, SBOM, signing, scan, compatibility, and backend evidence baseline.
 - [Documentation governance](docs/reference/documentation-governance.md): what belongs in Git, what belongs in internal/GPT project sources, and how to retire stale docs.
 
-Current execution focus: close Community release evidence with a supported Go toolchain and the real repository, keep provider/golden/no-fallback validators stable, and continue ACME, recovery, audit-integrity, and release-reproducibility work. Public TLS issuance fails closed unless the configured lint hook accepts the CSR/profile before signing; external lint tool selection and fixtures remain future work.
+There is no active engineering or release execution plan. Existing validation,
+security, and release documents remain as historical evidence or conditional
+reference material; using them for new work requires a new product decision.
 
 ## License
 
@@ -316,4 +318,21 @@ Licensed under the Mozilla Public License, Version 2.0. See [LICENSE](LICENSE).
 
 ## Current Status
 
-This is a lifecycle-service implementation in progress. Core lifecycle, profile policy, status publication, auth, audit, notifications, security/contribution docs, CI workflow, and ACME adapter foundations exist. Live lego and certbot HTTP-01 smokes reach account, order, challenge validation, finalize, and certificate response against a harness-started local service. Current priority is release-candidate trust: API/doc/code parity, negative failure-mode tests, compatibility evidence, and release operations.
+```text
+PROJECT=AnoPKI-Community
+ENGINEERING_STATUS=CLOSED_AND_FROZEN
+VERSION=0.1.0-alpha.0
+ENGINEERING_BASELINE=5348a478ff1117482a8d168b655dad290367b188
+ENTERPRISE_CONSUMED_BASELINE=ab9d76597df93ac1ac8b7938f4d25ba64f59f8dc
+BASELINE_RELATION=ONE_COMMUNITY_ONLY_TEST_EVIDENCE_COMMIT_AHEAD
+PUBLIC_TAG=NONE
+PUBLIC_RELEASE=NOT_PUBLISHED
+PRODUCTION_READY=NO
+ACTIVE_NEXT_WORK=NONE
+FUTURE_WORK=DEFERRED_NOT_SELECTED
+REOPEN_REQUIRES_NEW_PRODUCT_DECISION
+FINAL_CLOSEOUT_COMMIT=RECORDED_IN_EXTERNAL_CLOSEOUT_EVIDENCE
+```
+
+This status freezes the engineering baseline without publishing a release,
+claiming production readiness, creating a tag, or selecting future work.

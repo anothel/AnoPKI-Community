@@ -37,7 +37,7 @@ def dsn(value: str):
             os.environ[MODULE.DSN_ENV] = previous
 
 
-def fake_go(root: Path, *, version: str = "go1.25.12", fail: str = "", omit: str = "", skip: str = "", sensitive: str = "") -> Path:
+def fake_go(root: Path, *, version: str = "go1.25.12", fail: str = "", omit: str = "", skip: str = "", sensitive: str = "") -> list[str]:
     root.mkdir(parents=True, exist_ok=True)
     script = root / "fake-go.py"
     payload = {
@@ -67,12 +67,7 @@ def fake_go(root: Path, *, version: str = "go1.25.12", fail: str = "", omit: str
         "raise SystemExit(code)\n",
         encoding="utf-8",
     )
-    script.chmod(0o755)
-    if os.name == "nt":
-        launcher = root / "fake-go.cmd"
-        launcher.write_text(f'@"{os.sys.executable}" "%~dp0fake-go.py" %*\n', encoding="utf-8")
-        return launcher
-    return script
+    return [os.sys.executable, str(script)]
 
 
 def main() -> None:
@@ -80,7 +75,7 @@ def main() -> None:
 
     with tempfile.TemporaryDirectory() as dirname, dsn(test_dsn):
         root = Path(dirname)
-        evidence = MODULE.run_drill(ROOT, root / "out", str(fake_go(root / "go")), "a" * 40)
+        evidence = MODULE.run_drill(ROOT, root / "out", fake_go(root / "go"), "a" * 40)
         assert evidence["result"] == "passed"
         assert len(evidence["tests"]) == len(MODULE.TESTS)
         assert all(check["status"] == "passed" for check in evidence["checks"])
@@ -90,33 +85,33 @@ def main() -> None:
 
     with tempfile.TemporaryDirectory() as dirname, dsn(""):
         root = Path(dirname)
-        evidence = MODULE.run_drill(ROOT, root / "out", str(fake_go(root / "go")), "b" * 40)
+        evidence = MODULE.run_drill(ROOT, root / "out", fake_go(root / "go"), "b" * 40)
         assert evidence["result"] == "failed"
         assert MODULE.DSN_ENV in evidence["blocker"]
 
     with tempfile.TemporaryDirectory() as dirname, dsn(test_dsn):
         root = Path(dirname)
-        evidence = MODULE.run_drill(ROOT, root / "out", str(fake_go(root / "go", version="go1.23.2")), "c" * 40)
+        evidence = MODULE.run_drill(ROOT, root / "out", fake_go(root / "go", version="go1.23.2"), "c" * 40)
         assert evidence["result"] == "failed"
 
     with tempfile.TemporaryDirectory() as dirname, dsn(test_dsn):
         root = Path(dirname)
-        evidence = MODULE.run_drill(ROOT, root / "out", str(fake_go(root / "go", fail=MODULE.TESTS[0])), "d" * 40)
+        evidence = MODULE.run_drill(ROOT, root / "out", fake_go(root / "go", fail=MODULE.TESTS[0]), "d" * 40)
         assert evidence["result"] == "failed"
 
     with tempfile.TemporaryDirectory() as dirname, dsn(test_dsn):
         root = Path(dirname)
-        evidence = MODULE.run_drill(ROOT, root / "out", str(fake_go(root / "go", omit=MODULE.TESTS[1])), "e" * 40)
+        evidence = MODULE.run_drill(ROOT, root / "out", fake_go(root / "go", omit=MODULE.TESTS[1]), "e" * 40)
         assert evidence["result"] == "failed"
 
     with tempfile.TemporaryDirectory() as dirname, dsn(test_dsn):
         root = Path(dirname)
-        evidence = MODULE.run_drill(ROOT, root / "out", str(fake_go(root / "go", skip=MODULE.TESTS[2])), "f" * 40)
+        evidence = MODULE.run_drill(ROOT, root / "out", fake_go(root / "go", skip=MODULE.TESTS[2]), "f" * 40)
         assert evidence["result"] == "failed"
 
     with tempfile.TemporaryDirectory() as dirname, dsn(test_dsn):
         root = Path(dirname)
-        evidence = MODULE.run_drill(ROOT, root / "out", str(fake_go(root / "go", sensitive="-----BEGIN " + "PRIVATE KEY-----")), "1" * 40)
+        evidence = MODULE.run_drill(ROOT, root / "out", fake_go(root / "go", sensitive="-----BEGIN " + "PRIVATE KEY-----"), "1" * 40)
         assert evidence["result"] == "failed"
         assert evidence["redaction"]["private_key_markers_found"] is True
 

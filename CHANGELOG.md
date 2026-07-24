@@ -2,10 +2,11 @@
 
 All notable changes to this project will be recorded here.
 
-This project is pre-1.0. Release candidates must record exact verification
-commands and known gaps before tagging.
+This project is pre-1.0, closed, and frozen. No public tag or release has been
+published. The entries below describe the frozen engineering baseline, not an
+active release candidate.
 
-## Unreleased (`v0.1.0-alpha.0` candidate)
+## Frozen engineering baseline (`0.1.0-alpha.0`, not published)
 
 ### Added
 
@@ -91,7 +92,7 @@ commands and known gaps before tagging.
 - Local ZIP baseline verification does not close Go service tests/builds when
   the host Go toolchain is older than the repository requirement and cannot
   download the requested toolchain.
-- Git working-tree status, GitHub Actions CI URLs, tagged release artifacts,
-  SBOM output, cosign signatures, and Go lint/security scanner evidence must be
-  recorded from the real repository before tagging a release candidate.
-- Full compatibility evidence, production non-exportable HSM/KMS provider, external Audit anchor/SIEM integration, EAB, and DNS-01 remain future work.
+- No tag, GitHub Release, package publication, or production-readiness claim
+  exists for this baseline.
+- HSM/KMS/PKCS#11, external Audit anchor/SIEM integration, EAB, DNS-01, PQC,
+  and infrastructure failover are `DEFERRED / NOT_SELECTED`.

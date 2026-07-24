@@ -6,7 +6,6 @@ from __future__ import annotations
 
 import importlib.util
 import json
-import stat
 import sys
 import tempfile
 from pathlib import Path
@@ -21,7 +20,7 @@ sys.modules[SPEC.name] = MODULE
 SPEC.loader.exec_module(MODULE)
 
 
-def fake_go(path: Path, *, version: str = "go1.25.12", failing_test: str = "", omitted_test: str = "") -> Path:
+def fake_go(path: Path, *, version: str = "go1.25.12", failing_test: str = "", omitted_test: str = "") -> list[str]:
     events = []
     for package, test in MODULE.EXPECTED_TESTS:
         if test == omitted_test:
@@ -36,32 +35,31 @@ def fake_go(path: Path, *, version: str = "go1.25.12", failing_test: str = "", o
         "raise SystemExit(2)\n",
         encoding="utf-8",
     )
-    path.chmod(path.stat().st_mode | stat.S_IXUSR)
-    return path
+    return [sys.executable, str(path)]
 
 
 def main() -> None:
     with tempfile.TemporaryDirectory() as dirname:
         root = Path(dirname)
-        evidence = MODULE.run_drill(ROOT, root / "out", str(fake_go(root / "go")), "a" * 40)
+        evidence = MODULE.run_drill(ROOT, root / "out", fake_go(root / "go"), "a" * 40)
         assert evidence["result"] == "passed"
         written = json.loads((root / "out" / "issuer-rollover-verification.json").read_text(encoding="utf-8"))
         assert len(written["checks"]) == 10
 
     with tempfile.TemporaryDirectory() as dirname:
         root = Path(dirname)
-        evidence = MODULE.run_drill(ROOT, root / "out", str(fake_go(root / "go", version="go1.23.2")), "b" * 40)
+        evidence = MODULE.run_drill(ROOT, root / "out", fake_go(root / "go", version="go1.23.2"), "b" * 40)
         assert evidence["result"] == "failed"
         assert not evidence["tests"]
 
     with tempfile.TemporaryDirectory() as dirname:
         root = Path(dirname)
-        evidence = MODULE.run_drill(ROOT, root / "out", str(fake_go(root / "go", failing_test=MODULE.EXPECTED_TESTS[0][1])), "c" * 40)
+        evidence = MODULE.run_drill(ROOT, root / "out", fake_go(root / "go", failing_test=MODULE.EXPECTED_TESTS[0][1]), "c" * 40)
         assert evidence["result"] == "failed"
 
     with tempfile.TemporaryDirectory() as dirname:
         root = Path(dirname)
-        evidence = MODULE.run_drill(ROOT, root / "out", str(fake_go(root / "go", omitted_test=MODULE.EXPECTED_TESTS[1][1])), "d" * 40)
+        evidence = MODULE.run_drill(ROOT, root / "out", fake_go(root / "go", omitted_test=MODULE.EXPECTED_TESTS[1][1]), "d" * 40)
         assert evidence["result"] == "failed"
 
     try:

@@ -6,7 +6,6 @@ from __future__ import annotations
 
 import importlib.util
 import json
-import stat
 import sys
 import tempfile
 from pathlib import Path
@@ -29,7 +28,7 @@ def fake_go(
     omitted_test: str = "",
     postgres_status: str = "pass",
     sensitive_output: str = "",
-) -> Path:
+) -> list[str]:
     baseline_events = []
     for package, test in MODULE.BASELINE_TESTS:
         if test == omitted_test:
@@ -63,14 +62,13 @@ def fake_go(
         "raise SystemExit(2)\n",
         encoding="utf-8",
     )
-    path.chmod(path.stat().st_mode | stat.S_IXUSR)
-    return path
+    return [sys.executable, str(path)]
 
 
 def main() -> None:
     with tempfile.TemporaryDirectory() as dirname:
         root = Path(dirname)
-        evidence = MODULE.run_drill(ROOT, root / "out", str(fake_go(root / "go")), "a" * 40)
+        evidence = MODULE.run_drill(ROOT, root / "out", fake_go(root / "go"), "a" * 40)
         assert evidence["result"] == "passed"
         assert evidence["checks"][-2]["status"] == "not_run"
         written = json.loads((root / "out" / "audit-integrity-verification.json").read_text(encoding="utf-8"))
@@ -84,7 +82,7 @@ def main() -> None:
             evidence = MODULE.run_drill(
                 ROOT,
                 root / "out",
-                str(fake_go(root / "go")),
+                fake_go(root / "go"),
                 "b" * 40,
                 require_postgres=True,
             )
@@ -106,7 +104,7 @@ def main() -> None:
         evidence = MODULE.run_drill(
             ROOT,
             root / "out",
-            str(fake_go(root / "go", version="go1.23.2")),
+            fake_go(root / "go", version="go1.23.2"),
             "c" * 40,
         )
         assert evidence["result"] == "failed"
@@ -117,7 +115,7 @@ def main() -> None:
         evidence = MODULE.run_drill(
             ROOT,
             root / "out",
-            str(fake_go(root / "go", failing_test=MODULE.BASELINE_TESTS[0][1])),
+            fake_go(root / "go", failing_test=MODULE.BASELINE_TESTS[0][1]),
             "d" * 40,
         )
         assert evidence["result"] == "failed"
@@ -127,7 +125,7 @@ def main() -> None:
         evidence = MODULE.run_drill(
             ROOT,
             root / "out",
-            str(fake_go(root / "go", omitted_test=MODULE.BASELINE_TESTS[1][1])),
+            fake_go(root / "go", omitted_test=MODULE.BASELINE_TESTS[1][1]),
             "e" * 40,
         )
         assert evidence["result"] == "failed"
@@ -140,7 +138,7 @@ def main() -> None:
             evidence = MODULE.run_drill(
                 ROOT,
                 root / "out",
-                str(fake_go(root / "go", postgres_status="fail")),
+                fake_go(root / "go", postgres_status="fail"),
                 "f" * 40,
                 require_postgres=True,
             )
@@ -156,7 +154,7 @@ def main() -> None:
         evidence = MODULE.run_drill(
             ROOT,
             root / "out",
-            str(fake_go(root / "go", sensitive_output="-----BEGIN " + "PRIVATE KEY-----")),
+            fake_go(root / "go", sensitive_output="-----BEGIN " + "PRIVATE KEY-----"),
             "1" * 40,
         )
         assert evidence["result"] == "failed"

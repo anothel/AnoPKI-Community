@@ -1,130 +1,54 @@
-# Release Candidate Evidence: v0.1.0-alpha.0
+# v0.1.0-alpha.0 Closeout Evidence
 
-Status: local evidence complete; external release evidence pending. Do not tag
-or publish from this document.
+This is a local engineering closeout record. It is not a release candidate,
+release authorization, compatibility guarantee, or production-readiness claim.
 
-Evidence date: 2026-07-11. Branch: `main`. Verified commit:
-`2be155780d4b024c76b0a901ec130e83fc221f2f`. The tracked worktree was clean
-before this evidence update.
+```text
+PROJECT=AnoPKI-Community
+ENGINEERING_STATUS=CLOSED_AND_FROZEN
+VERSION=0.1.0-alpha.0
+ENGINEERING_BASELINE=5348a478ff1117482a8d168b655dad290367b188
+ENTERPRISE_CONSUMED_BASELINE=ab9d76597df93ac1ac8b7938f4d25ba64f59f8dc
+BASELINE_RELATION=ONE_COMMUNITY_ONLY_TEST_EVIDENCE_COMMIT_AHEAD
+PUBLIC_TAG=NONE
+PUBLIC_RELEASE=NOT_PUBLISHED
+PRODUCTION_READY=NO
+ACTIVE_NEXT_WORK=NONE
+FUTURE_WORK=DEFERRED_NOT_SELECTED
+REOPEN_REQUIRES_NEW_PRODUCT_DECISION
+FINAL_CLOSEOUT_COMMIT=RECORDED_IN_EXTERNAL_CLOSEOUT_EVIDENCE
+```
 
-## Release Position
+## Local validation
 
-- Version source: `VERSION` = `0.1.0-alpha.0`; intended tag is
-  `v0.1.0-alpha.0`.
-- Maturity: pre-1.0 alpha, not production-stable.
-- Lifecycle and operator APIs: experimental/not-production-stable; public API
-  compatibility freeze is not complete.
-- Active crypto backend: OpenSSL-backed C++ core, OpenSSL 3.6.3 locally.
-- AnoCrypto: intended migration direction only; not active, implemented, or
-  production-ready in Community.
+The closeout working tree passed the executable local Go baseline, document and
+boundary validators, API/CLI compatibility validators, version and release
+evidence validators, release-artifact self-test, secret and KeyProvider checks,
+ACME harness self-test, and recovery, failover, authorization, outage, audit,
+and issuer-rollover self-tests.
 
-## Local Environment
+`scripts/verify-local.ps1` reached the authorization race phase after its
+preceding checks passed. That phase requires CGO and a C toolchain, which were
+not available on this host. The independently executable checks completed
+without a repository validation failure.
 
-| Tool | Observed value |
-| --- | --- |
-| OS | Microsoft Windows 11 Pro 10.0.26100, 64-bit |
-| Python | 3.14.6 |
-| Go | 1.26.4 windows/amd64 |
-| CMake | 4.4.0-rc1 |
-| C++ | MSVC 19.51.36246.0, Visual Studio 18 2026 generator |
-| OpenSSL | vcpkg `openssl:x64-windows` 3.6.3 |
+```text
+CPP_BUILD=NOT_RUN_ENVIRONMENT_UNAVAILABLE
+CTEST=NOT_RUN_ENVIRONMENT_UNAVAILABLE
+POSTGRES_FAILOVER_LIVE=NOT_RUN_ENVIRONMENT_UNAVAILABLE
+HOSTED_CI=NOT_RUN
+RELEASE_DRY_RUN=NOT_RUN
+```
 
-## Commands And Evidence
+No OpenSSL execution version is recorded for this closeout run because the C++
+build and CTest were not executable in the current environment. Historical
+OpenSSL observations elsewhere do not establish a newly supported range.
 
-Run from repository root unless a working directory is shown.
+## Deferred / not selected
 
-| Command | Result | Expected evidence |
-| --- | --- | --- |
-| `python scripts/validate-community-boundary.py` | Pass | `community boundary ok` |
-| `python scripts/test_validate_community_boundary.py` | Pass | `community boundary validator tests ok` |
-| `python scripts/validate-docs.py` | Pass | `docs ok` |
-| `python scripts/test_validate_docs.py` | Pass | `docs validator tests ok` |
-| `python scripts/validate-service-contracts.py` | Pass | `service contracts ok` |
-| `python scripts/test_validate_service_contracts.py` | Pass | `service contract validator tests ok` |
-| `python scripts/validate-core-cli-contracts.py` | Pass | `core CLI contracts ok` |
-| `python scripts/test_validate_core_cli_contracts.py` | Pass | `core CLI contract validator tests ok` |
-| `python scripts/security-baseline-scan.py` | Pass | `secret baseline scan ok` |
-| `python scripts/test_security_baseline_scan.py` | Pass | `security baseline scan tests ok` |
-| `python scripts/test_validate_version_metadata.py` | Pass | `version metadata tests ok` |
-| `python scripts/validate-version-metadata.py` | Pass | `version metadata ok` |
-| `python scripts/validate-release-evidence.py` | Pass | `release evidence ok` |
-| `python scripts/test_validate_release_evidence.py` | Pass | `release evidence validator tests ok` |
-| `powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\acme-smoke\test-run-certbot-smoke.ps1` | Pass | `run-certbot-smoke tests passed`; harness test only, not live client evidence. |
-| `python scripts/test_verify_local.py` | Pass | Runtime detection success and missing-DLL failure behavior validated. |
-| `powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\verify-local.ps1 -CheckOpenSSLRuntime -OpenSSLRootDir C:\vcpkg\installed\x64-windows` | Pass | Process-local runtime found at `C:\vcpkg\installed\x64-windows\bin`. |
-| `$env:GOCACHE = "$PWD\..\.tmp\alpha-evidence\gocache"; go test ./...` from `service` | Pass | All tested packages `ok`; `domain` and `observability` report no test files. |
-| `$env:GOCACHE = "$PWD\..\.tmp\alpha-evidence\gocache"; go vet ./...` from `service` | Pass | Exit 0, no findings. |
-| `$env:GOCACHE = "$PWD\..\.tmp\alpha-evidence\gocache"; go build -o ..\.tmp\alpha-evidence\anopki-service.exe ./cmd/anopki-service` from `service` | Pass | Service executable created. |
-| `cmake -S . -B .tmp\alpha-cmake -DOPENSSL_ROOT_DIR=C:\vcpkg\installed\x64-windows` | Pass | OpenSSL Crypto 3.6.3 found; configure and generate complete. |
-| `cmake --build .tmp\alpha-cmake --config Debug` | Pass | Core CLI and seven test executables built; `libcrypto-3-x64.dll` copied beside them. |
-| `ctest --test-dir .tmp\alpha-cmake -C Debug --output-on-failure` | Pass | 7/7 tests passed. |
-| `git diff --check` | Pass with line-ending warnings | No whitespace errors; Git reports expected LF-to-CRLF conversion warnings. |
-| `git status --short` before evidence changes | Pass | Clean tracked worktree at verified commit. |
+HSM/KMS/PKCS#11, DNS-01, External Account Binding, SIEM anchoring/export, PQC,
+and infrastructure-level failover are `DEFERRED / NOT_SELECTED`. They are not
+closeout defects or active work.
 
-## GitHub Actions Candidate Evidence
-
-These fields remain pending until the candidate commit completes the named
-workflow. A local pass does not populate GitHub Actions evidence.
-
-| Evidence | Status | Evidence pointer |
-| --- | --- | --- |
-| Candidate commit SHA | Pending - candidate commit required | Pending |
-| GitHub Actions run | Pending - `.github/workflows/ci.yml` run required | Pending run URL |
-| Docs and contracts | Pending - validator jobs must complete | Pending job URL |
-| Go test matrix | Pending - Go 1.25.12 and Go 1.26.5 runner lanes must complete | Pending job URLs |
-| Go race, static analysis, and security | Pending - `go-analysis` must complete | Pending job URL |
-| PostgreSQL | Pending - PostgreSQL 16 integration must complete | Pending job URL and recorded server version |
-| C++ build and CTest | Pending - `cpp-core` must complete | Pending job URL, compiler, CMake, and OpenSSL versions |
-| Parser fuzz smoke | Pending - bounded ASan/libFuzzer job must complete | Pending job URL |
-| ACME | Pending - harness self-test only; no live-client claim | Pending job URL |
-| Artifact dry-run | Pending - manual `release.yml` run required | Pending run URL |
-| CycloneDX SBOM | Pending - dry-run artifact must be inspected | Pending artifact name and digest |
-| Signing | Pending - expected to be explicitly skipped in manual dry-run | Pending `SIGNING-STATUS.txt` evidence |
-| Compatibility matrix | Pending - CI values and explicit client gaps required | Pending completed matrix |
-
-CI must record the stable runner CMake version actually used. Local CMake
-`4.4.0-rc1` is supporting evidence only and cannot be the sole candidate
-toolchain evidence.
-
-## Required Before Tagging
-
-- Commit reviewed candidate changes, then record clean `git status` and final
-  commit SHA.
-- Run candidate commit through `.github/workflows/ci.yml` and record run URL and
-  all job results.
-- Complete compatibility evidence for Ubuntu/Windows, PostgreSQL, lego, and
-  certbot where applicable.
-- Run or obtain CI evidence for race detector, `go vet`, `staticcheck`, `gosec`,
-  `govulncheck`, and parser fuzz/sanitizer smoke. Local `go vet` passed in this
-  evidence run.
-- Produce release workflow artifacts in a manual non-publishing dry-run and
-  record the service/core archives, `SHA256SUMS`, CycloneDX SBOM, archive
-  validation, and explicit signing-skip evidence. The source archive and
-  signing evidence remain tag-path requirements.
-- Review known gaps and obtain owner acceptance before creating any tag.
-
-## Known Gaps
-
-- Public lifecycle/operator API compatibility freeze is incomplete.
-- Public ACME remains experimental/smoke-only; EAB and DNS-01 are not present.
-- PostgreSQL integration and live lego/certbot compatibility were not rerun for
-  this local draft.
-- `go test -race ./...` was not run locally because the supported Windows path
-  requires a C toolchain/CGO or WSL; candidate CI/WSL evidence remains required.
-- Parser fuzz/sanitizer smoke was not run because it requires a separate
-  Clang/libFuzzer/AddressSanitizer build; use the CI fuzz job.
-- `staticcheck`, `gosec`, and `govulncheck` were not rerun locally because they
-  require separately acquired tools; candidate CI remains the evidence source.
-- The Community Go evidence runner was exercised in the sandbox and correctly failed closed on host Go 1.23.2 because the maintained minimum is Go 1.25.11; this is environment-blocker evidence, not supported-Go execution evidence.
-- The candidate artifact dry-run has not executed in GitHub Actions. Release
-  archives, `SHA256SUMS`, SBOM, and explicit signing-skip evidence remain
-  pending; tagging and publishing are outside this milestone.
-- No HSM/KMS/PKCS#11 production provider or non-exportable signing path exists.
-- Audit hash-chain storage and exact-commit integrity evidence are implemented; independent anchoring and SIEM exporter integration remain incomplete.
-- Backend parity currently uses semantic comparisons; no deterministic exact-DER
-  case is active.
-- AnoCrypto remains intended future work only.
-
-Release readiness decision: local alpha evidence milestone is complete. The
-candidate is not ready to tag or publish until external/CI and artifact evidence
-above is closed or explicitly accepted as a release blocker exception.
+No tag, release, package, repository archive setting, ZIP, or CURRENT ONLY pack
+was created by this closeout.

@@ -2,7 +2,10 @@
 
 ## Project Security Status
 
-`AnoPKI` is pre-1.0 and still in active development. It has security controls for local development and early operational hardening, but it is not yet a stable supported production release.
+`AnoPKI-Community` is pre-1.0 and engineering is closed and frozen at the
+documented baseline. It has security controls for local development and early
+operational hardening, but it is not a published or supported production
+release.
 
 Current security-relevant controls include API key authentication, scoped API keys, API key HMAC peppering, API key expiry and rotation, an operator [access model](docs/security/access-model.md), audit metadata, bounded request bodies, HTTP server timeouts, ACME nonce replay protection, ACME HTTP-01 unsafe target blocking, CRL publication, OCSP handling, and a production startup guard.
 
@@ -37,10 +40,12 @@ Please include:
 
 | Version | Status |
 | --- | --- |
-| Pre-1.0 `main` | Active development; no stable supported release. |
+| Pre-1.0 frozen baseline | No published or supported production release. |
 | Older branches or forks | Not supported by this project unless maintainers state otherwise. |
 
-Security fixes are handled on the active development line until a supported release policy exists.
+There is no active development line or supported-release policy. Reopening
+engineering, including security maintenance work, requires a new product
+decision. Private vulnerability reports remain welcome for assessment.
 
 ## Security Expectations
 
@@ -62,14 +67,17 @@ If a secret is committed or exposed, assume compromise. Remove it from active us
 
 ## Known Constraints
 
-The following areas are not complete yet:
+The following areas are deferred and not selected:
 
-- No production non-exportable HSM or PKCS#11 provider; current file-provider signing is local/development only.
+- HSM, KMS, and PKCS#11 production providers are `DEFERRED / NOT_SELECTED`;
+  current file-provider signing is local/development only.
 - Signing-result audit correlation uses a redacted private C++ sidecar. It is not
   a public API/CLI payload and must never contain raw key references, paths,
   credentials, PINs, PEM data, or private-key material.
 - Certbot live coverage still has a known local Windows non-admin gap.
-- DNS-01 and External Account Binding are planned later.
+- DNS-01 and External Account Binding are `DEFERRED / NOT_SELECTED`.
+- Independent SIEM anchoring/export, PQC, and infrastructure-level failover are
+  `DEFERRED / NOT_SELECTED`.
 
 These constraints matter for production architecture and threat modeling.
 

@@ -164,12 +164,17 @@ def test_regex() -> str:
     return "^(" + "|".join(re.escape(name) for name in TESTS) + ")$"
 
 
-def command(go_executable: str, *, race: bool) -> list[str]:
-    args = [go_executable, "test"]
+def go_command(go_executable: str | list[str], *arguments: str) -> list[str]:
+    prefix = [go_executable] if isinstance(go_executable, str) else go_executable
+    return [*prefix, *arguments]
+
+
+def command(go_executable: str | list[str], *, race: bool) -> list[str]:
+    args = ["test"]
     if race:
         args.append("-race")
     args.extend(["-json", "-count=1", "-run", test_regex(), "./internal/httpapi"])
-    return args
+    return go_command(go_executable, *args)
 
 
 def evidence_template(commit: str) -> dict[str, Any]:
@@ -223,7 +228,7 @@ def write_evidence(output_dir: Path, evidence: dict[str, Any]) -> None:
     (output_dir / "authorization-boundary-verification.md").write_text("\n".join(lines) + "\n", encoding="utf-8")
 
 
-def run_phase(root: Path, output_dir: Path, environment: dict[str, str], go_executable: str, phase: str, race: bool) -> tuple[subprocess.CompletedProcess[str], str, dict[str, str]]:
+def run_phase(root: Path, output_dir: Path, environment: dict[str, str], go_executable: str | list[str], phase: str, race: bool) -> tuple[subprocess.CompletedProcess[str], str, dict[str, str]]:
     args = command(go_executable, race=race)
     result = subprocess.run(
         args,
@@ -245,7 +250,7 @@ def run_phase(root: Path, output_dir: Path, environment: dict[str, str], go_exec
     return result, log, parse_test_events(result.stdout)
 
 
-def run_drill(root: Path, output_dir: Path, go_executable: str, commit: str) -> dict[str, Any]:
+def run_drill(root: Path, output_dir: Path, go_executable: str | list[str], commit: str) -> dict[str, Any]:
     output_dir.mkdir(parents=True, exist_ok=True)
     evidence = evidence_template(resolve_commit(root, commit))
     environment = os.environ.copy()
@@ -257,7 +262,7 @@ def run_drill(root: Path, output_dir: Path, go_executable: str, commit: str) -> 
 
     try:
         version_result = subprocess.run(
-            [go_executable, "version"],
+            go_command(go_executable, "version"),
             cwd=root / "service",
             env=environment,
             text=True,
@@ -279,7 +284,7 @@ def run_drill(root: Path, output_dir: Path, go_executable: str, commit: str) -> 
         all_passed = True
         for phase, race in phases:
             args = command(go_executable, race=race)
-            evidence["test_commands"][phase] = ["go", *args[1:]]
+            evidence["test_commands"][phase] = command("go", race=race)
             result, log, observed = run_phase(root, output_dir, environment, go_executable, phase, race)
             logs.append(log)
             for name in TESTS:

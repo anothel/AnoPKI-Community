@@ -85,6 +85,11 @@ def parse_go_version(text: str) -> tuple[int, int, int]:
     return tuple(int(part or 0) for part in match.groups())  # type: ignore[return-value]
 
 
+def go_arguments(go_executable: str | list[str], *arguments: str) -> list[str]:
+    prefix = [go_executable] if isinstance(go_executable, str) else go_executable
+    return [*prefix, *arguments]
+
+
 def resolve_commit(root: Path, explicit: str) -> str:
     if explicit:
         value = explicit.lower()
@@ -165,9 +170,9 @@ def parse_test_events(output: str) -> dict[tuple[str, str], str]:
     return observed
 
 
-def baseline_command(go_executable: str) -> list[str]:
+def baseline_command(go_executable: str | list[str]) -> list[str]:
     test_regex = "^(" + "|".join(name for _, name in BASELINE_TESTS) + ")$"
-    return [
+    return go_arguments(
         go_executable,
         "test",
         "-json",
@@ -176,11 +181,11 @@ def baseline_command(go_executable: str) -> list[str]:
         test_regex,
         "./internal/store",
         "./internal/httpapi",
-    ]
+    )
 
 
-def postgres_command(go_executable: str) -> list[str]:
-    return [
+def postgres_command(go_executable: str | list[str]) -> list[str]:
+    return go_arguments(
         go_executable,
         "test",
         "-json",
@@ -188,7 +193,7 @@ def postgres_command(go_executable: str) -> list[str]:
         "-run",
         "^TestPostgresIntegrationRepositoryParity$/^audit_integrity_chain$",
         "./internal/store",
-    ]
+    )
 
 
 def evidence_template(commit: str, require_postgres: bool) -> dict[str, Any]:
@@ -251,7 +256,7 @@ def test_status(observed: dict[tuple[str, str], str], package: str, name: str) -
 def run_drill(
     root: Path,
     output_dir: Path,
-    go_executable: str,
+    go_executable: str | list[str],
     commit: str,
     require_postgres: bool = False,
 ) -> dict[str, Any]:
@@ -264,7 +269,7 @@ def run_drill(
     Path(environment["GOMODCACHE"]).mkdir(parents=True, exist_ok=True)
 
     version_result = subprocess.run(
-        [go_executable, "version"],
+        go_arguments(go_executable, "version"),
         cwd=root / "service",
         env=environment,
         text=True,

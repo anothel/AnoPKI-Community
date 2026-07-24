@@ -143,8 +143,13 @@ def test_regex() -> str:
     return "^(" + "|".join(re.escape(name) for name in TESTS) + ")$"
 
 
-def command(go_executable: str) -> list[str]:
-    return [go_executable, "test", "-json", "-count=1", "-run", test_regex(), "./internal/lifecycle"]
+def go_command(go_executable: str | list[str], *arguments: str) -> list[str]:
+    prefix = [go_executable] if isinstance(go_executable, str) else go_executable
+    return [*prefix, *arguments]
+
+
+def command(go_executable: str | list[str]) -> list[str]:
+    return go_command(go_executable, "test", "-json", "-count=1", "-run", test_regex(), "./internal/lifecycle")
 
 
 def evidence_template(commit: str) -> dict[str, Any]:
@@ -204,7 +209,7 @@ def write_evidence(output_dir: Path, evidence: dict[str, Any]) -> None:
     (output_dir / "postgres-multi-node-failover-verification.md").write_text(markdown, encoding="utf-8")
 
 
-def run_drill(root: Path, output_dir: Path, go_executable: str, commit: str) -> dict[str, Any]:
+def run_drill(root: Path, output_dir: Path, go_executable: str | list[str], commit: str) -> dict[str, Any]:
     output_dir.mkdir(parents=True, exist_ok=True)
     evidence = evidence_template(resolve_commit(root, commit))
     dsn = os.environ.get(DSN_ENV, "").strip()
@@ -222,7 +227,7 @@ def run_drill(root: Path, output_dir: Path, go_executable: str, commit: str) -> 
             raise DrillFailure("exact Community commit is required")
 
         version_result = subprocess.run(
-            [go_executable, "version"],
+            go_command(go_executable, "version"),
             cwd=root / "service",
             env=environment,
             text=True,

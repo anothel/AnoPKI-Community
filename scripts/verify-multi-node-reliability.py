@@ -79,6 +79,11 @@ def parse_go_version(text: str) -> tuple[int, int, int]:
     return tuple(int(part or 0) for part in match.groups())  # type: ignore[return-value]
 
 
+def go_arguments(go_executable: str | list[str], *arguments: str) -> list[str]:
+    prefix = [go_executable] if isinstance(go_executable, str) else go_executable
+    return [*prefix, *arguments]
+
+
 def resolve_commit(root: Path, explicit: str) -> str:
     if explicit:
         value = explicit.lower()
@@ -181,7 +186,7 @@ def write_evidence(output_dir: Path, evidence: dict[str, Any]) -> None:
     (output_dir / "multi-node-verification.md").write_text("\n".join(lines) + "\n", encoding="utf-8")
 
 
-def run_drill(root: Path, output_dir: Path, go_executable: str, commit: str) -> dict[str, Any]:
+def run_drill(root: Path, output_dir: Path, go_executable: str | list[str], commit: str) -> dict[str, Any]:
     evidence = evidence_template(resolve_commit(root, commit))
     environment = os.environ.copy()
     environment["GOTOOLCHAIN"] = "local"
@@ -191,7 +196,7 @@ def run_drill(root: Path, output_dir: Path, go_executable: str, commit: str) -> 
     Path(environment["GOMODCACHE"]).mkdir(parents=True, exist_ok=True)
 
     version_result = subprocess.run(
-        [go_executable, "version"],
+        go_arguments(go_executable, "version"),
         cwd=root / "service",
         env=environment,
         text=True,
@@ -216,7 +221,7 @@ def run_drill(root: Path, output_dir: Path, go_executable: str, commit: str) -> 
         return evidence
 
     test_regex = "^(" + "|".join(name for _, name in EXPECTED_TESTS) + ")$"
-    command = [
+    command = go_arguments(
         go_executable,
         "test",
         "-json",
@@ -225,7 +230,7 @@ def run_drill(root: Path, output_dir: Path, go_executable: str, commit: str) -> 
         test_regex,
         "./internal/lifecycle",
         "./internal/store",
-    ]
+    )
     evidence["test_command"] = [redact(item, output_dir) for item in command]
     test_result = subprocess.run(
         command,

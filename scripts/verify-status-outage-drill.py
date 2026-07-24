@@ -58,6 +58,11 @@ def parse_go_version(text: str) -> tuple[int, int, int]:
     return tuple(int(part or 0) for part in match.groups())  # type: ignore[return-value]
 
 
+def go_arguments(go_executable: str | list[str], *arguments: str) -> list[str]:
+    prefix = [go_executable] if isinstance(go_executable, str) else go_executable
+    return [*prefix, *arguments]
+
+
 def command_text(command: Iterable[str]) -> str:
     if os.name == "nt":
         return subprocess.list2cmdline(list(command))
@@ -206,7 +211,7 @@ def write_evidence(output_dir: Path, evidence: dict[str, Any]) -> None:
     write_markdown(output_dir / "status-outage-verification.md", evidence)
 
 
-def run_drill(root: Path, output_dir: Path, go_command: str, commit: str) -> dict[str, Any]:
+def run_drill(root: Path, output_dir: Path, go_command: str | list[str], commit: str) -> dict[str, Any]:
     started = utc_now()
     evidence = evidence_template(resolve_commit(root, commit), started)
     output_dir.mkdir(parents=True, exist_ok=True)
@@ -218,7 +223,7 @@ def run_drill(root: Path, output_dir: Path, go_command: str, commit: str) -> dic
     Path(environment["GOMODCACHE"]).mkdir(parents=True, exist_ok=True)
 
     service_dir = root / "service"
-    version_result = run_command([go_command, "version"], cwd=service_dir, environment=environment)
+    version_result = run_command(go_arguments(go_command, "version"), cwd=service_dir, environment=environment)
     version_output = redact(version_result.stdout.strip(), output_dir)
     evidence["go_version"] = version_output or "unavailable"
     if version_result.returncode != 0:
@@ -239,7 +244,7 @@ def run_drill(root: Path, output_dir: Path, go_command: str, commit: str) -> dic
         return evidence
 
     regex = "^(" + "|".join(test for _, test in EXPECTED_TESTS) + ")$"
-    command = [go_command, "test", "-json", "-count=1", "-run", regex, "./internal/lifecycle", "./internal/httpapi"]
+    command = go_arguments(go_command, "test", "-json", "-count=1", "-run", regex, "./internal/lifecycle", "./internal/httpapi")
     evidence["test_command"] = [redact(item, output_dir) for item in command]
     result = run_command(command, cwd=service_dir, environment=environment)
     redacted_log = redact(result.stdout, output_dir)
@@ -270,7 +275,7 @@ def main() -> int:
     parser.add_argument("--list", action="store_true")
     args = parser.parse_args()
     regex = "^(" + "|".join(test for _, test in EXPECTED_TESTS) + ")$"
-    command = [args.go_command, "test", "-json", "-count=1", "-run", regex, "./internal/lifecycle", "./internal/httpapi"]
+    command = go_arguments(args.go_command, "test", "-json", "-count=1", "-run", regex, "./internal/lifecycle", "./internal/httpapi")
     if args.list:
         print(command_text(command))
         return 0

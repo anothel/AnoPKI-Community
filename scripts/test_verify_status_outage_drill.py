@@ -6,8 +6,6 @@ from __future__ import annotations
 
 import importlib.util
 import json
-import os
-import stat
 import sys
 import tempfile
 from pathlib import Path
@@ -21,7 +19,7 @@ sys.modules[SPEC.name] = MODULE
 SPEC.loader.exec_module(MODULE)
 
 
-def fake_go(path: Path, *, version: str = "go1.25.12", fail_test: str = "", omit_test: str = "") -> Path:
+def fake_go(path: Path, *, version: str = "go1.25.12", fail_test: str = "", omit_test: str = "") -> list[str]:
     events = []
     for package, test in MODULE.EXPECTED_TESTS:
         if test == omit_test:
@@ -39,8 +37,7 @@ if len(sys.argv) > 1 and sys.argv[1] == "test":
 raise SystemExit(2)
 '''
     path.write_text(code, encoding="utf-8")
-    path.chmod(path.stat().st_mode | stat.S_IXUSR)
-    return path
+    return [sys.executable, str(path)]
 
 
 def test_success_writes_strict_redacted_evidence() -> None:
@@ -48,7 +45,7 @@ def test_success_writes_strict_redacted_evidence() -> None:
         root = Path(tmp)
         go = fake_go(root / "go")
         out = root / "out"
-        evidence = MODULE.run_drill(ROOT, out, str(go), "a" * 40)
+        evidence = MODULE.run_drill(ROOT, out, go, "a" * 40)
         payload = json.loads((out / "status-outage-verification.json").read_text(encoding="utf-8"))
         markdown = (out / "status-outage-verification.md").read_text(encoding="utf-8")
     assert evidence["result"] == "passed"
@@ -67,7 +64,7 @@ def test_unsupported_go_fails_before_tests() -> None:
         root = Path(tmp)
         go = fake_go(root / "go", version="go1.23.2")
         out = root / "out"
-        evidence = MODULE.run_drill(ROOT, out, str(go), "b" * 40)
+        evidence = MODULE.run_drill(ROOT, out, go, "b" * 40)
     assert evidence["result"] == "failed"
     assert "minimum is 1.25.11" in evidence["blocker"]
     assert evidence["tests"] == []
@@ -78,7 +75,7 @@ def test_failed_test_fails_closed() -> None:
         root = Path(tmp)
         failed = MODULE.EXPECTED_TESTS[1][1]
         go = fake_go(root / "go", fail_test=failed)
-        evidence = MODULE.run_drill(ROOT, root / "out", str(go), "c" * 40)
+        evidence = MODULE.run_drill(ROOT, root / "out", go, "c" * 40)
     assert evidence["result"] == "failed"
     assert any(item["name"] == failed and item["status"] == "fail" for item in evidence["tests"])
 
@@ -88,7 +85,7 @@ def test_missing_test_fails_closed() -> None:
         root = Path(tmp)
         missing = MODULE.EXPECTED_TESTS[2][1]
         go = fake_go(root / "go", omit_test=missing)
-        evidence = MODULE.run_drill(ROOT, root / "out", str(go), "d" * 40)
+        evidence = MODULE.run_drill(ROOT, root / "out", go, "d" * 40)
     assert evidence["result"] == "failed"
     assert any(item["name"] == missing and item["status"] == "missing" for item in evidence["tests"])
 

@@ -63,6 +63,7 @@ def main() -> None:
         'python scripts\\verify-issuer-rollover-drill.py --out-dir .tmp\\issuer-rollover-evidence\\verify-local',
         'python scripts\\test_verify_multi_node_reliability.py',
         'python scripts\\verify-multi-node-reliability.py --out-dir .tmp\\multi-node-evidence\\verify-local',
+        'python scripts\\test_verify_postgres_multi_node_failover.py',
         'python scripts\\test_verify_postgres_recovery_drill.py',
         'python scripts\\test_validate_release_artifacts.py',
         'python scripts\\test_validate_service_contracts.py',

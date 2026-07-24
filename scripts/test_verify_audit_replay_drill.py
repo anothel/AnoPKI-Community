@@ -6,7 +6,6 @@ from __future__ import annotations
 
 import importlib.util
 import json
-import stat
 import sys
 import tempfile
 from pathlib import Path
@@ -27,7 +26,7 @@ def fake_go(
     version: str = "go1.25.12",
     failing_test: str = "",
     omitted_test: str = "",
-) -> Path:
+) -> list[str]:
     events = []
     for package, test in MODULE.EXPECTED_TESTS:
         if test == omitted_test:
@@ -50,8 +49,7 @@ def fake_go(
         "raise SystemExit(2)\n",
         encoding="utf-8",
     )
-    path.chmod(path.stat().st_mode | stat.S_IXUSR)
-    return path
+    return [sys.executable, str(path)]
 
 
 def main() -> None:
@@ -60,7 +58,7 @@ def main() -> None:
         evidence = MODULE.run_drill(
             ROOT,
             root / "out",
-            str(fake_go(root / "go")),
+            fake_go(root / "go"),
             "a" * 40,
         )
         assert evidence["result"] == "passed"
@@ -76,7 +74,7 @@ def main() -> None:
         evidence = MODULE.run_drill(
             ROOT,
             root / "out",
-            str(fake_go(root / "go", version="go1.23.2")),
+            fake_go(root / "go", version="go1.23.2"),
             "b" * 40,
         )
         assert evidence["result"] == "failed"
@@ -88,7 +86,7 @@ def main() -> None:
         evidence = MODULE.run_drill(
             ROOT,
             root / "out",
-            str(fake_go(root / "go", failing_test=failing_test)),
+            fake_go(root / "go", failing_test=failing_test),
             "c" * 40,
         )
         assert evidence["result"] == "failed"
@@ -99,7 +97,7 @@ def main() -> None:
         evidence = MODULE.run_drill(
             ROOT,
             root / "out",
-            str(fake_go(root / "go", omitted_test=omitted_test)),
+            fake_go(root / "go", omitted_test=omitted_test),
             "d" * 40,
         )
         assert evidence["result"] == "failed"
