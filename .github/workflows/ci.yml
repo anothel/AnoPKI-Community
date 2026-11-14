@@ -426,7 +426,7 @@ jobs:
 
   postgres-recovery-drill:
     name: PostgreSQL 16 backup and restore drill
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     services:
       postgres:
         image: postgres:16
@@ -452,7 +452,7 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.x"
-      - run: sudo apt-get update && sudo apt-get install -y postgresql-client
+      - run: sudo apt-get update && sudo apt-get install -y postgresql-client-16
       - run: python scripts/test_verify_postgres_recovery_drill.py
       - name: Run PostgreSQL recovery drill
         run: >-
