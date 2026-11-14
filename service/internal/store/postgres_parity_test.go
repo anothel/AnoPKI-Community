@@ -22,6 +22,7 @@ func TestPostgresIntegrationRepositoryParity(t *testing.T) {
 		{name: "outbox_jobs", run: testOutboxAndJobAttempts},
 		{name: "outbox_retry_metadata", run: testOutboxRetryMetadata},
 		{name: "outbox_lease_recovery", run: testOutboxLeaseRecovery},
+		{name: "outbox_conditional_lease_update", run: testOutboxConditionalLeaseUpdate},
 		{name: "webhook_delivery_tracking", run: testWebhookDeliveryTracking},
 		{name: "audit_query_retention", run: testAuditEventQueryAndRetention},
 		{name: "audit_integrity_chain", run: testAuditIntegrityAppendCheckpointAndPrune},

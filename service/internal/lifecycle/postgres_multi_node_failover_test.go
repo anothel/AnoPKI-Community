@@ -65,7 +65,7 @@ func TestPostgresMultiNodeIssuanceFailoverIntegration(t *testing.T) {
 	base := time.Date(2026, time.January, 2, 3, 4, 5, 0, time.UTC)
 
 	firstIssuer := &fakeIssuer{}
-	firstService := New(firstRepo, firstIssuer, fixedClock{now: base}, &threadSafeIDGenerator{})
+	firstService := New(firstRepo, firstIssuer, fixedClock{now: base}, UUIDGenerator{})
 	enrollment := createPendingEnrollment(t, ctx, firstService)
 	if _, err := firstService.ApproveEnrollment(ctx, "approver", enrollment.ID); err != nil {
 		t.Fatalf("ApproveEnrollment: %v", err)
@@ -76,14 +76,14 @@ func TestPostgresMultiNodeIssuanceFailoverIntegration(t *testing.T) {
 		t.Fatalf("first claim = (%#v, %t, %v), want signing claim", firstClaim, shouldSign, err)
 	}
 
-	activeNode := New(secondRepo, &fakeIssuer{}, fixedClock{now: base.Add(time.Minute)}, &threadSafeIDGenerator{})
+	activeNode := New(secondRepo, &fakeIssuer{}, fixedClock{now: base.Add(time.Minute)}, UUIDGenerator{})
 	if _, _, err := activeNode.claimIssuanceAttempt(ctx, enrollment.ID, base.Add(time.Minute)); !errors.Is(err, domain.ErrInvalidTransition) {
 		t.Fatalf("active-lease second claim error = %v, want %v", err, domain.ErrInvalidTransition)
 	}
 
 	failoverTime := base.Add(defaultIssuanceSigningLease + time.Minute)
 	failoverIssuer := &fakeIssuer{}
-	failoverNode := New(secondRepo, failoverIssuer, fixedClock{now: failoverTime}, &threadSafeIDGenerator{})
+	failoverNode := New(secondRepo, failoverIssuer, fixedClock{now: failoverTime}, UUIDGenerator{})
 	secondClaim, shouldSign, err := failoverNode.claimIssuanceAttempt(ctx, enrollment.ID, failoverTime)
 	if err != nil || !shouldSign {
 		t.Fatalf("expired-lease takeover = (%#v, %t, %v), want takeover", secondClaim, shouldSign, err)
@@ -117,7 +117,7 @@ func TestPostgresMultiNodeIssuanceFailoverIntegration(t *testing.T) {
 	}
 
 	retryIssuer := &fakeIssuer{}
-	retryNode := New(firstRepo, retryIssuer, fixedClock{now: failoverTime.Add(time.Minute)}, &threadSafeIDGenerator{})
+	retryNode := New(firstRepo, retryIssuer, fixedClock{now: failoverTime.Add(time.Minute)}, UUIDGenerator{})
 	retried, err := retryNode.IssueCertificate(ctx, "retry-node", enrollment.ID)
 	if err != nil {
 		t.Fatalf("retry finalized issuance: %v", err)
@@ -156,8 +156,8 @@ func TestPostgresMultiNodeCRLFailoverIntegration(t *testing.T) {
 		t.Fatalf("CreateIssuer: %v", err)
 	}
 
-	firstNode := New(firstRepo, &fakeIssuer{}, fixedClock{now: base}, &threadSafeIDGenerator{})
-	secondNodeActive := New(secondRepo, &fakeIssuer{}, fixedClock{now: base.Add(time.Minute)}, &threadSafeIDGenerator{})
+	firstNode := New(firstRepo, &fakeIssuer{}, fixedClock{now: base}, UUIDGenerator{})
+	secondNodeActive := New(secondRepo, &fakeIssuer{}, fixedClock{now: base.Add(time.Minute)}, UUIDGenerator{})
 	distributionPoint := "https://pki.example.test/failover.crl"
 	firstClaim, err := firstNode.claimCRLGeneration(ctx, issuer.ID, distributionPoint, base)
 	if err != nil {
@@ -171,7 +171,7 @@ func TestPostgresMultiNodeCRLFailoverIntegration(t *testing.T) {
 	}
 
 	failoverTime := base.Add(defaultCRLGenerationLease + time.Minute)
-	secondNode := New(secondRepo, &fakeIssuer{}, fixedClock{now: failoverTime}, &threadSafeIDGenerator{})
+	secondNode := New(secondRepo, &fakeIssuer{}, fixedClock{now: failoverTime}, UUIDGenerator{})
 	secondClaim, err := secondNode.claimCRLGeneration(ctx, issuer.ID, distributionPoint, failoverTime)
 	if err != nil {
 		t.Fatalf("CRL lease takeover: %v", err)
@@ -236,7 +236,7 @@ func TestPostgresMultiNodeOutboxTrafficShiftIntegration(t *testing.T) {
 	firstDispatcher := NewOutboxDispatcher(firstRepo, OutboxHandlerFunc(func(context.Context, domain.OutboxMessage) error {
 		t.Fatal("first node handler must not run in claim-only crash simulation")
 		return nil
-	}), fixedClock{now: base}, &threadSafeIDGenerator{})
+	}), fixedClock{now: base}, UUIDGenerator{})
 	due, err := firstRepo.ListDueOutboxMessages(ctx, base, 10)
 	if err != nil || len(due) != 1 {
 		t.Fatalf("initial due = %#v, %v", due, err)
@@ -250,7 +250,7 @@ func TestPostgresMultiNodeOutboxTrafficShiftIntegration(t *testing.T) {
 	activeDispatcher := NewOutboxDispatcher(secondRepo, OutboxHandlerFunc(func(context.Context, domain.OutboxMessage) error {
 		handled.Add(1)
 		return nil
-	}), fixedClock{now: base.Add(time.Minute)}, &threadSafeIDGenerator{})
+	}), fixedClock{now: base.Add(time.Minute)}, UUIDGenerator{})
 	processed, err := activeDispatcher.RunOnce(ctx, 10)
 	if err != nil || processed != 0 {
 		t.Fatalf("active-lease traffic shift = (%d, %v), want (0, nil)", processed, err)
@@ -263,7 +263,7 @@ func TestPostgresMultiNodeOutboxTrafficShiftIntegration(t *testing.T) {
 	failoverDispatcher := NewOutboxDispatcher(secondRepo, OutboxHandlerFunc(func(context.Context, domain.OutboxMessage) error {
 		handled.Add(1)
 		return nil
-	}), fixedClock{now: failoverTime}, &threadSafeIDGenerator{})
+	}), fixedClock{now: failoverTime}, UUIDGenerator{})
 	processed, err = failoverDispatcher.RunOnce(ctx, 10)
 	if err != nil || processed != 1 {
 		t.Fatalf("expired-lease traffic shift = (%d, %v), want (1, nil)", processed, err)

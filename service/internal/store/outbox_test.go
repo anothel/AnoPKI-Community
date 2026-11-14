@@ -947,6 +947,64 @@ func testWebhookDeliveryTracking(t *testing.T, repo Repository) {
 	}
 }
 
+func TestMemoryStoreOutboxConditionalLeaseUpdate(t *testing.T) {
+	testOutboxConditionalLeaseUpdate(t, NewMemoryStore())
+}
+
+func TestSQLStoreOutboxConditionalLeaseUpdate(t *testing.T) {
+	testOutboxConditionalLeaseUpdate(t, newTestSQLiteRepository(t))
+}
+
+func testOutboxConditionalLeaseUpdate(t *testing.T, repo Repository) {
+	t.Helper()
+	ctx := context.Background()
+	now := time.Date(2026, time.January, 2, 3, 4, 5, 0, time.UTC)
+	for _, tc := range []struct {
+		name     string
+		deadline time.Time
+	}{
+		{name: "null_deadline"},
+		{name: "non_null_deadline", deadline: now.Add(time.Minute)},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			current := domain.OutboxMessage{
+				ID:                   "outbox-cas-" + tc.name,
+				Type:                 "certificate.expiring",
+				PayloadJSON:          "{}",
+				Status:               domain.OutboxProcessing,
+				AvailableAt:          now,
+				ProcessingDeadlineAt: tc.deadline,
+				CreatedAt:            now,
+				UpdatedAt:            now,
+			}
+			if err := repo.CreateOutboxMessage(ctx, current); err != nil {
+				t.Fatalf("CreateOutboxMessage: %v", err)
+			}
+			// Keep status and updated_at unchanged to isolate the deadline guard.
+			next := current
+			next.ProcessingDeadlineAt = now.Add(10 * time.Minute)
+			if err := repo.UpdateOutboxMessageIfCurrent(ctx, next, current); err != nil {
+				t.Fatalf("claim with matching deadline: %v", err)
+			}
+			if err := repo.UpdateOutboxMessageIfCurrent(ctx, current, current); !errors.Is(err, domain.ErrInvalidTransition) {
+				t.Fatalf("stale deadline update = %v, want ErrInvalidTransition", err)
+			}
+			cleared := next
+			cleared.ProcessingDeadlineAt = time.Time{}
+			if err := repo.UpdateOutboxMessageIfCurrent(ctx, cleared, next); err != nil {
+				t.Fatalf("clear matching deadline: %v", err)
+			}
+			if err := repo.UpdateOutboxMessageIfCurrent(ctx, next, next); !errors.Is(err, domain.ErrInvalidTransition) {
+				t.Fatalf("stale non-null deadline update = %v, want ErrInvalidTransition", err)
+			}
+			stored, err := repo.GetOutboxMessage(ctx, current.ID)
+			if err != nil || !stored.ProcessingDeadlineAt.IsZero() {
+				t.Fatalf("stored deadline = %v, error = %v, want cleared deadline", stored.ProcessingDeadlineAt, err)
+			}
+		})
+	}
+}
+
 func testOutboxLeaseRecovery(t *testing.T, repo Repository) {
 	t.Helper()
 	ctx := context.Background()
