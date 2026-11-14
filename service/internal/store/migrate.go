@@ -957,20 +957,17 @@ ORDER BY created_at, id`)
 			&event.MetadataJSON,
 			&createdAt,
 		); err != nil {
-			rows.Close()
-			return fmt.Errorf("scan legacy audit event: %w", err)
+			return fmt.Errorf("scan legacy audit event: %w", errors.Join(err, rows.Close()))
 		}
 		parsedCreatedAt, err := parseSQLTime(createdAt)
 		if err != nil {
-			rows.Close()
-			return fmt.Errorf("parse legacy audit event time: %w", err)
+			return fmt.Errorf("parse legacy audit event time: %w", errors.Join(err, rows.Close()))
 		}
 		event.CreatedAt = parsedCreatedAt
 		events = append(events, event)
 	}
 	if err := rows.Err(); err != nil {
-		rows.Close()
-		return fmt.Errorf("read legacy audit events: %w", err)
+		return fmt.Errorf("read legacy audit events: %w", errors.Join(err, rows.Close()))
 	}
 	if err := rows.Close(); err != nil {
 		return fmt.Errorf("close legacy audit events: %w", err)

@@ -693,14 +693,6 @@ func writeReadableKeyRef(t *testing.T, name string) string {
 	return path
 }
 
-func httptestResponseBody(t *testing.T, handler http.Handler, path string) string {
-	t.Helper()
-	req := httptest.NewRequest(http.MethodGet, path, nil)
-	rec := httptest.NewRecorder()
-	handler.ServeHTTP(rec, req)
-	return rec.Body.String()
-}
-
 func TestLoadExpirationScanConfigDefaults(t *testing.T) {
 	clearExpirationScanEnv(t)
 

@@ -330,7 +330,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        go: ["1.25.12", "1.26.5"]
+        go: ["1.25.12", "1.26.11"]
     defaults:
       run:
         working-directory: service
@@ -367,7 +367,7 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-go@v5
         with:
-          go-version: "1.26.5"
+          go-version: "1.26.11"
           cache-dependency-path: |
             service/go.mod
             service/go.sum
@@ -378,12 +378,13 @@ jobs:
         run: >-
           python ../scripts/verify-go-release.py
           --profile analysis
-          --out-dir ../.tmp/go-evidence/analysis-1.26.5
+          --out-dir ../.tmp/go-evidence/analysis-1.26.11
           --commit "${GITHUB_SHA}"
       - uses: actions/upload-artifact@v4
+        if: always()
         with:
-          name: anopki-go-analysis-1.26.5
-          path: .tmp/go-evidence/analysis-1.26.5/
+          name: anopki-go-analysis-1.26.11
+          path: .tmp/go-evidence/analysis-1.26.11/
           if-no-files-found: error
 
   postgres-integration:
@@ -426,7 +427,7 @@ jobs:
 
   postgres-recovery-drill:
     name: PostgreSQL 16 backup and restore drill
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     services:
       postgres:
         image: postgres:16
@@ -452,7 +453,7 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.x"
-      - run: sudo apt-get update && sudo apt-get install -y postgresql-client
+      - run: sudo apt-get update && sudo apt-get install -y postgresql-client-16
       - run: python scripts/test_verify_postgres_recovery_drill.py
       - name: Run PostgreSQL recovery drill
         run: >-

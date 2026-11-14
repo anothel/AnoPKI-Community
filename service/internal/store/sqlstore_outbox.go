@@ -261,7 +261,7 @@ SET type = $1,
 WHERE id = $11
 	AND status = $12
 	AND updated_at = $13
-	AND ((processing_deadline_at IS NULL AND $14 IS NULL) OR processing_deadline_at = $14)`,
+	AND processing_deadline_at IS NOT DISTINCT FROM $14`,
 		message.Type,
 		message.PayloadJSON,
 		string(message.Status),

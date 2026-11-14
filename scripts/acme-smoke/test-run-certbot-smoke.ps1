@@ -52,7 +52,7 @@ const server = http.createServer((req, res) => {
 server.listen(port, "127.0.0.1");
 "@
     Set-Content -LiteralPath $stubPath -Value $script -Encoding ASCII
-    return Start-Process -FilePath "node" -ArgumentList @($stubPath) -WindowStyle Hidden -PassThru
+    return Start-Process -FilePath "node" -ArgumentList @($stubPath) -NoNewWindow -PassThru
 }
 
 function New-FakeServiceProject {
@@ -125,7 +125,8 @@ function Invoke-Runner {
     $previousErrorActionPreference = $ErrorActionPreference
     $ErrorActionPreference = "Continue"
     try {
-        $output = & powershell -NoProfile -ExecutionPolicy Bypass -File $Runner @RunnerArgs 2>&1
+        $powerShellPath = (Get-Process -Id $PID).Path
+        $output = & $powerShellPath -NoProfile -ExecutionPolicy Bypass -File $Runner @RunnerArgs 2>&1
         return [pscustomobject]@{
             ExitCode = $LASTEXITCODE
             Output = ($output -join [Environment]::NewLine)

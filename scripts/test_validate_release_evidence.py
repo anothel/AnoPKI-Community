@@ -130,10 +130,10 @@ def test_missing_go_runner_gosec_fails(tmp_path: Path) -> None:
 
 def test_missing_ci_go_evidence_upload_fails(tmp_path: Path) -> None:
     copy_release_evidence_inputs(tmp_path)
-    mutate(tmp_path / ".github/workflows/ci.yml", "anopki-go-analysis-1.26.5")
+    mutate(tmp_path / ".github/workflows/ci.yml", "anopki-go-analysis-1.26.11")
     result = run_validator(tmp_path)
     assert result.returncode == 1
-    assert "anopki-go-analysis-1.26.5" in result.stderr
+    assert "anopki-go-analysis-1.26.11" in result.stderr
 
 
 def test_missing_ci_fuzz_smoke_fails(tmp_path: Path) -> None:
