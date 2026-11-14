@@ -14,7 +14,7 @@ Current state: `PUBLIC_RELEASE=NOT_PUBLISHED`,
 
 | Area | Selected tool | Evidence hook |
 | --- | --- | --- |
-| Go baseline | Maintained floor Go 1.25.11; CI lanes Go 1.25.12 and Go 1.26.5 | `verify-go-release.py --profile baseline` in the CI matrix. |
+| Go baseline | Maintained floor Go 1.25.11; CI lanes Go 1.25.12 and Go 1.26.11 | `verify-go-release.py --profile baseline` in the CI matrix. |
 | Go staticcheck | `staticcheck` 2026.1 | `verify-go-release.py --profile analysis` in CI. |
 | Go security scan | `gosec` v2.25.0 | `verify-go-release.py --profile analysis` in CI. |
 | Go race detector | `go test -race ./...` | `verify-go-release.py --profile analysis` in CI. |
@@ -72,7 +72,7 @@ Each release candidate records this matrix in release notes:
 | Area | Required evidence |
 | --- | --- |
 | OS | GitHub Actions Ubuntu result plus any Windows local verification used for release. |
-| Go | `go version` from CI and release host; The maintained floor is Go 1.25.11; CI pins Go 1.25.12 and Go 1.26.5 and uploads runner evidence. |
+| Go | `go version` from CI and release host; The maintained floor is Go 1.25.11; CI pins Go 1.25.12 and Go 1.26.11 and uploads runner evidence. |
 | OpenSSL | CMake configure output or package version used by C++ build. |
 | SQLite | Go test result for memory/SQLite stores. |
 | PostgreSQL | PostgreSQL integration and recovery-drill result plus DSN major version. |
@@ -227,7 +227,7 @@ Profiles are explicit:
   and govulncheck v1.1.4.
 - `full`: baseline followed by analysis.
 
-CI currently supplies exact Go 1.25.12 and Go 1.26.5 toolchains. The release
+CI currently supplies exact Go 1.25.12 and Go 1.26.11 toolchains. The release
 workflow packages passing full-profile output as `anopki-go-verification.tar.gz`;
 the artifact validator rejects missing, failed, incomplete, or unchecksummed Go
 evidence. A local unsupported toolchain is an environment blocker, not passing
