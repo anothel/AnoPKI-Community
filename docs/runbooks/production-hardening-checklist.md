@@ -9,8 +9,9 @@ this checklist does not make a deployment production-stable by itself.
 - `ANOPKI_AUTH_MODE=api_key`
 - `ANOPKI_API_KEY_PEPPER` set to a long random value.
 - `ANOPKI_BOOTSTRAP_API_KEY` empty after durable operator keys exist.
-- `ANOPKI_ACME_BOOTSTRAP_DEFAULTS` empty.
-- `ANOPKI_ACME_HTTP01_BASE_URL` empty outside local smoke tests.
+- `ANOPKI_ADDR` explicitly set for the intended listener; the default is loopback.
+- `ANOPKI_ACME_BOOTSTRAP_DEFAULTS` empty or `false`; enabled values fail startup.
+- `ANOPKI_ACME_HTTP01_BASE_URL` empty; overrides fail production startup.
 - `ANOPKI_ACME_NONCE_STORE=sql` for multi-node ACME.
 
 ## Access And Secrets

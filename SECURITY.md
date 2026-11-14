@@ -17,7 +17,13 @@ $env:ANOPKI_AUTH_MODE = "api_key"
 $env:ANOPKI_API_KEY_PEPPER = "<long-random-secret>"
 ```
 
-Do not use `dev` auth mode or ACME smoke bootstrap defaults in production. `ANOPKI_ACME_BOOTSTRAP_DEFAULTS` is for local smoke tests only.
+The default listener is `127.0.0.1:8080` for credential-free local development.
+Explicit `ANOPKI_ADDR` settings are preserved. Configure API-key authentication
+before exposing a listener to a network.
+
+Production startup rejects `dev` auth mode, enabled `ANOPKI_ACME_BOOTSTRAP_DEFAULTS`,
+and nonempty `ANOPKI_ACME_HTTP01_BASE_URL`. The two ACME settings are for local
+smoke tests only.
 
 ## Reporting Vulnerabilities
 

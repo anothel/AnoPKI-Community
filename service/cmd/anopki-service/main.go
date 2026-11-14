@@ -37,7 +37,7 @@ import (
 )
 
 const (
-	defaultAddr     = ":8080"
+	defaultAddr     = "127.0.0.1:8080"
 	defaultDBDriver = "sqlite"
 	defaultDBDSN    = "anopki.db"
 	defaultCoreBin  = "anopki-core"
@@ -708,6 +708,9 @@ func loadPublicTLSConfig() (publicTLSConfig, error) {
 func loadACMEHTTP01VerifierConfig() (acmeHTTP01VerifierConfig, error) {
 	baseURL := strings.TrimSpace(os.Getenv("ANOPKI_ACME_HTTP01_BASE_URL"))
 	if baseURL != "" {
+		if isProductionEnv(os.Getenv("ANOPKI_ENV")) {
+			return acmeHTTP01VerifierConfig{}, fmt.Errorf("ANOPKI_ACME_HTTP01_BASE_URL must be empty in production")
+		}
 		if _, err := lifecycle.NewACMEHTTP01Verifier(baseURL); err != nil {
 			return acmeHTTP01VerifierConfig{}, fmt.Errorf("ANOPKI_ACME_HTTP01_BASE_URL: %w", err)
 		}
@@ -719,6 +722,9 @@ func loadACMEDefaultsConfig() (acmeDefaultsConfig, error) {
 	bootstrap, err := parseBoolEnv("ANOPKI_ACME_BOOTSTRAP_DEFAULTS", false)
 	if err != nil {
 		return acmeDefaultsConfig{}, err
+	}
+	if bootstrap && isProductionEnv(os.Getenv("ANOPKI_ENV")) {
+		return acmeDefaultsConfig{}, fmt.Errorf("ANOPKI_ACME_BOOTSTRAP_DEFAULTS must be false in production")
 	}
 	validity, err := parseDurationEnv("ANOPKI_ACME_DEFAULT_VALIDITY", defaultACMESmokeValidity)
 	if err != nil {
