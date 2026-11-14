@@ -43,7 +43,7 @@ openssl req -new -key .tmp-demo\leaf.key -subj "/CN=edge-01" -out .tmp-demo\leaf
 Run from `service\` in a separate terminal:
 
 ```powershell
-$env:ANOPKI_ADDR = ":8080"
+$env:ANOPKI_ADDR = "127.0.0.1:8080"
 $env:ANOPKI_DB_DRIVER = "sqlite"
 $env:ANOPKI_DB_DSN = "anopki.db"
 $env:ANOPKI_CORE_BIN = "..\build\Debug\anopki-core.exe"

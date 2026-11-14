@@ -189,7 +189,7 @@ Environment variables:
 
 | Variable | Default | Description |
 | --- | --- | --- |
-| `ANOPKI_ADDR` | `:8080` | HTTP listen address. |
+| `ANOPKI_ADDR` | `127.0.0.1:8080` | HTTP listen address. Explicit overrides are preserved; configure API-key auth before exposing a network listener. |
 | `ANOPKI_DB_DRIVER` | `sqlite` | Database driver name. Use `sqlite` locally or `pgx` for PostgreSQL. |
 | `ANOPKI_DB_DSN` | `anopki.db` | Database DSN passed to `database/sql`. |
 | `ANOPKI_CORE_BIN` | `anopki-core` | Path or command name for the core CLI. |
@@ -214,9 +214,9 @@ Environment variables:
 | `ANOPKI_PUBLIC_TLS_CAA_RESOLVER` | empty | DNS resolver host or `host:port` used for CAA lookups. Required when CAA issuer domain is set. |
 | `ANOPKI_PUBLIC_TLS_CAA_LOOKUP_TIMEOUT` | `5s` | DNS CAA lookup timeout. |
 | `ANOPKI_PUBLIC_TLS_CAA_ALLOW_DNSSEC_INDETERMINATE` | `false` | Explicit exception to allow CAA answers without a DNSSEC AD bit. Keep false for fail-closed public TLS issuance. |
-| `ANOPKI_ACME_HTTP01_BASE_URL` | empty | Optional local smoke override for HTTP-01 challenge fetches. |
+| `ANOPKI_ACME_HTTP01_BASE_URL` | empty | Optional local smoke override for HTTP-01 challenge fetches. Nonempty values are rejected in production. |
 | `ANOPKI_ACME_NONCE_STORE` | `memory` | `memory` for local/single-node use, `sql` for shared multi-node nonce replay protection. Required as `sql` when `ANOPKI_ENV=production`. |
-| `ANOPKI_ACME_BOOTSTRAP_DEFAULTS` | `false` | Local smoke-only bootstrap for default ACME identity, issuer, and profile. |
+| `ANOPKI_ACME_BOOTSTRAP_DEFAULTS` | `false` | Local smoke-only bootstrap for default ACME identity, issuer, and profile. Enabled values are rejected in production. |
 | `ANOPKI_ACME_DEFAULT_VALIDITY` | `24h` | Validity used by ACME smoke defaults. |
 | `ANOPKI_ACME_BOOTSTRAP_ISSUER_KEY_REF` | `.tmp/acme-smoke/acme-smoke-issuer.key` | Local smoke CA private key path used only when ACME defaults bootstrap is enabled. |
 
@@ -230,7 +230,7 @@ Repository owner runs tests and builds. Suggested commands:
 cd service
 go test ./...
 go build ./cmd/anopki-service
-$env:ANOPKI_ADDR = ":8080"
+$env:ANOPKI_ADDR = "127.0.0.1:8080"
 $env:ANOPKI_DB_DRIVER = "sqlite"
 $env:ANOPKI_DB_DSN = "anopki.db"
 go run ./cmd/anopki-service

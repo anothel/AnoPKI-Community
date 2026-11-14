@@ -255,7 +255,7 @@ Local defaults are listed in [.env.example](.env.example).
 
 ```powershell
 cd service
-$env:ANOPKI_ADDR = ":8080"
+$env:ANOPKI_ADDR = "127.0.0.1:8080"
 $env:ANOPKI_DB_DRIVER = "sqlite"
 $env:ANOPKI_DB_DSN = "anopki.db"
 $env:ANOPKI_CORE_BIN = "..\build\Debug\anopki-core.exe"
@@ -279,7 +279,9 @@ powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\acme-smoke\run-cer
   -HTTPSProxyBin .tmp\acme-smoke-verify\acme-https-proxy.exe
 ```
 
-For local development, auth defaults to `dev` mode and accepts `X-Actor`.
+For local development, auth defaults to `dev` mode and accepts `X-Actor` without credentials.
+The default listener is `127.0.0.1:8080`. Explicit `ANOPKI_ADDR` settings are
+preserved; use `api_key` authentication before exposing a listener to a network.
 
 For API-key mode:
 

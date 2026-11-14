@@ -771,6 +771,7 @@ func TestLoadACMEHTTP01VerifierConfigDefaults(t *testing.T) {
 }
 
 func TestLoadACMEHTTP01VerifierConfigCustomBaseURL(t *testing.T) {
+	t.Setenv("ANOPKI_ENV", "")
 	t.Setenv("ANOPKI_ACME_HTTP01_BASE_URL", "http://127.0.0.1:5002")
 
 	cfg, err := loadACMEHTTP01VerifierConfig()
@@ -792,6 +793,7 @@ func TestLoadACMEHTTP01VerifierConfigRejectsInvalidBaseURL(t *testing.T) {
 }
 
 func TestLoadACMEDefaultsConfigIncludesIssuerKeyRef(t *testing.T) {
+	t.Setenv("ANOPKI_ENV", "")
 	t.Setenv("ANOPKI_ACME_BOOTSTRAP_DEFAULTS", "true")
 	t.Setenv("ANOPKI_ACME_DEFAULT_VALIDITY", "12h")
 	t.Setenv("ANOPKI_ACME_BOOTSTRAP_ISSUER_KEY_REF", "issuer.key")
@@ -923,4 +925,74 @@ func clearAuthEnv(t *testing.T) {
 	t.Setenv("ANOPKI_BOOTSTRAP_API_KEY_NAME", "")
 	t.Setenv("ANOPKI_BOOTSTRAP_API_KEY_ACTOR", "")
 	t.Setenv("ANOPKI_API_KEY_PEPPER", "")
+}
+
+// The credential-free default must never expose the service on all interfaces.
+func TestDefaultListenerIsLoopback(t *testing.T) {
+	t.Setenv("ANOPKI_ADDR", "")
+	addr := envOrDefault("ANOPKI_ADDR", defaultAddr)
+	host, port, err := net.SplitHostPort(newHTTPServer(addr, http.NewServeMux()).Addr)
+	if err != nil || host != "127.0.0.1" || port != "8080" {
+		t.Fatalf("default listener = %q, want 127.0.0.1:8080 (error %v)", addr, err)
+	}
+}
+
+func TestExplicitListenerAddressIsPreserved(t *testing.T) {
+	for _, addr := range []string{":8080", "0.0.0.0:9090", "[::]:8080", "[::1]:9090", "127.0.0.1:8081"} {
+		t.Run(addr, func(t *testing.T) {
+			t.Setenv("ANOPKI_ADDR", addr)
+			if got := envOrDefault("ANOPKI_ADDR", defaultAddr); got != addr {
+				t.Fatalf("address = %q, want explicit %q", got, addr)
+			}
+		})
+	}
+}
+
+func TestProductionRejectsACMESmokeBootstrap(t *testing.T) {
+	for _, env := range []string{"production", " Production "} {
+		for _, enabled := range []string{"true", "TRUE", "True", "1", "t", "T"} {
+			t.Run(env+"/"+enabled, func(t *testing.T) {
+				t.Setenv("ANOPKI_ENV", env)
+				t.Setenv("ANOPKI_ACME_BOOTSTRAP_DEFAULTS", enabled)
+				cfg, err := loadACMEDefaultsConfig()
+				if err == nil || !strings.Contains(err.Error(), "ANOPKI_ACME_BOOTSTRAP_DEFAULTS") || cfg.BootstrapDefaults {
+					t.Fatalf("production bootstrap = %#v, %v, want disabled config and error", cfg, err)
+				}
+			})
+		}
+	}
+}
+
+func TestProductionRejectsACMEHTTP01Override(t *testing.T) {
+	for _, env := range []string{"production", " Production "} {
+		for _, url := range []string{"http://127.0.0.1:5002", " https://example.test ", "http://[::1]:5002", "://invalid"} {
+			t.Run(env+"/"+url, func(t *testing.T) {
+				t.Setenv("ANOPKI_ENV", env)
+				t.Setenv("ANOPKI_ACME_HTTP01_BASE_URL", url)
+				cfg, err := loadACMEHTTP01VerifierConfig()
+				if err == nil || !strings.Contains(err.Error(), "ANOPKI_ACME_HTTP01_BASE_URL") || cfg.BaseURL != "" {
+					t.Fatalf("production override = %#v, %v, want empty config and error", cfg, err)
+				}
+			})
+		}
+	}
+}
+
+func TestProductionAllowsACMESafeDefaults(t *testing.T) {
+	t.Setenv("ANOPKI_ENV", "production")
+	t.Setenv("ANOPKI_ACME_DEFAULT_VALIDITY", "")
+	for _, disabled := range []string{"", "false", "FALSE", "0", "f"} {
+		t.Setenv("ANOPKI_ACME_BOOTSTRAP_DEFAULTS", disabled)
+		cfg, err := loadACMEDefaultsConfig()
+		if err != nil || cfg.BootstrapDefaults {
+			t.Fatalf("disabled bootstrap %q: %#v, %v", disabled, cfg, err)
+		}
+	}
+	for _, empty := range []string{"", " \t "} {
+		t.Setenv("ANOPKI_ACME_HTTP01_BASE_URL", empty)
+		cfg, err := loadACMEHTTP01VerifierConfig()
+		if err != nil || cfg.BaseURL != "" {
+			t.Fatalf("empty override %q: %#v, %v", empty, cfg, err)
+		}
+	}
 }
