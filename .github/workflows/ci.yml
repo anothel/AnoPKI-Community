@@ -381,6 +381,7 @@ jobs:
           --out-dir ../.tmp/go-evidence/analysis-1.26.5
           --commit "${GITHUB_SHA}"
       - uses: actions/upload-artifact@v4
+        if: always()
         with:
           name: anopki-go-analysis-1.26.5
           path: .tmp/go-evidence/analysis-1.26.5/
