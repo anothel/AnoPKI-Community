@@ -165,6 +165,9 @@ def test_step_failure_is_recorded_and_stops() -> None:
         assert payload["steps"][-1]["exit_code"] == 9
         assert (output / "logs" / "02-go-vet.log").is_file()
         assert "go-vet failed" in payload["blocker"]
+        assert "requested failure" in result.stderr
+        assert "super-secret-value" not in result.stderr
+        assert "<redacted-env>" in result.stderr
         assert not (output / "anopki-service").exists()
     finally:
         temp.cleanup()

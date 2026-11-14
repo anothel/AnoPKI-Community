@@ -387,6 +387,7 @@ def main() -> int:
             results.append(step_result)
             payload["steps"] = [asdict(item) for item in results]
             if result.returncode != 0:
+                print(redact(result.stdout), file=sys.stderr)
                 payload["blocker"] = f"{step.name} failed with exit {result.returncode}"
                 break
     finally:
