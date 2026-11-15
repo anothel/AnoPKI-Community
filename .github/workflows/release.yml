@@ -2,8 +2,15 @@ name: Release artifacts
 
 on:
   push:
+    branches:
+      - main
+    paths:
+      - ".github/workflows/release.yml"
     tags:
       - "v*"
+  pull_request:
+    paths:
+      - ".github/workflows/release.yml"
   workflow_dispatch:
 
 permissions:
@@ -12,7 +19,7 @@ permissions:
 jobs:
   build-artifacts:
     name: Build release artifacts
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     services:
       postgres:
         image: postgres:16
@@ -38,7 +45,7 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.x"
-      - run: sudo apt-get update && sudo apt-get install -y cmake g++ libssl-dev pkg-config postgresql-client
+      - run: sudo apt-get update && sudo apt-get install -y cmake g++ libssl-dev pkg-config postgresql-client-16
       - uses: anchore/sbom-action/download-syft@v0.17.9
       - name: Record stable toolchain
         run: |
@@ -47,6 +54,11 @@ jobs:
           c++ --version
           pkg-config --modversion openssl
           psql --version
+          pg_dump --version
+          pg_restore --version
+          for client in psql pg_dump pg_restore; do
+            "$client" --version | grep -Eq '\(PostgreSQL\) 16\.'
+          done
       - run: mkdir -p dist
       - name: Run supported-Go full verification
         run: >-
@@ -185,7 +197,10 @@ jobs:
           fetch-depth: 0
       - name: Require a signed annotated tag
         run: |
+          test "$(git cat-file -t "$GITHUB_REF_NAME")" = tag
           git cat-file -p "$GITHUB_REF_NAME" | grep -Eq -- '-----BEGIN (PGP|SSH) SIGNATURE-----'
+          git verify-tag "$GITHUB_REF_NAME"
+          test "$(git rev-parse "${GITHUB_REF_NAME}^{commit}")" = "$GITHUB_SHA"
       - uses: actions/download-artifact@v4
         with:
           name: anopki-release-${{ github.run_id }}
@@ -205,11 +220,18 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
+          release_flags=()
+          if [[ "$GITHUB_REF_NAME" == *-* ]]; then
+            release_flags+=(--prerelease)
+          fi
           if gh release view "$GITHUB_REF_NAME" >/dev/null 2>&1; then
             gh release upload "$GITHUB_REF_NAME" dist/* --clobber
           else
             gh release create "$GITHUB_REF_NAME" dist/* \
               --title "$GITHUB_REF_NAME" \
               --notes-file CHANGELOG.md \
-              --verify-tag
+              --verify-tag "${release_flags[@]}"
+          fi
+          if [[ "$GITHUB_REF_NAME" == *-* ]]; then
+            gh release edit "$GITHUB_REF_NAME" --prerelease
           fi
