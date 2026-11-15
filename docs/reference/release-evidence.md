@@ -65,8 +65,14 @@ the `dist/` directory only to the workflow run.
 
 Publishing is a separate job limited to a matching `v*` tag push. It requires
 a signed annotated tag and the `release` GitHub environment before receiving
-`contents: write` and OIDC permissions, signing evidence with `cosign`, and
-creating or updating the matching GitHub Release.
+`contents: write` and OIDC permissions. The tag-only job signs each archive,
+checksum file and JSON manifest with `cosign` keyless signing, retaining `.sig`,
+`.pem` and Sigstore bundle `.sigstore.json` evidence. Before GitHub Release
+creation or upload, it verifies every bundle against the exact repository release
+workflow/tag identity and the GitHub Actions OIDC issuer. A missing bundle, an
+invalid signature or a signer-identity mismatch stops publication; dry-runs
+remain unsigned and do not execute the tag-only job. Live signing and environment
+approval are not proven by successful dry-runs.
 
 Container images, OS packages, and Helm charts stay out until a deployment
 target is selected.

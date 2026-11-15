@@ -227,13 +227,33 @@ jobs:
       - name: Sign release evidence
         run: |
           rm dist/SIGNING-STATUS.txt
-          for artifact in dist/*.tar.gz dist/SHA256SUMS dist/*.json; do
+          for artifact in dist/*.tar.gz dist/SHA256SUMS \
+            dist/anopki-backend-info.json \
+            dist/anopki-release-metadata.json \
+            dist/anopki.sbom.cdx.json; do
             cosign sign-blob --yes \
+              --bundle "${artifact}.sigstore.json" \
               --output-signature "${artifact}.sig" \
               --output-certificate "${artifact}.pem" \
               "$artifact"
           done
-          echo "Signed with cosign keyless signing in tag-only publish job." > dist/SIGNING-STATUS.txt
+      - name: Verify signatures and signer identity before publication
+        run: |
+          identity="https://github.com/${GITHUB_REPOSITORY}/.github/workflows/release.yml@${GITHUB_REF}"
+          for artifact in dist/*.tar.gz dist/SHA256SUMS \
+            dist/anopki-backend-info.json \
+            dist/anopki-release-metadata.json \
+            dist/anopki.sbom.cdx.json; do
+            test -s "${artifact}.sig"
+            test -s "${artifact}.pem"
+            test -s "${artifact}.sigstore.json"
+            cosign verify-blob \
+              --bundle "${artifact}.sigstore.json" \
+              --certificate-identity "$identity" \
+              --certificate-oidc-issuer "https://token.actions.githubusercontent.com" \
+              "$artifact"
+          done
+          echo "Signed and identity-verified with cosign keyless signing in tag-only publish job." > dist/SIGNING-STATUS.txt
       - name: Publish GitHub Release
         env:
           GH_TOKEN: ${{ github.token }}

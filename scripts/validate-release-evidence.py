@@ -378,6 +378,10 @@ REQUIRED_RELEASE_TEXT = [
     "python scripts/validate-release-sbom.py dist/anopki.sbom.cdx.json",
     "python scripts/test_validate_release_sbom.py",
     "cosign sign-blob",
+    "cosign verify-blob",
+    'test -s "${artifact}.sigstore.json"',
+    '--certificate-identity "$identity"',
+    '--certificate-oidc-issuer "https://token.actions.githubusercontent.com"',
     "actions/upload-artifact",
     "actions/download-artifact",
     "SIGNING-STATUS.txt",
@@ -455,6 +459,23 @@ def check_local_verification_evidence(root: Path, text: str) -> None:
         fail("release evidence missing local verification commands:\n" + "\n".join(missing))
 
 
+def check_release_publication_gate(workflow: str) -> None:
+    names = [
+        "      - name: Sign release evidence",
+        "      - name: Verify signatures and signer identity before publication",
+        "      - name: Publish GitHub Release",
+    ]
+    positions = [workflow.find(name) for name in names]
+    if any(pos < 0 for pos in positions) or positions != sorted(positions):
+        fail("release signing, verification and publication order is invalid")
+    verification_step = workflow[positions[1]:positions[2]]
+    if "dist/*.json" in verification_step:
+        fail("release signature verification must exclude generated JSON bundles")
+    for required in ("dist/anopki-backend-info.json", "dist/anopki-release-metadata.json", "dist/anopki.sbom.cdx.json"):
+        if required not in verification_step:
+            fail("release signature verification missing original JSON manifest: " + required)
+
+
 def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--root", default=ROOT, type=Path)
@@ -475,7 +496,8 @@ def main() -> None:
     require_text(root / "scripts/verify-multi-node-reliability.py", REQUIRED_MULTI_NODE_RUNNER_TEXT)
     require_text(root / "scripts/verify-postgres-multi-node-failover.py", REQUIRED_POSTGRES_MULTI_NODE_FAILOVER_RUNNER_TEXT)
     require_text(root / ".github/workflows/ci.yml", REQUIRED_CI_TEXT)
-    require_text(root / ".github/workflows/release.yml", REQUIRED_RELEASE_TEXT)
+    workflow = require_text(root / ".github/workflows/release.yml", REQUIRED_RELEASE_TEXT)
+    check_release_publication_gate(workflow)
     print("release evidence ok")
 
 
