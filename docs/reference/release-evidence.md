@@ -64,8 +64,10 @@ as skipped, and uploads
 the `dist/` directory only to the workflow run.
 
 Publishing is a separate job limited to a matching `v*` tag push. It requires
-a signed annotated tag and the `release` GitHub environment before receiving
-`contents: write` and OIDC permissions. The tag-only job signs each archive,
+a signed annotated tag whose peeled commit is in the fetched `main` history,
+and the `release` GitHub environment before receiving
+`contents: write` and OIDC permissions. A signed tag pointing to a
+never-merged branch or an unreachable commit cannot publish. The tag-only job signs each archive,
 checksum file and JSON manifest with `cosign` keyless signing, retaining `.sig`,
 `.pem` and Sigstore bundle `.sigstore.json` evidence. Before GitHub Release
 creation or upload, it verifies every bundle against the exact repository release

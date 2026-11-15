@@ -219,6 +219,9 @@ jobs:
           verified="$(gh api "repos/${GITHUB_REPOSITORY}/git/tags/${tag_sha}" --jq '.verification.verified')"
           test "$verified" = "true"
           test "$(git rev-parse "${GITHUB_REF_NAME}^{commit}")" = "$GITHUB_SHA"
+          # Signed release tags must reference a commit reviewed on main.
+          git fetch --no-tags origin +refs/heads/main:refs/remotes/origin/main
+          git merge-base --is-ancestor "$GITHUB_SHA" refs/remotes/origin/main
       - uses: actions/download-artifact@v4
         with:
           name: anopki-release-${{ github.run_id }}
