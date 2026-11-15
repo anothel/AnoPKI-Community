@@ -231,8 +231,11 @@ Profiles are explicit:
   and govulncheck v1.1.4.
 - `full`: baseline followed by analysis.
 
-CI currently supplies exact Go 1.25.12 and Go 1.26.11 toolchains. The release
-workflow packages passing full-profile output as `anopki-go-verification.tar.gz`;
+CI currently supplies Go 1.25.12 (legacy compatibility only) and Go 1.26.11
+toolchains. Release binaries and full-profile evidence use the patched
+Go 1.26.11 toolchain (2026-11-10 security fixes), rather than the older
+Go 1.25.12 baseline. The release workflow packages passing full-profile
+output as `anopki-go-verification.tar.gz`;
 the artifact validator rejects missing, failed, incomplete, or unchecksummed Go
 evidence. A local unsupported toolchain is an environment blocker, not passing
 evidence and not a waiver.
