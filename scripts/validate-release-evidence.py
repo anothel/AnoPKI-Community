@@ -377,6 +377,8 @@ REQUIRED_RELEASE_TEXT = [
     "syft scan dir:dist",
     "python scripts/validate-release-sbom.py dist/anopki.sbom.cdx.json",
     "python scripts/test_validate_release_sbom.py",
+    "git fetch --no-tags origin +refs/heads/main:refs/remotes/origin/main",
+    'git merge-base --is-ancestor "$GITHUB_SHA" refs/remotes/origin/main',
     "cosign sign-blob",
     "cosign verify-blob",
     'test -s "${artifact}.sigstore.json"',
@@ -461,6 +463,7 @@ def check_local_verification_evidence(root: Path, text: str) -> None:
 
 def check_release_publication_gate(workflow: str) -> None:
     names = [
+        "      - name: Require a signed annotated tag",
         "      - name: Sign release evidence",
         "      - name: Verify signatures and signer identity before publication",
         "      - name: Publish GitHub Release",
@@ -468,7 +471,12 @@ def check_release_publication_gate(workflow: str) -> None:
     positions = [workflow.find(name) for name in names]
     if any(pos < 0 for pos in positions) or positions != sorted(positions):
         fail("release signing, verification and publication order is invalid")
-    verification_step = workflow[positions[1]:positions[2]]
+    tag_step = workflow[positions[0]:positions[1]]
+    if tag_step.find("git fetch --no-tags origin +refs/heads/main:refs/remotes/origin/main") < 0:
+        fail("release tag is not checked against the remote main history")
+    if tag_step.find('git merge-base --is-ancestor "$GITHUB_SHA" refs/remotes/origin/main') < 0:
+        fail("release tag main ancestry check is missing")
+    verification_step = workflow[positions[2]:positions[3]]
     if "dist/*.json" in verification_step:
         fail("release signature verification must exclude generated JSON bundles")
     for required in ("dist/anopki-backend-info.json", "dist/anopki-release-metadata.json", "dist/anopki.sbom.cdx.json"):

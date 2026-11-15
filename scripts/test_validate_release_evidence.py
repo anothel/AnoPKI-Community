@@ -33,6 +33,8 @@ def require_release_workflow() -> None:
         "go build -ldflags", "anopki-service-v${VERSION}-linux-amd64.tar.gz",
         "anopki-core-v${VERSION}-linux-amd64.tar.gz",
         "python scripts/validate-release-artifacts.py dist", "postgres:16", "postgresql-client", "syft scan dir:dist",
+        "git fetch --no-tags origin +refs/heads/main:refs/remotes/origin/main",
+        'git merge-base --is-ancestor "$GITHUB_SHA" refs/remotes/origin/main',
         "cosign sign-blob", "cosign verify-blob",
         'test -s "${artifact}.sigstore.json"', '--certificate-identity "$identity"',
         '--certificate-oidc-issuer "https://token.actions.githubusercontent.com"',
@@ -155,6 +157,38 @@ def test_missing_release_go_evidence_fails(tmp_path: Path) -> None:
     result = run_validator(tmp_path)
     assert result.returncode == 1
     assert "anopki-go-verification.tar.gz" in result.stderr
+
+
+def test_release_tag_without_main_fetch_fails(tmp_path: Path) -> None:
+    copy_release_evidence_inputs(tmp_path)
+    mutate(tmp_path / ".github/workflows/release.yml", "git fetch --no-tags origin +refs/heads/main:refs/remotes/origin/main")
+    result = run_validator(tmp_path)
+    assert result.returncode == 1
+    assert "git fetch --no-tags" in result.stderr
+
+
+def test_release_tag_without_main_ancestry_fails(tmp_path: Path) -> None:
+    copy_release_evidence_inputs(tmp_path)
+    mutate(tmp_path / ".github/workflows/release.yml", 'git merge-base --is-ancestor "$GITHUB_SHA" refs/remotes/origin/main')
+    result = run_validator(tmp_path)
+    assert result.returncode == 1
+    assert "git merge-base --is-ancestor" in result.stderr
+
+
+def test_release_tag_main_ancestry_must_precede_signing(tmp_path: Path) -> None:
+    copy_release_evidence_inputs(tmp_path)
+    path = tmp_path / ".github/workflows/release.yml"
+    content = path.read_text(encoding="utf-8")
+    line = '          git merge-base --is-ancestor "$GITHUB_SHA" refs/remotes/origin/main\n'
+    assert content.count(line) == 1
+    content = content.replace(line, "", 1)
+    marker = "          rm dist/SIGNING-STATUS.txt"
+    assert marker in content
+    content = content.replace(marker, marker + "\n" + line.rstrip("\n"), 1)
+    path.write_text(content, encoding="utf-8")
+    result = run_validator(tmp_path)
+    assert result.returncode == 1
+    assert "release tag main ancestry check is missing" in result.stderr
 
 
 def test_missing_release_signing_evidence_fails(tmp_path: Path) -> None:
@@ -467,6 +501,9 @@ def main() -> None:
         test_missing_release_multi_node_evidence_fails,
         test_missing_postgres_multi_node_failover_runner_fails,
         test_missing_release_postgres_multi_node_failover_evidence_fails,
+        test_release_tag_without_main_fetch_fails,
+        test_release_tag_without_main_ancestry_fails,
+        test_release_tag_main_ancestry_must_precede_signing,
         test_missing_release_signing_evidence_fails,
         test_missing_release_signature_verification_fails,
         test_missing_release_signer_identity_fails,
