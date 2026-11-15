@@ -209,6 +209,25 @@ def write_evidence(output_dir: Path, evidence: dict[str, Any]) -> None:
     (output_dir / "postgres-multi-node-failover-verification.md").write_text(markdown, encoding="utf-8")
 
 
+
+def failure_summary(exit_code: int, tests: list[dict[str, str]], redaction: dict[str, bool]) -> str:
+    """Report only known test names, states, exit code and redaction flags.
+
+    Never echo arbitrary Go test output or database credentials into CI stderr
+    or the structured evidence's blocker field. The sanitized log is an
+    independently retained artifact when its sensitivity gate permits it.
+    """
+    reasons: list[str] = []
+    if exit_code != 0:
+        reasons.append(f"go test exit {exit_code}")
+    outcomes = [f"{test['name']}={test['status']}" for test in tests if test["status"] != "pass"]
+    if outcomes:
+        reasons.append("test outcomes: " + ", ".join(outcomes))
+    redaction_failures = [name for name, present in sorted(redaction.items()) if present]
+    if redaction_failures:
+        reasons.append("sensitive output flags: " + ", ".join(redaction_failures))
+    return "; ".join(reasons) or "verification failed without a classified cause"
+
 def run_drill(root: Path, output_dir: Path, go_executable: str | list[str], commit: str) -> dict[str, Any]:
     output_dir.mkdir(parents=True, exist_ok=True)
     evidence = evidence_template(resolve_commit(root, commit))
@@ -272,7 +291,7 @@ def run_drill(root: Path, output_dir: Path, go_executable: str | list[str], comm
             for name in EXPECTED_CHECKS
         ]
         evidence["result"] = "passed" if passed else "failed"
-        evidence["blocker"] = "" if passed else "one or more PostgreSQL multi-node failover tests, checks, or redaction rules failed"
+        evidence["blocker"] = "" if passed else failure_summary(result.returncode, evidence["tests"], evidence["redaction"])
         stored_log = redacted_log
         if any(forbidden in redacted_log.lower() for forbidden in FORBIDDEN_TEXT):
             stored_log = "sensitive command output detected and omitted\n"

@@ -98,22 +98,33 @@ def main() -> None:
         root = Path(dirname)
         evidence = MODULE.run_drill(ROOT, root / "out", fake_go(root / "go", fail=MODULE.TESTS[0]), "d" * 40)
         assert evidence["result"] == "failed"
+        assert "go test exit 1" in evidence["blocker"]
+        assert MODULE.TESTS[0] + "=fail" in evidence["blocker"]
+        assert test_dsn not in evidence["blocker"]
+        assert MODULE.TESTS[0] + "=fail" in (root / "out" / "postgres-multi-node-failover-verification.md").read_text()
 
     with tempfile.TemporaryDirectory() as dirname, dsn(test_dsn):
         root = Path(dirname)
         evidence = MODULE.run_drill(ROOT, root / "out", fake_go(root / "go", omit=MODULE.TESTS[1]), "e" * 40)
         assert evidence["result"] == "failed"
+        assert MODULE.TESTS[1] + "=missing" in evidence["blocker"]
+        assert "go test exit" not in evidence["blocker"]
 
     with tempfile.TemporaryDirectory() as dirname, dsn(test_dsn):
         root = Path(dirname)
         evidence = MODULE.run_drill(ROOT, root / "out", fake_go(root / "go", skip=MODULE.TESTS[2]), "f" * 40)
         assert evidence["result"] == "failed"
+        assert MODULE.TESTS[2] + "=skip" in evidence["blocker"]
 
     with tempfile.TemporaryDirectory() as dirname, dsn(test_dsn):
         root = Path(dirname)
         evidence = MODULE.run_drill(ROOT, root / "out", fake_go(root / "go", sensitive="-----BEGIN " + "PRIVATE KEY-----"), "1" * 40)
         assert evidence["result"] == "failed"
         assert evidence["redaction"]["private_key_markers_found"] is True
+        assert evidence["blocker"] == "sensitive command output detected"
+        stored = (root / "out" / MODULE.LOG_NAME).read_text(encoding="utf-8")
+        assert "PRIVATE KEY" not in stored
+        assert test_dsn not in stored
 
     try:
         MODULE.resolve_commit(ROOT, "bad")
