@@ -22,7 +22,9 @@ def require_release_workflow() -> None:
     text = RELEASE_WORKFLOW.read_text(encoding="utf-8")
     required = [
         "on:", "workflow_dispatch:", "tags:", "contents: read", "contents: write",
-        "id-token: write", 'go-version: "1.25.12"',
+        "id-token: write", "runs-on: ubuntu-24.04", "postgresql-client-16",
+        'go-version: "1.26.11"', 'gh api "repos/${GITHUB_REPOSITORY}/git/tags/${tag_sha}"',
+        'test "$verified" = "true"', "--prerelease",
         "python scripts/verify-go-release.py", "--profile full",
         "anopki-go-verification.tar.gz", "anopki-recovery-verification.tar.gz",
         "anopki-status-outage-verification.tar.gz", "anopki-audit-replay-verification.tar.gz", "anopki-audit-integrity-verification.tar.gz", "anopki-authorization-boundary-verification.tar.gz", "anopki-issuer-rollover-verification.tar.gz", "anopki-postgres-recovery-verification.tar.gz", "anopki-multi-node-verification.tar.gz", "anopki-postgres-multi-node-failover-verification.tar.gz",

@@ -2,8 +2,15 @@ name: Release artifacts
 
 on:
   push:
+    branches:
+      - main
+    paths:
+      - ".github/workflows/release.yml"
     tags:
       - "v*"
+  pull_request:
+    paths:
+      - ".github/workflows/release.yml"
   workflow_dispatch:
 
 permissions:
@@ -12,7 +19,7 @@ permissions:
 jobs:
   build-artifacts:
     name: Build release artifacts
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     services:
       postgres:
         image: postgres:16
@@ -31,14 +38,14 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-go@v5
         with:
-          go-version: "1.25.12"
+          go-version: "1.26.11"
           cache-dependency-path: |
             service/go.mod
             service/go.sum
       - uses: actions/setup-python@v5
         with:
           python-version: "3.x"
-      - run: sudo apt-get update && sudo apt-get install -y cmake g++ libssl-dev pkg-config postgresql-client
+      - run: sudo apt-get update && sudo apt-get install -y cmake g++ libssl-dev pkg-config postgresql-client-16
       - uses: anchore/sbom-action/download-syft@v0.17.9
       - name: Record stable toolchain
         run: |
@@ -47,7 +54,14 @@ jobs:
           c++ --version
           pkg-config --modversion openssl
           psql --version
+          pg_dump --version
+          pg_restore --version
+          for client in psql pg_dump pg_restore; do
+            "$client" --version | grep -Eq '\(PostgreSQL\) 16\.'
+          done
       - run: mkdir -p dist
+      - name: Test release artifact validation rules
+        run: python scripts/test_validate_release_artifacts.py
       - name: Run supported-Go full verification
         run: >-
           python scripts/verify-go-release.py
@@ -154,7 +168,7 @@ jobs:
       - run: tar -czf "dist/anopki-service-v${VERSION}-linux-amd64.tar.gz" -C dist anopki-service
       - run: tar -czf "dist/anopki-core-v${VERSION}-linux-amd64.tar.gz" -C dist anopki-core
       - run: rm dist/anopki-service dist/anopki-core
-      - run: sha256sum dist/*.tar.gz dist/anopki-backend-info.json dist/anopki-release-metadata.json > dist/SHA256SUMS
+      - run: (cd dist && sha256sum *.tar.gz anopki-backend-info.json anopki-release-metadata.json > SHA256SUMS)
       - run: python scripts/validate-release-artifacts.py dist
       - run: syft scan dir:dist -o cyclonedx-json=dist/anopki.sbom.cdx.json
       - name: Record signing status
@@ -184,8 +198,15 @@ jobs:
         with:
           fetch-depth: 0
       - name: Require a signed annotated tag
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: |
+          test "$(git cat-file -t "$GITHUB_REF_NAME")" = tag
           git cat-file -p "$GITHUB_REF_NAME" | grep -Eq -- '-----BEGIN (PGP|SSH) SIGNATURE-----'
+          tag_sha="$(git rev-parse "$GITHUB_REF_NAME")"
+          verified="$(gh api "repos/${GITHUB_REPOSITORY}/git/tags/${tag_sha}" --jq '.verification.verified')"
+          test "$verified" = "true"
+          test "$(git rev-parse "${GITHUB_REF_NAME}^{commit}")" = "$GITHUB_SHA"
       - uses: actions/download-artifact@v4
         with:
           name: anopki-release-${{ github.run_id }}
@@ -205,11 +226,18 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
+          release_flags=()
+          if [[ "$GITHUB_REF_NAME" == *-* ]]; then
+            release_flags+=(--prerelease)
+          fi
           if gh release view "$GITHUB_REF_NAME" >/dev/null 2>&1; then
             gh release upload "$GITHUB_REF_NAME" dist/* --clobber
           else
             gh release create "$GITHUB_REF_NAME" dist/* \
               --title "$GITHUB_REF_NAME" \
               --notes-file CHANGELOG.md \
-              --verify-tag
+              --verify-tag "${release_flags[@]}"
+          fi
+          if [[ "$GITHUB_REF_NAME" == *-* ]]; then
+            gh release edit "$GITHUB_REF_NAME" --prerelease
           fi

@@ -2,11 +2,27 @@
 
 All notable changes to this project will be recorded here.
 
-This project is pre-1.0, closed, and frozen. No public tag or release has been
-published. The entries below describe the frozen engineering baseline, not an
-active release candidate.
+The project is pre-1.0 and was reopened for stabilization on 2026-11-15.
+Alpha publication depends on full release evidence, signing and approval; see
+[GitHub Releases](https://github.com/anothel/AnoPKI-Community/releases)
+for actual publication status.
 
-## Frozen engineering baseline (`0.1.0-alpha.0`, not published)
+## Alpha readiness — 2026-11-15
+
+### Changed
+
+- Stabilized CI, PostgreSQL lease/test behavior, portable scripts, analysis
+  checks and dependency pins (PR #2).
+- Defaulted local development to `127.0.0.1:8080` and rejected ACME smoke
+  overrides in production (PR #3).
+- Extracted HTTP DTOs, ACME HTTP-01 verifier/SSRF checks and memory-store
+  helpers into cohesive files without contract changes (PRs #6, #8 and #11).
+- Retained redacted PostgreSQL failover evidence on failure (PR #9). The
+  historical intermittent failure remains unclassified.
+- Tightened the alpha release workflow platform, signed-tag verification
+  and prerelease publishing (issue #12).
+
+## Historical engineering baseline (`0.1.0-alpha.0`, previously not published)
 
 ### Added
 

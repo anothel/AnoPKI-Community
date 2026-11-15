@@ -2,10 +2,11 @@
 
 ## Project Security Status
 
-`AnoPKI-Community` is pre-1.0 and engineering is closed and frozen at the
-documented baseline. It has security controls for local development and early
-operational hardening, but it is not a published or supported production
-release.
+`AnoPKI-Community` is pre-1.0 and in active stabilization and alpha
+release-readiness review. It has security controls for local development
+and early operational hardening, but it is not a supported production release.
+Any alpha publication is evaluation-only and does not imply production
+hardening or a compatibility guarantee.
 
 Current security-relevant controls include API key authentication, scoped API keys, API key HMAC peppering, API key expiry and rotation, an operator [access model](docs/security/access-model.md), audit metadata, bounded request bodies, HTTP server timeouts, ACME nonce replay protection, ACME HTTP-01 unsafe target blocking, CRL publication, OCSP handling, and a production startup guard.
 
@@ -46,12 +47,13 @@ Please include:
 
 | Version | Status |
 | --- | --- |
-| Pre-1.0 frozen baseline | No published or supported production release. |
+| Current pre-1.0 / alpha development line | Active security maintenance; no supported production release or compatibility SLA. |
 | Older branches or forks | Not supported by this project unless maintainers state otherwise. |
 
-There is no active development line or supported-release policy. Reopening
-engineering, including security maintenance work, requires a new product
-decision. Private vulnerability reports remain welcome for assessment.
+The 2026-07-24 engineering freeze was superseded by the owner's 2026-11-15
+stabilization decision. See [the roadmap](docs/ROADMAP.md) and
+[release-readiness tracker](https://github.com/anothel/AnoPKI-Community/issues/12).
+Private vulnerability reports remain welcome for assessment.
 
 ## Security Expectations
 

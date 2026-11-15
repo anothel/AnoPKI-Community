@@ -17,9 +17,11 @@ Current implementation includes:
 - Audit metadata, lifecycle outbox events, webhook notification endpoints, bounded retry, and dead-letter handling.
 - ACME-shaped protocol adapter with account, order, authorization, HTTP-01 challenge, finalize, and certificate download flows.
 
-See [docs/ROADMAP.md](docs/ROADMAP.md) for deferred, unselected work and
-[Release readiness action plan](docs/reference/release-readiness-action-plan.md)
-for the closed historical execution record.
+See [docs/ROADMAP.md](docs/ROADMAP.md) for active alpha readiness,
+remaining risks and deferred work. The
+[release readiness action plan](docs/reference/release-readiness-action-plan.md)
+preserves the historical closeout; the current release decision is tracked
+in [Issue #12](https://github.com/anothel/AnoPKI-Community/issues/12).
 
 ## Repository Layout
 
