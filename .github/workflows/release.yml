@@ -173,6 +173,13 @@ jobs:
         run: syft scan dir:dist -o cyclonedx-json=dist/anopki.sbom.cdx.json
       - name: Reject empty or incomplete release SBOM
         run: python scripts/validate-release-sbom.py dist/anopki.sbom.cdx.json
+      - name: Retain SBOM for diagnosis if validation fails
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: anopki-sbom-validation-failure
+          path: dist/anopki.sbom.cdx.json
+          if-no-files-found: warn
       - run: rm dist/anopki-service dist/anopki-core
       - run: (cd dist && sha256sum *.tar.gz anopki-backend-info.json anopki-release-metadata.json > SHA256SUMS)
       - run: python scripts/validate-release-artifacts.py dist
