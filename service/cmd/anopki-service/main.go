@@ -775,11 +775,12 @@ func bootstrapACMEDefaults(ctx context.Context, svc *lifecycle.Service, validity
 		return httpapi.ACMEConfig{}, err
 	}
 	profile, err := svc.CreateCertificateProfile(ctx, "system", lifecycle.CreateCertificateProfileRequest{
-		IssuerID:              issuer.ID,
-		Name:                  "acme-smoke-profile",
-		ValidityPeriodSeconds: int64(validity.Seconds()),
-		AllowedDNSPatterns:    []string{"*.example.test"},
-		AllowedIPRanges:       []string{"127.0.0.0/8"},
+		IssuerID:                   issuer.ID,
+		Name:                       "acme-smoke-profile",
+		ValidityPeriodSeconds:      int64(validity.Seconds()),
+		AllowedDNSPatterns:         []string{"*.example.test"},
+		AllowedIPRanges:            []string{"127.0.0.0/8"},
+		AllowedSignatureAlgorithms: []string{"rsa_with_sha256"},
 	})
 	if err != nil {
 		return httpapi.ACMEConfig{}, err
