@@ -165,7 +165,7 @@ def test_release_tag_checkout_ref_restore_required(tmp_path: Path) -> None:
     mutate(tmp_path / ".github/workflows/release.yml", 'git fetch --force --no-tags origin "+refs/tags/${GITHUB_REF_NAME}:refs/tags/${GITHUB_REF_NAME}"')
     result = run_validator(tmp_path)
     assert result.returncode == 1
-    assert "restore the remote annotated tag ref" in result.stderr
+    assert "git fetch --force --no-tags" in result.stderr
 
 
 def test_release_tag_restore_must_precede_type_check(tmp_path: Path) -> None:
