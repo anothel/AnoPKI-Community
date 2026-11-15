@@ -205,6 +205,21 @@ def test_reordered_release_signature_verification_fails(tmp_path: Path) -> None:
     assert "release signing, verification and publication order is invalid" in result.stderr
 
 
+def test_release_verification_does_not_rescan_generated_bundles(tmp_path: Path) -> None:
+    copy_release_evidence_inputs(tmp_path)
+    workflow = tmp_path / ".github/workflows/release.yml"
+    content = workflow.read_text(encoding="utf-8")
+    marker = "      - name: Verify signatures and signer identity before publication"
+    assert marker in content
+    head, verification = content.split(marker, 1)
+    assert "dist/anopki-backend-info.json" in verification
+    verification = verification.replace("dist/anopki-backend-info.json", "dist/*.json", 1)
+    workflow.write_text(head + marker + verification, encoding="utf-8")
+    result = run_validator(tmp_path)
+    assert result.returncode == 1
+    assert "release signature verification must exclude generated JSON bundles" in result.stderr
+
+
 def test_missing_release_dry_run_gate_fails(tmp_path: Path) -> None:
     copy_release_evidence_inputs(tmp_path)
     mutate(
@@ -457,6 +472,7 @@ def main() -> None:
         test_missing_release_signer_identity_fails,
         test_missing_release_bundle_gate_fails,
         test_reordered_release_signature_verification_fails,
+        test_release_verification_does_not_rescan_generated_bundles,
         test_missing_release_dry_run_gate_fails,
         test_release_evidence_placeholder_fails,
         test_missing_local_verification_evidence_fails,

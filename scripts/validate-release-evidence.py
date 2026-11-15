@@ -468,6 +468,12 @@ def check_release_publication_gate(workflow: str) -> None:
     positions = [workflow.find(name) for name in names]
     if any(pos < 0 for pos in positions) or positions != sorted(positions):
         fail("release signing, verification and publication order is invalid")
+    verification_step = workflow[positions[1]:positions[2]]
+    if "dist/*.json" in verification_step:
+        fail("release signature verification must exclude generated JSON bundles")
+    for required in ("dist/anopki-backend-info.json", "dist/anopki-release-metadata.json", "dist/anopki.sbom.cdx.json"):
+        if required not in verification_step:
+            fail("release signature verification missing original JSON manifest: " + required)
 
 
 def main() -> None:

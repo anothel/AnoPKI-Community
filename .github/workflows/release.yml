@@ -227,7 +227,10 @@ jobs:
       - name: Sign release evidence
         run: |
           rm dist/SIGNING-STATUS.txt
-          for artifact in dist/*.tar.gz dist/SHA256SUMS dist/*.json; do
+          for artifact in dist/*.tar.gz dist/SHA256SUMS \
+            dist/anopki-backend-info.json \
+            dist/anopki-release-metadata.json \
+            dist/anopki.sbom.cdx.json; do
             cosign sign-blob --yes \
               --bundle "${artifact}.sigstore.json" \
               --output-signature "${artifact}.sig" \
@@ -237,7 +240,10 @@ jobs:
       - name: Verify signatures and signer identity before publication
         run: |
           identity="https://github.com/${GITHUB_REPOSITORY}/.github/workflows/release.yml@${GITHUB_REF}"
-          for artifact in dist/*.tar.gz dist/SHA256SUMS dist/*.json; do
+          for artifact in dist/*.tar.gz dist/SHA256SUMS \
+            dist/anopki-backend-info.json \
+            dist/anopki-release-metadata.json \
+            dist/anopki.sbom.cdx.json; do
             test -s "${artifact}.sig"
             test -s "${artifact}.pem"
             test -s "${artifact}.sigstore.json"
