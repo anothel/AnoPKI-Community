@@ -332,7 +332,7 @@ function Start-HTTPSProxy {
     try {
         $env:GOCACHE = $goCachePath
         $env:GOMODCACHE = $goModCachePath
-        $build = Invoke-NativeCommand -FilePath "go" -ArgumentList @("build", "-o", $proxyBinPath, ".\scripts\acme-smoke\acme-https-proxy.go")
+        $build = Invoke-NativeCommand -FilePath "go" -ArgumentList @("build", "-o", $proxyBinPath, "./scripts/acme-smoke/acme-https-proxy.go")
         if ($build.ExitCode -ne 0) {
             throw "build ACME HTTPS proxy failed: $($build.Output -join [Environment]::NewLine)"
         }
