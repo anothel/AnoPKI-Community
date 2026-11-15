@@ -43,7 +43,7 @@ def require_release_workflow() -> None:
         "publish-tagged-release:",
         "if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')",
         "environment: release", "Require a signed annotated tag",
-        "GH_TOKEN: ${{ github.token }}", "gh release create", "gh release upload",
+        "GH_TOKEN: ${{ github.token }}", "gh release create", "--verify-tag",
     ]
     missing = [value for value in required if value not in text]
     if missing:
@@ -252,6 +252,26 @@ def test_release_verification_does_not_rescan_generated_bundles(tmp_path: Path) 
     result = run_validator(tmp_path)
     assert result.returncode == 1
     assert "release signature verification must exclude generated JSON bundles" in result.stderr
+
+
+def test_release_asset_overwrite_fails(tmp_path: Path) -> None:
+    copy_release_evidence_inputs(tmp_path)
+    path = tmp_path / ".github/workflows/release.yml"
+    content = path.read_text(encoding="utf-8")
+    marker = '          gh release create "$GITHUB_REF_NAME" dist/*'
+    assert marker in content
+    path.write_text(content.replace(marker, '          gh release upload "$GITHUB_REF_NAME" dist/* --clobber\n' + marker, 1), encoding="utf-8")
+    result = run_validator(tmp_path)
+    assert result.returncode == 1
+    assert "release publication must never overwrite existing assets" in result.stderr
+
+
+def test_release_tag_verification_before_creation_required(tmp_path: Path) -> None:
+    copy_release_evidence_inputs(tmp_path)
+    mutate(tmp_path / ".github/workflows/release.yml", '--verify-tag "${release_flags[@]}"')
+    result = run_validator(tmp_path)
+    assert result.returncode == 1
+    assert "--verify-tag" in result.stderr
 
 
 def test_missing_release_dry_run_gate_fails(tmp_path: Path) -> None:
@@ -510,6 +530,8 @@ def main() -> None:
         test_missing_release_bundle_gate_fails,
         test_reordered_release_signature_verification_fails,
         test_release_verification_does_not_rescan_generated_bundles,
+        test_release_asset_overwrite_fails,
+        test_release_tag_verification_before_creation_required,
         test_missing_release_dry_run_gate_fails,
         test_release_evidence_placeholder_fails,
         test_missing_local_verification_evidence_fails,
