@@ -486,6 +486,52 @@ jobs:
       - run: cmake --build build --config Debug
       - run: ctest --test-dir build -C Debug --output-on-failure
 
+  windows-cpp-smoke:
+    name: Windows native C++ smoke
+    runs-on: windows-2022
+    defaults:
+      run:
+        shell: pwsh
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.x"
+      - name: Provision Windows OpenSSL development and runtime libraries
+        run: |
+          $vcpkgRoot = if ($env:VCPKG_INSTALLATION_ROOT) { $env:VCPKG_INSTALLATION_ROOT } elseif ($env:VCPKG_ROOT) { $env:VCPKG_ROOT } else { "C:\vcpkg" }
+          $vcpkg = Join-Path $vcpkgRoot "vcpkg.exe"
+          if (-not (Test-Path -LiteralPath $vcpkg -PathType Leaf)) { throw "vcpkg.exe unavailable: $vcpkg" }
+          & $vcpkg install "openssl:x64-windows" --classic
+          if ($LASTEXITCODE -ne 0) { throw "OpenSSL vcpkg installation failed" }
+          $opensslRoot = Join-Path $vcpkgRoot "installed\x64-windows"
+          $opensslBin = Join-Path $opensslRoot "bin"
+          if (-not (Get-ChildItem -LiteralPath $opensslBin -Filter "libcrypto*.dll" -File -ErrorAction SilentlyContinue)) {
+            throw "OpenSSL runtime DLL missing from $opensslBin"
+          }
+          "OPENSSL_ROOT_DIR=$opensslRoot" >> $env:GITHUB_ENV
+          "$opensslBin" >> $env:GITHUB_PATH
+          & $vcpkg list "openssl"
+          if ($LASTEXITCODE -ne 0) { throw "Failed to record OpenSSL version" }
+      - name: Record Windows toolchain
+        run: |
+          cmake --version
+          if ($LASTEXITCODE -ne 0) { throw "CMake unavailable" }
+          python --version
+          if ($LASTEXITCODE -ne 0) { throw "Python unavailable" }
+      - name: Configure native Community OpenSSL C++ runtime
+        run: |
+          cmake -S . -B build-windows -G "Visual Studio 17 2022" -A x64 -DANOPKI_PRODUCT_PROFILE=community-openssl -DOPENSSL_ROOT_DIR="$env:OPENSSL_ROOT_DIR"
+          if ($LASTEXITCODE -ne 0) { throw "Windows CMake configure failed" }
+      - name: Build native Windows core and CLI
+        run: |
+          cmake --build build-windows --config Debug --parallel 2
+          if ($LASTEXITCODE -ne 0) { throw "Windows core build failed" }
+      - name: Execute native CTest and CLI contracts
+        run: |
+          ctest --test-dir build-windows -C Debug --output-on-failure
+          if ($LASTEXITCODE -ne 0) { throw "Windows CTest failed" }
+
   cpp-fuzz-smoke:
     name: C++ fuzz smoke
     runs-on: ubuntu-latest

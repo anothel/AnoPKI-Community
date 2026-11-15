@@ -94,6 +94,12 @@ std::map<std::string, std::string> load_expected(const std::filesystem::path &pa
 	std::string line;
 	while (std::getline(lines, line))
 	{
+		// A Windows checkout may use CRLF line endings for text fixtures.
+		// Normalize only the trailing CR; malformed key/value lines still fail.
+		if (!line.empty() && line.back() == '\r')
+		{
+			line.pop_back();
+		}
 		if (line.empty() || line[0] == '#')
 		{
 			continue;
@@ -517,6 +523,17 @@ int main(int argc, char *argv[])
 	const std::filesystem::path fixture_dir = argv[2];
 	const std::map<std::string, std::string> expected = load_expected(fixture_dir / "manifest.txt");
 	expect_eq(expected, "format.version", "1");
+
+	// Regression: preserve strict fixture comparisons with CRLF and CRLF blank lines.
+	std::ostringstream crlf_fixture;
+	crlf_fixture << "# Windows CRLF fixture\r\n\r\n";
+	for (const auto &[key, value] : expected)
+	{
+		crlf_fixture << key << "=" << value << "\r\n";
+	}
+	const auto crlf_path = work_dir / "anopki_openssl_golden_crlf_manifest.txt";
+	write_file(crlf_path, crlf_fixture.str());
+	require(load_expected(crlf_path) == expected, "CRLF expected fixture mismatch");
 
 	if (argc == 6)
 	{
