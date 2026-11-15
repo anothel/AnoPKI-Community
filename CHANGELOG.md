@@ -7,6 +7,20 @@ Alpha publication depends on full release evidence, signing and approval; see
 [GitHub Releases](https://github.com/anothel/AnoPKI-Community/releases)
 for actual publication status.
 
+## Alpha.1 release recovery — 2026-11-15
+
+- The GitHub-verified SSH-signed `v0.1.0-alpha.0` tag was created, but the
+  tag-triggered build succeeded while publish failed before signing assets.
+  GitHub Actions checkout had replaced the local annotated tag ref with its
+  peeled commit; the fail-closed annotated-tag gate caught that mismatch.
+- Restore the exact remote annotated tag object before checking its type,
+  GitHub signature verification, peeled commit and main ancestry. Retain all
+  existing Sigstore signing, immutable release-asset and approval guards.
+- Advance `VERSION` to `0.1.0-alpha.1` for a new signed candidate after
+  review. Preserve the already signed alpha.0 tag without force-moving it.
+  No successful public release, compatibility freeze or production-readiness
+  claim is made by this changelog entry.
+
 ## Alpha readiness — 2026-11-15
 
 ### Changed

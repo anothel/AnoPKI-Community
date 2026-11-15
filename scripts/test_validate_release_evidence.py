@@ -24,7 +24,8 @@ def require_release_workflow() -> None:
         "on:", "workflow_dispatch:", "tags:", "contents: read", "contents: write",
         "id-token: write", "runs-on: ubuntu-24.04", "postgresql-client-16",
         'go-version: "1.26.11"', 'gh api "repos/${GITHUB_REPOSITORY}/git/tags/${tag_sha}"',
-        'test "$verified" = "true"', "--prerelease",
+        'test "$verified" = "true"', 'git fetch --force --no-tags origin "+refs/tags/${GITHUB_REF_NAME}:refs/tags/${GITHUB_REF_NAME}"',
+        'test "$(git cat-file -t "$GITHUB_REF_NAME")" = tag', "--prerelease",
         "python scripts/verify-go-release.py", "--profile full",
         "anopki-go-verification.tar.gz", "anopki-recovery-verification.tar.gz",
         "anopki-status-outage-verification.tar.gz", "anopki-audit-replay-verification.tar.gz", "anopki-audit-integrity-verification.tar.gz", "anopki-authorization-boundary-verification.tar.gz", "anopki-issuer-rollover-verification.tar.gz", "anopki-postgres-recovery-verification.tar.gz", "anopki-multi-node-verification.tar.gz", "anopki-postgres-multi-node-failover-verification.tar.gz",
@@ -157,6 +158,64 @@ def test_missing_release_go_evidence_fails(tmp_path: Path) -> None:
     result = run_validator(tmp_path)
     assert result.returncode == 1
     assert "anopki-go-verification.tar.gz" in result.stderr
+
+
+def test_release_tag_checkout_ref_restore_required(tmp_path: Path) -> None:
+    copy_release_evidence_inputs(tmp_path)
+    mutate(tmp_path / ".github/workflows/release.yml", 'git fetch --force --no-tags origin "+refs/tags/${GITHUB_REF_NAME}:refs/tags/${GITHUB_REF_NAME}"')
+    result = run_validator(tmp_path)
+    assert result.returncode == 1
+    assert "git fetch --force --no-tags" in result.stderr
+
+
+def test_release_tag_restore_must_precede_type_check(tmp_path: Path) -> None:
+    copy_release_evidence_inputs(tmp_path)
+    path = tmp_path / ".github/workflows/release.yml"
+    content = path.read_text(encoding="utf-8")
+    refetch = '          git fetch --force --no-tags origin "+refs/tags/${GITHUB_REF_NAME}:refs/tags/${GITHUB_REF_NAME}"\n'
+    check = '          test "$(git cat-file -t "$GITHUB_REF_NAME")" = tag\n'
+    assert content.count(refetch) == 1 and content.count(check) == 1
+    content = content.replace(refetch, "", 1).replace(check, check + refetch, 1)
+    path.write_text(content, encoding="utf-8")
+    result = run_validator(tmp_path)
+    assert result.returncode == 1
+    assert "restored before checking its type" in result.stderr
+
+
+def test_checkout_peeled_tag_ref_restores_annotated_remote_tag(tmp_path: Path) -> None:
+    """Reproduce checkout's local tag ref rewrite and prove remote restoration."""
+    def git(cwd: Path, *args: str) -> str:
+        result = subprocess.run(
+            ["git", *args], cwd=cwd, text=True, capture_output=True, check=False,
+        )
+        assert result.returncode == 0, result.stderr
+        return result.stdout.strip()
+
+    origin = tmp_path / "origin.git"
+    source = tmp_path / "source"
+    checkout = tmp_path / "checkout"
+    tag = "v0.1.0-alpha.1"
+    git(tmp_path, "init", "--bare", "-b", "main", str(origin))
+    git(tmp_path, "init", "-b", "main", str(source))
+    git(source, "config", "user.name", "AnoPKI CI test")
+    git(source, "config", "user.email", "ci@example.invalid")
+    (source / "test.txt").write_text("test\n", encoding="utf-8")
+    git(source, "add", "test.txt")
+    git(source, "commit", "-m", "test baseline")
+    git(source, "tag", "-a", tag, "-m", "annotated test tag")
+    git(source, "remote", "add", "origin", str(origin))
+    git(source, "push", "origin", "HEAD:refs/heads/main", "refs/tags/" + tag)
+    git(tmp_path, "clone", str(origin), str(checkout))
+    commit = git(source, "rev-parse", "HEAD")
+
+    git(checkout, "fetch", "--force", "--no-tags", "origin",
+        "+" + commit + ":refs/tags/" + tag)
+    assert git(checkout, "cat-file", "-t", tag) == "commit"
+
+    git(checkout, "fetch", "--force", "--no-tags", "origin",
+        "+refs/tags/" + tag + ":refs/tags/" + tag)
+    assert git(checkout, "cat-file", "-t", tag) == "tag"
+    assert git(checkout, "rev-parse", tag + "^{commit}") == commit
 
 
 def test_release_tag_without_main_fetch_fails(tmp_path: Path) -> None:
@@ -521,6 +580,9 @@ def main() -> None:
         test_missing_release_multi_node_evidence_fails,
         test_missing_postgres_multi_node_failover_runner_fails,
         test_missing_release_postgres_multi_node_failover_evidence_fails,
+        test_release_tag_checkout_ref_restore_required,
+        test_release_tag_restore_must_precede_type_check,
+        test_checkout_peeled_tag_ref_restores_annotated_remote_tag,
         test_release_tag_without_main_fetch_fails,
         test_release_tag_without_main_ancestry_fails,
         test_release_tag_main_ancestry_must_precede_signing,

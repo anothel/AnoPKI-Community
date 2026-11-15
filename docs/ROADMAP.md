@@ -24,9 +24,13 @@ PRODUCTION_READY=NO
 
 ## Active alpha readiness
 
-- Issue #12 tracks Community/OpenSSL `v0.1.0-alpha.0` dry-run validation:
+- Issue #12 tracks Community/OpenSSL `v0.1.0-alpha.1` release recovery:
   exact-commit CI, recovery and security evidence, SBOM, checksums, release
   signing, environment approvals, and an explicit go/no-go.
+- The GitHub-verified signed `v0.1.0-alpha.0` tag is preserved as evidence:
+  its artifact build passed, but the tag-only publish job failed because
+  checkout rewrote the local annotated tag ref to its peeled commit.
+  No GitHub Release was published. Do not rewrite or delete that signed tag.
 - Windows runtime and live ACME-client interoperability still require evidence.
 - The alpha target is evaluation-only. No stable compatibility or production
   readiness guarantee is being made.
