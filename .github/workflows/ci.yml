@@ -486,6 +486,44 @@ jobs:
       - run: cmake --build build --config Debug
       - run: ctest --test-dir build -C Debug --output-on-failure
 
+  windows-go-smoke:
+    name: Windows native Go service smoke
+    runs-on: windows-2022
+    defaults:
+      run:
+        shell: pwsh
+        working-directory: service
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.25.12"
+          cache-dependency-path: |
+            service/go.mod
+            service/go.sum
+      - name: Record native Windows Go toolchain
+        run: |
+          go version
+          if ($LASTEXITCODE -ne 0) { throw "Go toolchain unavailable" }
+          go env GOOS GOARCH
+          if ($LASTEXITCODE -ne 0) { throw "Unable to record Go target" }
+      - name: Execute native Windows Go package tests
+        run: |
+          go test -p 1 ./...
+          if ($LASTEXITCODE -ne 0) { throw "Windows Go tests failed" }
+      - name: Run native Windows Go vet
+        run: |
+          go vet ./...
+          if ($LASTEXITCODE -ne 0) { throw "Windows Go vet failed" }
+      - name: Build native Windows service executable
+        run: |
+          New-Item -ItemType Directory -Force -Path "../.tmp" | Out-Null
+          go build -o ../.tmp/anopki-service-windows.exe ./cmd/anopki-service
+          if ($LASTEXITCODE -ne 0) { throw "Windows service build failed" }
+          if (-not (Test-Path -LiteralPath "../.tmp/anopki-service-windows.exe" -PathType Leaf)) {
+            throw "Missing native Windows service executable"
+          }
+
   windows-cpp-smoke:
     name: Windows native C++ smoke
     runs-on: windows-2022
