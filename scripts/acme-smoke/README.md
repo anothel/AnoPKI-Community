@@ -32,8 +32,8 @@ traffic from this shell. In this workspace, lego `v4.35.2+dev-release` at
 `.tmp\lego-bin\lego.exe` has completed a live HTTP-01 run through certificate
 response with the harness-started service.
 
-WSL certbot 5.6.0 with PowerShell 7.6.3 has also completed the live HTTP-01
-run:
+A historical local report records WSL certbot 5.6.0 with PowerShell 7.6.3
+completing HTTP-01 (this is not the pinned Linux CI evidence):
 
 ```bash
 pwsh -NoProfile -ExecutionPolicy Bypass -File scripts/acme-smoke/run-certbot-smoke.ps1 -CertbotPath /snap/bin/certbot -WorkDir .tmp/acme-smoke-certbot-wsl -StartService -DirectoryTimeoutSec 60 -Run
@@ -181,3 +181,23 @@ hosts file, or change `-Domain` to a name that resolves locally. On Windows,
 binding port 80 may require an elevated shell.
 
 DNS-01 is out of scope for this harness.
+
+## Pinned Linux Certbot CI reproduction
+
+After building the Community/OpenSSL core, with Go and `pwsh` available:
+
+```bash
+python3.12 -m venv .tmp/certbot-venv
+.tmp/certbot-venv/bin/python -m pip install -r scripts/acme-smoke/certbot-requirements.txt
+.tmp/certbot-venv/bin/python -m pip check
+bash scripts/acme-smoke/run-live-certbot.sh .tmp/certbot-venv/bin/certbot build-certbot/anopki-core
+```
+
+Run from the repository root, with loopback ports 8080 and 5002 free. This
+wrapper gives every run fresh private state, uses the unchanged PowerShell
+harness and checks the returned certificate using OpenSSL. It suppresses
+sensitive raw client/responder logs and removes its temporary directory on
+exit. Only fixed stages and public certificate metadata reach CI output.
+The locked Python dependency set targets Linux/Python 3.12. See the
+[compatibility matrix](../../docs/acme-client-compatibility.md) for evidence
+classification and limitations. The existing lego lane remains separate.
