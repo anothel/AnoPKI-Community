@@ -33,7 +33,10 @@ def require_release_workflow() -> None:
         "go build -ldflags", "anopki-service-v${VERSION}-linux-amd64.tar.gz",
         "anopki-core-v${VERSION}-linux-amd64.tar.gz",
         "python scripts/validate-release-artifacts.py dist", "postgres:16", "postgresql-client", "syft scan dir:dist",
-        "cosign sign-blob", "actions/upload-artifact", "actions/download-artifact",
+        "cosign sign-blob", "cosign verify-blob",
+        'test -s "${artifact}.sigstore.json"', '--certificate-identity "$identity"',
+        '--certificate-oidc-issuer "https://token.actions.githubusercontent.com"',
+        "actions/upload-artifact", "actions/download-artifact",
         "SIGNING-STATUS.txt", "Signing skipped: manual dry-run",
         "publish-tagged-release:",
         "if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')",
@@ -160,6 +163,46 @@ def test_missing_release_signing_evidence_fails(tmp_path: Path) -> None:
     result = run_validator(tmp_path)
     assert result.returncode == 1
     assert "cosign sign-blob" in result.stderr
+
+
+def test_missing_release_signature_verification_fails(tmp_path: Path) -> None:
+    copy_release_evidence_inputs(tmp_path)
+    mutate(tmp_path / ".github/workflows/release.yml", "cosign verify-blob")
+    result = run_validator(tmp_path)
+    assert result.returncode == 1
+    assert "cosign verify-blob" in result.stderr
+
+
+def test_missing_release_signer_identity_fails(tmp_path: Path) -> None:
+    copy_release_evidence_inputs(tmp_path)
+    mutate(tmp_path / ".github/workflows/release.yml", '--certificate-identity "$identity"')
+    result = run_validator(tmp_path)
+    assert result.returncode == 1
+    assert "--certificate-identity" in result.stderr
+
+
+def test_missing_release_bundle_gate_fails(tmp_path: Path) -> None:
+    copy_release_evidence_inputs(tmp_path)
+    mutate(tmp_path / ".github/workflows/release.yml", 'test -s "${artifact}.sigstore.json"')
+    result = run_validator(tmp_path)
+    assert result.returncode == 1
+    assert "test -s" in result.stderr
+
+
+def test_reordered_release_signature_verification_fails(tmp_path: Path) -> None:
+    copy_release_evidence_inputs(tmp_path)
+    workflow = tmp_path / ".github/workflows/release.yml"
+    content = workflow.read_text(encoding="utf-8")
+    verify = "      - name: Verify signatures and signer identity before publication"
+    publish = "      - name: Publish GitHub Release"
+    assert verify in content and publish in content
+    content = content.replace(verify, "      - name: TEMPORARY", 1)
+    content = content.replace(publish, verify, 1)
+    content = content.replace("      - name: TEMPORARY", publish, 1)
+    workflow.write_text(content, encoding="utf-8")
+    result = run_validator(tmp_path)
+    assert result.returncode == 1
+    assert "release signing, verification and publication order is invalid" in result.stderr
 
 
 def test_missing_release_dry_run_gate_fails(tmp_path: Path) -> None:
@@ -410,6 +453,10 @@ def main() -> None:
         test_missing_postgres_multi_node_failover_runner_fails,
         test_missing_release_postgres_multi_node_failover_evidence_fails,
         test_missing_release_signing_evidence_fails,
+        test_missing_release_signature_verification_fails,
+        test_missing_release_signer_identity_fails,
+        test_missing_release_bundle_gate_fails,
+        test_reordered_release_signature_verification_fails,
         test_missing_release_dry_run_gate_fails,
         test_release_evidence_placeholder_fails,
         test_missing_local_verification_evidence_fails,
