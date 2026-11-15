@@ -1,0 +1,136 @@
+name: Recover verified signed alpha release
+
+# One-time recovery for the already signed v0.1.0-alpha.0 tag.
+# A failed tag-only publish job does not invalidate the successfully built
+# and checked release artifacts. Never rebuild from an unrelated commit.
+on:
+  workflow_run:
+    workflows: ["Release artifacts"]
+    types: [completed]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  recover:
+    if: >-
+      github.event_name == 'workflow_dispatch' ||
+      (github.event_name == 'workflow_run' &&
+       github.event.workflow_run.id == 43684702714 &&
+       github.event.workflow_run.event == 'push' &&
+       github.event.workflow_run.head_branch == 'v0.1.0-alpha.0' &&
+       github.event.workflow_run.head_sha == '0d0b39ebef06246d1d222eff16011bf6f07b5664' &&
+       github.event.workflow_run.run_attempt > 1 &&
+       github.event.workflow_run.conclusion == 'failure')
+    runs-on: ubuntu-24.04
+    environment: release
+    permissions:
+      actions: read
+      contents: write
+      id-token: write
+    env:
+      RELEASE_TAG: v0.1.0-alpha.0
+      RELEASE_COMMIT: 0d0b39ebef06246d1d222eff16011bf6f07b5664
+      SOURCE_RUN_ID: "43684702714"
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Require verified signed source tag and successful source build
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          ref_json="$(gh api "repos/${GITHUB_REPOSITORY}/git/ref/tags/${RELEASE_TAG}")"
+          test "$(jq -r '.object.type' <<< "$ref_json")" = "tag"
+          tag_sha="$(jq -r '.object.sha' <<< "$ref_json")"
+          tag_json="$(gh api "repos/${GITHUB_REPOSITORY}/git/tags/${tag_sha}")"
+          test "$(jq -r '.tag' <<< "$tag_json")" = "$RELEASE_TAG"
+          test "$(jq -r '.verification.verified' <<< "$tag_json")" = "true"
+          test "$(jq -r '.object.type' <<< "$tag_json")" = "commit"
+          test "$(jq -r '.object.sha' <<< "$tag_json")" = "$RELEASE_COMMIT"
+          git fetch --no-tags origin +refs/heads/main:refs/remotes/origin/main
+          git merge-base --is-ancestor "$RELEASE_COMMIT" refs/remotes/origin/main
+
+          source_json="$(gh api "repos/${GITHUB_REPOSITORY}/actions/runs/${SOURCE_RUN_ID}")"
+          jq -e --arg repository "$GITHUB_REPOSITORY" --arg tag "$RELEASE_TAG" --arg sha "$RELEASE_COMMIT" \
+            '.repository.full_name == $repository and .event == "push" and .head_branch == $tag and .head_sha == $sha and .conclusion == "failure"' \
+            <<< "$source_json"
+          jobs_json="$(gh api "repos/${GITHUB_REPOSITORY}/actions/runs/${SOURCE_RUN_ID}/jobs?filter=all&per_page=100")"
+          jq -e '.jobs | any(.name == "Build release artifacts" and .conclusion == "success")' <<< "$jobs_json"
+          # Published releases are immutable, including recovery attempts.
+          if gh release view "$RELEASE_TAG" >/dev/null 2>&1; then
+            echo "Release already exists; manual investigation is required" >&2
+            exit 1
+          fi
+
+      - name: Retrieve original tag-run artifact
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh run download "$SOURCE_RUN_ID" \
+            --name "anopki-release-${SOURCE_RUN_ID}" --dir dist
+
+      - name: Revalidate exact-commit build and redacted evidence
+        run: |
+          set -euo pipefail
+          grep -Fxq 'Signing pending: tag-only publish job must sign these artifacts.' dist/SIGNING-STATUS.txt
+          python scripts/validate-release-artifacts.py dist
+          python scripts/validate-release-sbom.py dist/anopki.sbom.cdx.json
+          python - <<'PY'
+          import json
+          import os
+          from pathlib import Path
+
+          metadata = json.loads(Path("dist/anopki-release-metadata.json").read_text())
+          assert metadata["commit"] == os.environ["RELEASE_COMMIT"]
+          assert metadata["version"] == os.environ["RELEASE_TAG"].removeprefix("v")
+          assert metadata["product_profile"] == "community-openssl"
+          assert metadata["production_ready"] is False
+          PY
+
+      - uses: sigstore/cosign-installer@v3.8.1
+      - name: Sign recovered release evidence
+        run: |
+          set -euo pipefail
+          rm dist/SIGNING-STATUS.txt
+          for artifact in dist/*.tar.gz dist/SHA256SUMS \
+            dist/anopki-backend-info.json \
+            dist/anopki-release-metadata.json \
+            dist/anopki.sbom.cdx.json; do
+            cosign sign-blob --yes \
+              --bundle "${artifact}.sigstore.json" \
+              --output-signature "${artifact}.sig" \
+              --output-certificate "${artifact}.pem" \
+              "$artifact"
+          done
+      - name: Verify recovered signatures and signer identity
+        run: |
+          set -euo pipefail
+          identity="https://github.com/${GITHUB_REPOSITORY}/.github/workflows/recover-alpha.yml@${GITHUB_REF}"
+          for artifact in dist/*.tar.gz dist/SHA256SUMS \
+            dist/anopki-backend-info.json \
+            dist/anopki-release-metadata.json \
+            dist/anopki.sbom.cdx.json; do
+            test -s "${artifact}.sig"
+            test -s "${artifact}.pem"
+            test -s "${artifact}.sigstore.json"
+            cosign verify-blob \
+              --bundle "${artifact}.sigstore.json" \
+              --certificate-identity "$identity" \
+              --certificate-oidc-issuer "https://token.actions.githubusercontent.com" \
+              "$artifact"
+          done
+          echo "Keyless signed and identity-verified by approved alpha recovery workflow." > dist/SIGNING-STATUS.txt
+
+      - name: Publish verified prerelease without overwriting existing assets
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          git show "${RELEASE_COMMIT}:CHANGELOG.md" > tagged-changelog.md
+          gh release create "$RELEASE_TAG" dist/* \
+            --title "$RELEASE_TAG" \
+            --notes-file tagged-changelog.md \
+            --verify-tag --prerelease

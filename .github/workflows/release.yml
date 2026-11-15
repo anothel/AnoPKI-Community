@@ -213,12 +213,17 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          test "$(git cat-file -t "$GITHUB_REF_NAME")" = tag
-          git cat-file -p "$GITHUB_REF_NAME" | grep -Eq -- '-----BEGIN (PGP|SSH) SIGNATURE-----'
-          tag_sha="$(git rev-parse "$GITHUB_REF_NAME")"
-          verified="$(gh api "repos/${GITHUB_REPOSITORY}/git/tags/${tag_sha}" --jq '.verification.verified')"
+          # actions/checkout can replace the local annotated tag with a peeled
+          # commit ref. Always validate the remote GitHub tag object instead.
+          ref_json="$(gh api "repos/${GITHUB_REPOSITORY}/git/ref/tags/${GITHUB_REF_NAME}")"
+          test "$(jq -r '.object.type' <<< "$ref_json")" = "tag"
+          tag_sha="$(jq -r '.object.sha' <<< "$ref_json")"
+          tag_json="$(gh api "repos/${GITHUB_REPOSITORY}/git/tags/${tag_sha}")"
+          test "$(jq -r '.tag' <<< "$tag_json")" = "$GITHUB_REF_NAME"
+          verified="$(jq -r '.verification.verified' <<< "$tag_json")"
           test "$verified" = "true"
-          test "$(git rev-parse "${GITHUB_REF_NAME}^{commit}")" = "$GITHUB_SHA"
+          test "$(jq -r '.object.type' <<< "$tag_json")" = "commit"
+          test "$(jq -r '.object.sha' <<< "$tag_json")" = "$GITHUB_SHA"
           # Signed release tags must reference a commit reviewed on main.
           git fetch --no-tags origin +refs/heads/main:refs/remotes/origin/main
           git merge-base --is-ancestor "$GITHUB_SHA" refs/remotes/origin/main

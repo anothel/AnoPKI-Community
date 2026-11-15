@@ -66,6 +66,7 @@ def copy_release_evidence_inputs(dst: Path) -> None:
         "scripts/verify-postgres-multi-node-failover.py",
         ".github/workflows/ci.yml",
         ".github/workflows/release.yml",
+        ".github/workflows/recover-alpha.yml",
     ]
     for name in files:
         target = dst / name
@@ -157,6 +158,47 @@ def test_missing_release_go_evidence_fails(tmp_path: Path) -> None:
     result = run_validator(tmp_path)
     assert result.returncode == 1
     assert "anopki-go-verification.tar.gz" in result.stderr
+
+
+def test_release_requires_remote_signed_tag_ref(tmp_path: Path) -> None:
+    copy_release_evidence_inputs(tmp_path)
+    mutate(tmp_path / ".github/workflows/release.yml", 'gh api "repos/${GITHUB_REPOSITORY}/git/ref/tags/${GITHUB_REF_NAME}"')
+    result = run_validator(tmp_path)
+    assert result.returncode == 1
+    assert "git/ref/tags" in result.stderr
+
+
+def test_recovery_must_keep_original_run_binding(tmp_path: Path) -> None:
+    copy_release_evidence_inputs(tmp_path)
+    mutate(tmp_path / ".github/workflows/recover-alpha.yml", "SOURCE_RUN_ID: \"43684702714\"")
+    result = run_validator(tmp_path)
+    assert result.returncode == 1
+    assert "SOURCE_RUN_ID" in result.stderr
+
+
+def test_recovery_must_keep_verified_signature_gate(tmp_path: Path) -> None:
+    copy_release_evidence_inputs(tmp_path)
+    mutate(tmp_path / ".github/workflows/recover-alpha.yml", 'test "$(jq -r \'.verification.verified\' <<< "$tag_json")" = "true"')
+    result = run_validator(tmp_path)
+    assert result.returncode == 1
+    assert "verification.verified" in result.stderr
+
+
+def test_recovery_must_keep_exact_build_metadata(tmp_path: Path) -> None:
+    copy_release_evidence_inputs(tmp_path)
+    mutate(tmp_path / ".github/workflows/recover-alpha.yml", 'metadata["commit"] == os.environ["RELEASE_COMMIT"]')
+    result = run_validator(tmp_path)
+    assert result.returncode == 1
+    assert "metadata" in result.stderr
+
+
+def test_recovery_must_not_overwrite_assets(tmp_path: Path) -> None:
+    copy_release_evidence_inputs(tmp_path)
+    path = tmp_path / ".github/workflows/recover-alpha.yml"
+    path.write_text(path.read_text() + "\n# gh release upload --clobber\n")
+    result = run_validator(tmp_path)
+    assert result.returncode == 1
+    assert "never overwrite" in result.stderr
 
 
 def test_release_tag_without_main_fetch_fails(tmp_path: Path) -> None:
@@ -521,6 +563,11 @@ def main() -> None:
         test_missing_release_multi_node_evidence_fails,
         test_missing_postgres_multi_node_failover_runner_fails,
         test_missing_release_postgres_multi_node_failover_evidence_fails,
+        test_release_requires_remote_signed_tag_ref,
+        test_recovery_must_keep_original_run_binding,
+        test_recovery_must_keep_verified_signature_gate,
+        test_recovery_must_keep_exact_build_metadata,
+        test_recovery_must_not_overwrite_assets,
         test_release_tag_without_main_fetch_fails,
         test_release_tag_without_main_ancestry_fails,
         test_release_tag_main_ancestry_must_precede_signing,

@@ -377,6 +377,7 @@ REQUIRED_RELEASE_TEXT = [
     "syft scan dir:dist",
     "python scripts/validate-release-sbom.py dist/anopki.sbom.cdx.json",
     "python scripts/test_validate_release_sbom.py",
+    'gh api "repos/${GITHUB_REPOSITORY}/git/ref/tags/${GITHUB_REF_NAME}"',
     "git fetch --no-tags origin +refs/heads/main:refs/remotes/origin/main",
     'git merge-base --is-ancestor "$GITHUB_SHA" refs/remotes/origin/main',
     "cosign sign-blob",
@@ -472,6 +473,12 @@ def check_release_publication_gate(workflow: str) -> None:
     if any(pos < 0 for pos in positions) or positions != sorted(positions):
         fail("release signing, verification and publication order is invalid")
     tag_step = workflow[positions[0]:positions[1]]
+    if 'gh api "repos/${GITHUB_REPOSITORY}/git/ref/tags/${GITHUB_REF_NAME}"' not in tag_step:
+        fail("release must verify the original remote annotated tag, not the checkout-local ref")
+    if 'test "$(jq -r \'.object.type\' <<< "$ref_json")" = "tag"' not in tag_step:
+        fail("release must require the remote object to be an annotated tag")
+    if 'test "$(jq -r \'.object.sha\' <<< "$tag_json")" = "$GITHUB_SHA"' not in tag_step:
+        fail("release signed tag target must match the exact build commit")
     if tag_step.find("git fetch --no-tags origin +refs/heads/main:refs/remotes/origin/main") < 0:
         fail("release tag is not checked against the remote main history")
     if tag_step.find('git merge-base --is-ancestor "$GITHUB_SHA" refs/remotes/origin/main') < 0:
@@ -488,6 +495,55 @@ def check_release_publication_gate(workflow: str) -> None:
     if "gh release create" not in publish_step or "--verify-tag" not in publish_step:
         fail("release creation must verify the signed tag")
 
+
+
+def check_signed_alpha_recovery_gate(workflow: str) -> None:
+    required = (
+        "workflow_run:",
+        "workflow_dispatch:",
+        "github.event.workflow_run.id == 43684702714",
+        "github.event.workflow_run.run_attempt > 1",
+        "github.event.workflow_run.conclusion == 'failure'",
+        "github.event.workflow_run.head_sha == '0d0b39ebef06246d1d222eff16011bf6f07b5664'",
+        "environment: release",
+        "actions: read",
+        "contents: write",
+        "id-token: write",
+        "SOURCE_RUN_ID: \"43684702714\"",
+        "RELEASE_TAG: v0.1.0-alpha.0",
+        "RELEASE_COMMIT: 0d0b39ebef06246d1d222eff16011bf6f07b5664",
+        'gh api "repos/${GITHUB_REPOSITORY}/git/ref/tags/${RELEASE_TAG}"',
+        'test "$(jq -r \'.verification.verified\' <<< "$tag_json")" = "true"',
+        'test "$(jq -r \'.object.sha\' <<< "$tag_json")" = "$RELEASE_COMMIT"',
+        'git merge-base --is-ancestor "$RELEASE_COMMIT" refs/remotes/origin/main',
+        'gh run download "$SOURCE_RUN_ID"',
+        'python scripts/validate-release-artifacts.py dist',
+        'python scripts/validate-release-sbom.py dist/anopki.sbom.cdx.json',
+        'metadata["commit"] == os.environ["RELEASE_COMMIT"]',
+        "Sign recovered release evidence",
+        "Verify recovered signatures and signer identity",
+        'test -s "${artifact}.sigstore.json"',
+        '--certificate-identity "$identity"',
+        '--certificate-oidc-issuer "https://token.actions.githubusercontent.com"',
+        'gh release create "$RELEASE_TAG" dist/*',
+        "--verify-tag --prerelease",
+    )
+    for item in required:
+        if item not in workflow:
+            fail("signed alpha recovery missing required gate: " + item)
+    names = (
+        "Require verified signed source tag and successful source build",
+        "Retrieve original tag-run artifact",
+        "Revalidate exact-commit build and redacted evidence",
+        "Sign recovered release evidence",
+        "Verify recovered signatures and signer identity",
+        "Publish verified prerelease without overwriting existing assets",
+    )
+    positions = [workflow.find(name) for name in names]
+    if positions != sorted(positions) or any(pos < 0 for pos in positions):
+        fail("signed alpha recovery gate ordering invalid")
+    if "gh release upload" in workflow or "--clobber" in workflow:
+        fail("signed alpha recovery must never overwrite a published release")
 
 def main() -> None:
     parser = argparse.ArgumentParser()
@@ -511,6 +567,8 @@ def main() -> None:
     require_text(root / ".github/workflows/ci.yml", REQUIRED_CI_TEXT)
     workflow = require_text(root / ".github/workflows/release.yml", REQUIRED_RELEASE_TEXT)
     check_release_publication_gate(workflow)
+    recovery = require_text(root / ".github/workflows/recover-alpha.yml", [])
+    check_signed_alpha_recovery_gate(recovery)
     print("release evidence ok")
 
 

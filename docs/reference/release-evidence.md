@@ -80,6 +80,25 @@ manual investigation, never automatic replacement. Dry-runs remain unsigned
 and do not execute the tag-only job. Live signing and environment approval
 are not proven by successful dry-runs.
 
+One-time recovery for the already GitHub-verified signed
+`v0.1.0-alpha.0` tag is restricted to failed release run `43684702714`
+and its successful, retained exact-commit artifact build. The recovery
+workflow validates the remote annotated tag and GitHub signature, signed
+tag target, source run/job identity, main ancestry, original evidence archives,
+manifest commit/version and SBOM before keyless signing. It then verifies
+each recovered signature against the *recovery workflow's own* OIDC
+identity (`.github/workflows/recover-alpha.yml@refs/heads/main`) and creates
+a new prerelease only when no release already exists. Recovery can be triggered
+by completion of a failed-job rerun or by explicitly dispatching the
+workflow; its `release` environment approval and no-overwrite gates remain.
+This is a one-time path, not a general release bypass. The previously failed
+tag run did not sign or publish anything.
+
+The normal tagged-release job now fetches the signed tag object through the
+GitHub Git API rather than trusting the local tag ref modified by
+`actions/checkout`. It continues to require GitHub-verified signature,
+annotated-tag type, exact build commit and main ancestry.
+
 Container images, OS packages, and Helm charts stay out until a deployment
 target is selected.
 
