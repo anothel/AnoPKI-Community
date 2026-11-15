@@ -1,14 +1,18 @@
 # Release Evidence
 
-This file preserves historical release artifact, supply-chain, and
-compatibility decisions. It is inactive conditional reference material, not an
-active release plan. Reuse requires a new product decision.
+This reference preserves release artifact, supply-chain and compatibility
+requirements. The owner reopened Community stabilization on 2026-11-15.
+Evidence-gated alpha preparation is active under issue #12. This is not a
+production-readiness or stable-compatibility statement.
 
-Closeout record:
+Historical closeout record:
 [v0.1.0-alpha.0 closeout evidence](release-candidate-v0.1.0-alpha.0.md).
+That record describes the previous freeze, not the active release decision.
 
 Current state: `PUBLIC_RELEASE=NOT_PUBLISHED`,
-`ACTIVE_NEXT_WORK=NONE`, `FUTURE_WORK=DEFERRED_NOT_SELECTED`.
+`ACTIVE_NEXT_WORK=PHASE_4_ALPHA_READINESS`, `PRODUCTION_READY=NO`.
+The exact release commit, dry-run, signature trust and environment approval
+must be validated before tagging or publishing.
 
 ## Tool Decisions
 
