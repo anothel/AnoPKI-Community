@@ -60,6 +60,8 @@ jobs:
             "$client" --version | grep -Eq '\(PostgreSQL\) 16\.'
           done
       - run: mkdir -p dist
+      - name: Test release artifact validation rules
+        run: python scripts/test_validate_release_artifacts.py
       - name: Run supported-Go full verification
         run: >-
           python scripts/verify-go-release.py
@@ -166,7 +168,7 @@ jobs:
       - run: tar -czf "dist/anopki-service-v${VERSION}-linux-amd64.tar.gz" -C dist anopki-service
       - run: tar -czf "dist/anopki-core-v${VERSION}-linux-amd64.tar.gz" -C dist anopki-core
       - run: rm dist/anopki-service dist/anopki-core
-      - run: sha256sum dist/*.tar.gz dist/anopki-backend-info.json dist/anopki-release-metadata.json > dist/SHA256SUMS
+      - run: (cd dist && sha256sum *.tar.gz anopki-backend-info.json anopki-release-metadata.json > SHA256SUMS)
       - run: python scripts/validate-release-artifacts.py dist
       - run: syft scan dir:dist -o cyclonedx-json=dist/anopki.sbom.cdx.json
       - name: Record signing status

@@ -1047,6 +1047,25 @@ def test_invalid_checksum_line_fails() -> None:
     assert "invalid checksum line" in result.stderr
 
 
+def test_prefixed_checksum_paths_fail() -> None:
+    with tempfile.TemporaryDirectory() as tmp:
+        dist = Path(tmp)
+        write_valid_dist(dist)
+        sums = dist / "SHA256SUMS"
+        original = sums.read_text(encoding="utf-8")
+        sums.write_text(
+            "\n".join(
+                line.replace("  ", "  dist/", 1)
+                for line in original.splitlines()
+            ) + "\n",
+            encoding="utf-8",
+        )
+        result = run_validator(dist)
+
+    assert result.returncode == 1
+    assert "unexpected checksum entries" in result.stderr
+
+
 def test_checksum_mismatch_fails() -> None:
     with tempfile.TemporaryDirectory() as tmp:
         dist = Path(tmp)
@@ -1848,6 +1867,7 @@ def main() -> None:
     test_missing_checksum_file_fails()
     test_invalid_checksum_line_fails()
     test_checksum_mismatch_fails()
+    test_prefixed_checksum_paths_fail()
     test_extra_checksum_entry_fails()
     test_duplicate_checksum_entry_fails()
     test_missing_release_metadata_fails()

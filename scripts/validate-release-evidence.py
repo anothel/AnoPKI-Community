@@ -370,7 +370,7 @@ REQUIRED_RELEASE_TEXT = [
     "./dist/anopki-core backend info > dist/anopki-backend-info.json",
     "python scripts/generate-release-metadata.py",
     "anopki-release-metadata.json",
-    "sha256sum dist/*.tar.gz dist/anopki-backend-info.json dist/anopki-release-metadata.json",
+    "sha256sum *.tar.gz anopki-backend-info.json anopki-release-metadata.json > SHA256SUMS",
     "python scripts/validate-release-artifacts.py dist",
     "postgres:16",
     "postgresql-client",
