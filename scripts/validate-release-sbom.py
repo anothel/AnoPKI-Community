@@ -8,9 +8,11 @@ import json
 import sys
 from pathlib import Path
 
+# Syft canonicalizes Go /v5 as a PURL subpath, not as /v5 in the name:
+# name=github.com/jackc/pgx/v5, purl=pkg:golang/github.com/jackc/pgx@v5.x.y#v5.
 REQUIRED_MODULES = (
-    "pkg:golang/github.com/jackc/pgx/v5@",
-    "pkg:golang/modernc.org/sqlite@",
+    ("github.com/jackc/pgx/v5", "pkg:golang/github.com/jackc/pgx@v5.", "#v5"),
+    ("modernc.org/sqlite", "pkg:golang/modernc.org/sqlite@v", ""),
 )
 
 
@@ -37,15 +39,20 @@ def validate(path: Path) -> None:
         fail("release SBOM has no catalogued dependencies")
     if not all(isinstance(component, dict) for component in components):
         fail("release SBOM components have invalid shape")
-    purls = [
-        component.get("purl")
-        for component in components
-        if isinstance(component.get("purl"), str)
-    ]
+    def matches(component: dict[str, object], name: str, prefix: str, suffix: str) -> bool:
+        purl = component.get("purl")
+        return (
+            component.get("name") == name
+            and component.get("type") == "library"
+            and isinstance(purl, str)
+            and purl.startswith(prefix)
+            and purl.endswith(suffix)
+        )
+
     missing = [
-        module
-        for module in REQUIRED_MODULES
-        if not any(purl.startswith(module) for purl in purls)
+        name
+        for name, prefix, suffix in REQUIRED_MODULES
+        if not any(matches(component, name, prefix, suffix) for component in components)
     ]
     if missing:
         fail("release SBOM missing shipped Go module inventory: " + ", ".join(missing))

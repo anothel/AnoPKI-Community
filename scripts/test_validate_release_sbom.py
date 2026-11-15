@@ -16,8 +16,8 @@ VALID = {
     "bomFormat": "CycloneDX",
     "specVersion": "1.6",
     "components": [
-        {"type": "library", "purl": "pkg:golang/github.com/jackc/pgx/v5@v5.9.2"},
-        {"type": "library", "purl": "pkg:golang/modernc.org/sqlite@v1.34.5"},
+        {"type": "library", "name": "github.com/jackc/pgx/v5", "purl": "pkg:golang/github.com/jackc/pgx@v5.9.2#v5"},
+        {"type": "library", "name": "modernc.org/sqlite", "purl": "pkg:golang/modernc.org/sqlite@v1.34.5"},
     ],
 }
 
@@ -53,11 +53,25 @@ def test_non_go_inventory_fails() -> None:
 
 
 def test_missing_pgx_fails() -> None:
-    run_case({**VALID, "components": VALID["components"][1:]}, 1, "pkg:golang/github.com/jackc/pgx/v5@")
+    run_case({**VALID, "components": VALID["components"][1:]}, 1, "github.com/jackc/pgx/v5")
 
 
 def test_missing_sqlite_fails() -> None:
-    run_case({**VALID, "components": VALID["components"][:1]}, 1, "pkg:golang/modernc.org/sqlite@")
+    run_case({**VALID, "components": VALID["components"][:1]}, 1, "modernc.org/sqlite")
+
+
+def test_pgx_wrong_major_or_purl_fails() -> None:
+    wrong = dict(VALID["components"][0])
+    wrong["purl"] = "pkg:golang/github.com/jackc/pgx@v4.9.2#v4"
+    run_case({**VALID, "components": [wrong, VALID["components"][1]]}, 1, "github.com/jackc/pgx/v5")
+    wrong["purl"] = "pkg:golang/github.com/jackc/pgx/v5@v5.9.2"
+    run_case({**VALID, "components": [wrong, VALID["components"][1]]}, 1, "github.com/jackc/pgx/v5")
+
+
+def test_pgx_wrong_name_fails() -> None:
+    wrong = dict(VALID["components"][0])
+    wrong["name"] = "github.com/jackc/pgx/v4"
+    run_case({**VALID, "components": [wrong, VALID["components"][1]]}, 1, "github.com/jackc/pgx/v5")
 
 
 def test_invalid_format_fails() -> None:
@@ -86,6 +100,8 @@ if __name__ == "__main__":
     test_non_go_inventory_fails()
     test_missing_pgx_fails()
     test_missing_sqlite_fails()
+    test_pgx_wrong_major_or_purl_fails()
+    test_pgx_wrong_name_fails()
     test_invalid_format_fails()
     test_invalid_shape_fails()
     test_missing_file_fails()
