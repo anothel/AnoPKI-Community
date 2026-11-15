@@ -593,6 +593,45 @@ jobs:
         env:
           ASAN_OPTIONS: detect_leaks=0:abort_on_error=1
 
+  acme-live-lego:
+    name: ACME live lego HTTP-01 smoke
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.26.11"
+          cache-dependency-path: |
+            service/go.mod
+            service/go.sum
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.x"
+      - name: Provision OpenSSL for throwaway local issuer
+        run: sudo apt-get update && sudo apt-get install -y cmake g++ libssl-dev pkg-config openssl
+      - name: Build native Community OpenSSL core
+        run: |
+          cmake -S . -B build-acme -DCMAKE_BUILD_TYPE=Debug -DANOPKI_PRODUCT_PROFILE=community-openssl
+          cmake --build build-acme --target anopki-core --parallel 2
+      - name: Install pinned real lego ACME client
+        run: |
+          mkdir -p .tmp/lego-bin
+          GOBIN="${GITHUB_WORKSPACE}/.tmp/lego-bin" go install github.com/go-acme/lego/v4/cmd/lego@v4.35.2
+          .tmp/lego-bin/lego --version
+      - name: Complete local real-client HTTP-01 enrollment
+        shell: pwsh
+        run: |
+          ./scripts/acme-smoke/run-certbot-smoke.ps1 -Client lego -LegoPath .tmp/lego-bin/lego -StartService -Run -CoreBin build-acme/anopki-core -ServiceBin .tmp/acme-live-lego/anopki-service -HTTPSProxyBin .tmp/acme-live-lego/acme-https-proxy -WorkDir .tmp/acme-live-lego -DirectoryTimeoutSec 90
+          if ($LASTEXITCODE -ne 0) { throw "Real lego HTTP-01 enrollment failed" }
+          $certificates = @(Get-ChildItem -LiteralPath ".tmp/acme-live-lego/lego/certificates" -Filter "*.crt" -File)
+          if ($certificates.Count -lt 1) { throw "lego did not create a certificate" }
+          foreach ($certificate in $certificates) {
+            openssl x509 -in $certificate.FullName -noout -subject -issuer
+            if ($LASTEXITCODE -ne 0) { throw "lego certificate invalid" }
+          }
+          Write-Host "Real lego HTTP-01 enrollment and certificate retrieval passed"
+
   acme-harness:
     name: ACME harness self-test
     runs-on: ubuntu-latest
