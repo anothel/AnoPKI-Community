@@ -336,6 +336,8 @@ REQUIRED_RELEASE_TEXT = [
     "postgresql-client-16",
     'go-version: "1.26.11"',
     'gh api "repos/${GITHUB_REPOSITORY}/git/tags/${tag_sha}"',
+    'git fetch --force --no-tags origin "+refs/tags/${GITHUB_REF_NAME}:refs/tags/${GITHUB_REF_NAME}"',
+    'test "$(git cat-file -t "$GITHUB_REF_NAME")" = tag',
     'test "$verified" = "true"',
     "--prerelease",
     "python scripts/verify-go-release.py",
@@ -472,6 +474,12 @@ def check_release_publication_gate(workflow: str) -> None:
     if any(pos < 0 for pos in positions) or positions != sorted(positions):
         fail("release signing, verification and publication order is invalid")
     tag_step = workflow[positions[0]:positions[1]]
+    tag_refetch = 'git fetch --force --no-tags origin "+refs/tags/${GITHUB_REF_NAME}:refs/tags/${GITHUB_REF_NAME}"'
+    type_check = 'test "$(git cat-file -t "$GITHUB_REF_NAME")" = tag'
+    if tag_refetch not in tag_step:
+        fail("release must restore the remote annotated tag ref after checkout")
+    if tag_step.index(tag_refetch) > tag_step.find(type_check):
+        fail("remote annotated tag ref must be restored before checking its type")
     if tag_step.find("git fetch --no-tags origin +refs/heads/main:refs/remotes/origin/main") < 0:
         fail("release tag is not checked against the remote main history")
     if tag_step.find('git merge-base --is-ancestor "$GITHUB_SHA" refs/remotes/origin/main') < 0:

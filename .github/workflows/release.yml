@@ -213,6 +213,9 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
+          # actions/checkout can replace the annotated tag ref with its peeled commit.
+          # Restore the remote tag object before checking its signature.
+          git fetch --force --no-tags origin "+refs/tags/${GITHUB_REF_NAME}:refs/tags/${GITHUB_REF_NAME}"
           test "$(git cat-file -t "$GITHUB_REF_NAME")" = tag
           git cat-file -p "$GITHUB_REF_NAME" | grep -Eq -- '-----BEGIN (PGP|SSH) SIGNATURE-----'
           tag_sha="$(git rev-parse "$GITHUB_REF_NAME")"

@@ -12,7 +12,13 @@ That record describes the previous freeze, not the active release decision.
 Current state: `PUBLIC_RELEASE=NOT_PUBLISHED`,
 `ACTIVE_NEXT_WORK=PHASE_4_ALPHA_READINESS`, `PRODUCTION_READY=NO`.
 The exact release commit, dry-run, signature trust and environment approval
-must be validated before tagging or publishing.
+must be validated before tagging or publishing. The valid GitHub-verified
+signed `v0.1.0-alpha.0` tag is retained, but its 2026-11-15 tag-only
+workflow failed at annotated-tag inspection after checkout replaced the
+local tag ref with a peeled commit. No GitHub Release was published.
+The recovery candidate is `v0.1.0-alpha.1`: refetch the original signed
+tag object from the remote before applying all existing tag, signature,
+main-ancestry, and Cosign gates. Never force-move the signed alpha.0 tag.
 
 ## Tool Decisions
 
