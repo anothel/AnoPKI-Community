@@ -1620,6 +1620,7 @@ def require_postgres_recovery_evidence_archive(dist: Path) -> tuple[Path, dict[s
         "certificate_issuance_attempts": 1,
         "revocations": 1,
         "crl_publications": 1,
+        "crl_generation_claims": 0,
         "audit_events": 2,
         "audit_chain_state": 1,
         "outbox_messages": 1,

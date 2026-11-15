@@ -748,6 +748,7 @@ def write_postgres_recovery_evidence_archive(
     extra_field: bool = False,
     extra_member: bool = False,
     client_major: int = 16,
+    missing_crl_claim_count: bool = False,
 ) -> None:
     root = path.parent / "postgres-recovery-evidence"
     if root.exists():
@@ -783,6 +784,7 @@ def write_postgres_recovery_evidence_archive(
         "certificate_issuance_attempts": 1,
         "revocations": 1,
         "crl_publications": 1,
+        "crl_generation_claims": 0,
         "audit_events": 2,
         "audit_chain_state": 1,
         "outbox_messages": 1,
@@ -790,6 +792,8 @@ def write_postgres_recovery_evidence_archive(
         "webhook_deliveries": 1,
         "api_keys": 1,
     }
+    if missing_crl_claim_count:
+        counts.pop("crl_generation_claims")
     regex = "^(" + "|".join(name for _, name in tests) + ")$"
     evidence = {
         "schema_version": 1,
@@ -1680,6 +1684,20 @@ def test_failed_postgres_recovery_evidence_fails() -> None:
     assert "PostgreSQL recovery verification drill did not pass" in result.stderr
 
 
+def test_postgres_recovery_missing_crl_claim_count_fails() -> None:
+    with tempfile.TemporaryDirectory() as tmp:
+        dist = Path(tmp)
+        write_valid_dist(dist)
+        write_postgres_recovery_evidence_archive(
+            dist / "anopki-postgres-recovery-verification.tar.gz",
+            missing_crl_claim_count=True,
+        )
+        rewrite_checksums(dist)
+        result = run_validator(dist)
+    assert result.returncode == 1
+    assert "PostgreSQL recovery verification state counts are invalid" in result.stderr
+
+
 def test_postgres_recovery_commit_mismatch_fails() -> None:
     with tempfile.TemporaryDirectory() as tmp:
         dist = Path(tmp)
@@ -1890,6 +1908,7 @@ def main() -> None:
     test_postgres_multi_node_failover_skipped_test_fails()
     test_missing_postgres_recovery_evidence_fails()
     test_failed_postgres_recovery_evidence_fails()
+    test_postgres_recovery_missing_crl_claim_count_fails()
     test_postgres_recovery_commit_mismatch_fails()
     test_unknown_postgres_recovery_field_fails()
     test_unexpected_postgres_recovery_member_fails()

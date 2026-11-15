@@ -196,10 +196,14 @@ jobs:
         with:
           fetch-depth: 0
       - name: Require a signed annotated tag
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: |
           test "$(git cat-file -t "$GITHUB_REF_NAME")" = tag
           git cat-file -p "$GITHUB_REF_NAME" | grep -Eq -- '-----BEGIN (PGP|SSH) SIGNATURE-----'
-          git verify-tag "$GITHUB_REF_NAME"
+          tag_sha="$(git rev-parse "$GITHUB_REF_NAME")"
+          verified="$(gh api "repos/${GITHUB_REPOSITORY}/git/tags/${tag_sha}" --jq '.verification.verified')"
+          test "$verified" = "true"
           test "$(git rev-parse "${GITHUB_REF_NAME}^{commit}")" = "$GITHUB_SHA"
       - uses: actions/download-artifact@v4
         with:
