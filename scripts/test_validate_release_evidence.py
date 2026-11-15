@@ -182,9 +182,9 @@ def test_release_tag_main_ancestry_must_precede_signing(tmp_path: Path) -> None:
     line = '          git merge-base --is-ancestor "$GITHUB_SHA" refs/remotes/origin/main\n'
     assert content.count(line) == 1
     content = content.replace(line, "", 1)
-    marker = "      - name: Sign release evidence"
+    marker = "          rm dist/SIGNING-STATUS.txt\\n"
     assert marker in content
-    content = content.replace(marker, line + marker, 1)
+    content = content.replace(marker, marker + line, 1)
     path.write_text(content, encoding="utf-8")
     result = run_validator(tmp_path)
     assert result.returncode == 1
