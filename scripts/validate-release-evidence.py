@@ -375,6 +375,8 @@ REQUIRED_RELEASE_TEXT = [
     "postgres:16",
     "postgresql-client",
     "syft scan dir:dist",
+    "python scripts/validate-release-sbom.py dist/anopki.sbom.cdx.json",
+    "python scripts/test_validate_release_sbom.py",
     "cosign sign-blob",
     "actions/upload-artifact",
     "actions/download-artifact",

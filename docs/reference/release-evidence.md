@@ -58,7 +58,9 @@ permissions. It builds Linux amd64 service/core archives with the repository
 version in their filenames, runs the supported-Go full evidence wrapper, records `anopki-core backend info`, generates
 `anopki-release-metadata.json`, writes checksums for archives and both profile
 metadata files, validates their exact schema and cross-file consistency,
-generates a CycloneDX SBOM with `syft`, records signing as skipped, and uploads
+generates a CycloneDX SBOM with `syft` while uncompressed release binaries are
+present, rejects empty SBOMs and missing shipped Go dependencies, records signing
+as skipped, and uploads
 the `dist/` directory only to the workflow run.
 
 Publishing is a separate job limited to a matching `v*` tag push. It requires
