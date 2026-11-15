@@ -72,9 +72,13 @@ checksum file and JSON manifest with `cosign` keyless signing, retaining `.sig`,
 `.pem` and Sigstore bundle `.sigstore.json` evidence. Before GitHub Release
 creation or upload, it verifies every bundle against the exact repository release
 workflow/tag identity and the GitHub Actions OIDC issuer. A missing bundle, an
-invalid signature or a signer-identity mismatch stops publication; dry-runs
-remain unsigned and do not execute the tag-only job. Live signing and environment
-approval are not proven by successful dry-runs.
+invalid signature or a signer-identity mismatch stops publication. The publish
+step creates a new verified-tag GitHub Release only; if a release for that tag
+already exists, GitHub CLI creation fails rather than overwriting signed assets
+or mutating existing release metadata. A partial or failed publication requires
+manual investigation, never automatic replacement. Dry-runs remain unsigned
+and do not execute the tag-only job. Live signing and environment approval
+are not proven by successful dry-runs.
 
 Container images, OS packages, and Helm charts stay out until a deployment
 target is selected.

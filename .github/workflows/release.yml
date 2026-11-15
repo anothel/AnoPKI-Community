@@ -265,14 +265,8 @@ jobs:
           if [[ "$GITHUB_REF_NAME" == *-* ]]; then
             release_flags+=(--prerelease)
           fi
-          if gh release view "$GITHUB_REF_NAME" >/dev/null 2>&1; then
-            gh release upload "$GITHUB_REF_NAME" dist/* --clobber
-          else
-            gh release create "$GITHUB_REF_NAME" dist/* \
-              --title "$GITHUB_REF_NAME" \
-              --notes-file CHANGELOG.md \
-              --verify-tag "${release_flags[@]}"
-          fi
-          if [[ "$GITHUB_REF_NAME" == *-* ]]; then
-            gh release edit "$GITHUB_REF_NAME" --prerelease
-          fi
+          # Creating an existing release fails; never overwrite signed assets.
+          gh release create "$GITHUB_REF_NAME" dist/* \
+            --title "$GITHUB_REF_NAME" \
+            --notes-file CHANGELOG.md \
+            --verify-tag "${release_flags[@]}"

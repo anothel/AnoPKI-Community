@@ -394,7 +394,7 @@ REQUIRED_RELEASE_TEXT = [
     "Require a signed annotated tag",
     "GH_TOKEN: ${{ github.token }}",
     "gh release create",
-    "gh release upload",
+    "--verify-tag",
 ]
 
 
@@ -482,6 +482,11 @@ def check_release_publication_gate(workflow: str) -> None:
     for required in ("dist/anopki-backend-info.json", "dist/anopki-release-metadata.json", "dist/anopki.sbom.cdx.json"):
         if required not in verification_step:
             fail("release signature verification missing original JSON manifest: " + required)
+    publish_step = workflow[positions[3]:]
+    if "gh release upload" in publish_step or "--clobber" in publish_step:
+        fail("release publication must never overwrite existing assets")
+    if "gh release create" not in publish_step or "--verify-tag" not in publish_step:
+        fail("release creation must verify the signed tag")
 
 
 def main() -> None:
