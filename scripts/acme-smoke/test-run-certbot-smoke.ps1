@@ -204,6 +204,23 @@ try {
         throw "lego preflight output missing local HTTPS proxy args"
     }
 
+    foreach ($client in @("certbot", "lego")) {
+        $multi = Invoke-Runner -RunnerArgs @(
+            "-ServiceUrl", $serviceUrl, "-Client", $client,
+            "-CertbotPath", $missingCertbot, "-LegoPath", $missingLego,
+            "-AdditionalDomain", "edge-02.example.test"
+        )
+        Assert-Equal "$client multi-name preflight" $multi.ExitCode 0
+        $flag = if ($client -eq "lego") { "--domains" } else { "-d" }
+        $text = $multi.Output -join "`n"
+        if ($text -notmatch "$flag edge-01.example.test" -or $text -notmatch "$flag edge-02.example.test") {
+            throw "$client multi-name arguments missing"
+        }
+        if ($client -eq "lego" -and $text -notmatch "--domains edge-02.example.test run") {
+            throw "lego domain flags must precede run subcommand"
+        }
+    }
+
     $legoRunMissing = Invoke-Runner -RunnerArgs @(
         "-ServiceUrl", $serviceUrl,
         "-Client", "lego",
