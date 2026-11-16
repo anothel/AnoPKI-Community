@@ -65,6 +65,12 @@ def verify_certificate(root, client, names):
         require(blocks[1].strip() + b'\n-----END CERTIFICATE-----\n' == chain.read_bytes())
         leaf = root / 'leaf.pem'
         leaf.write_bytes(blocks[0] + b'-----END CERTIFICATE-----\n')
+    # This bootstrap scenario has one self-signed issuer; reject ignored extra PEM blocks.
+    for certificate in (leaf, chain):
+        require(certificate.read_bytes().count(b'-----BEGIN CERTIFICATE-----') == 1)
+        require(certificate.read_bytes().count(b'-----END CERTIFICATE-----') == 1)
+    require(openssl('x509', '-in', chain, '-outform', 'DER') ==
+            openssl('x509', '-in', issuer, '-outform', 'DER'))
     verify_sans(openssl('x509', '-in', leaf, '-noout', '-ext', 'subjectAltName').decode(), names)
     for name in names:
         openssl('verify', '-CAfile', issuer, '-untrusted', chain, '-verify_hostname', name, '-purpose', 'sslserver', leaf)
