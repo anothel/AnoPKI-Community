@@ -40,7 +40,7 @@ func TestACMETwoDNSNamesRequireBothAuthorizations(t *testing.T) {
 		// Signing must not run until both names validate.
 		_, _, nonce = api.doACMENonce(t)
 		response := api.doACMEJWSWithResponse(t, api.pathFromURL(t, order.Finalize), nonce, account.Location, api.acmeSigner, payload, nil)
-		if response.StatusCode < 400 || len(api.issuer.requests) != 0 {
+		if response.StatusCode != http.StatusConflict || len(api.issuer.requests) != 0 {
 			t.Fatal("premature finalize reached signing")
 		}
 		var authz apiACMEProtocolAuthorization
