@@ -20,3 +20,4 @@ This matrix tracks implemented ACME protocol behavior in `anopki-service`.
 | External Account Binding | EAB for external subscriber/account integration | Deferred | No real subscriber/account integration selected |
 | DNS-01 | DNS challenge validation | Deferred | No operator-owned DNS provider integration selected |
 | certbot live smoke | Linux/elevated Windows live client run | Pass | WSL certbot 5.6.0 HTTP-01 webroot smoke |
+| Certbot forced renewal | New order using saved account and renewal lineage | Scoped evidence | `ACME Certbot forced renewal HTTP-01`: pinned 5.6.0 ordinary not-due skip, then real `renew --force-renewal`; [scope and limits](acme-client-compatibility.md#certbot-forced-renewal-evidence) |

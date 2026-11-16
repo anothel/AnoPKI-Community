@@ -95,3 +95,52 @@ production readiness or general RFC 8555 conformance. Service changes are
 unnecessary if both live jobs pass; protocol and signing security checks remain
 in the unchanged full CI suite. Exact run/commit evidence is recorded in Issue
 [#21](https://github.com/anothel/AnoPKI-Community/issues/21).
+
+## Certbot forced renewal evidence
+
+The separate `ACME Certbot forced renewal HTTP-01` lane uses real Certbot/acme
+5.6.0, the existing locked dependencies, Linux/Python 3.12, SQLite and the
+Community/OpenSSL core. A single local service and responder remain alive
+through initial issuance and both renewal commands. The four existing
+single-name/two-name issuance lanes are preserved.
+
+The initial 24-hour certificate is **not due** under Certbot 5.6.0's default
+half-lifetime rule for certificates lasting less than ten days. Ordinary
+`renew` must skip it: zero exit status alone is never counted as renewal.
+The subsequent `renew --force-renewal` must issue a second certificate, reuse
+the saved account and lineage, rotate the leaf key (Certbot's default), and
+advance the archive/live links from version 1 to version 2. Both renewal
+invocations restore the server, identifiers, account and webroot from saved
+configuration; they receive no replacement enrollment parameters.
+The runner does not change clocks, certificate validity, due-date settings,
+database contents or saved account keys. Certbot's ARI retry cache may change;
+the remaining renewal settings and all account files must be preserved.
+
+The evidence verifier requires exactly two distinct valid orders and
+certificates under one valid account, distinct valid DNS authorizations and
+HTTP-01 tokens with validation timestamps, and downloaded leaf DER matching
+each order's database certificate. OpenSSL verifies both versions against the
+actual bootstrap issuer: exact single DNS SAN, hostname, TLS server purpose,
+current validity, roughly 24-hour lifetime, at least one hour remaining,
+distinct positive serial numbers, each leaf's private-key match, different
+leaf public keys, exact downloaded issuer chain and fullchain assembly.
+Wrong-hostname and excessive remaining-validity checks must fail.
+
+`TestACMERenewalNewOrderRequiresFreshNonceAndAuthorization` independently
+chains response nonces through two orders under the same account, rejects a
+consumed first-issuance nonce on renewal newOrder, rejects exact newOrder and
+finalize JWS replays, prevents signing before fresh authorization, and
+downloads both chains. It is a protocol fixture with a test signer, not live
+client negative-request evidence. Existing nonce expiry, cross-node replay,
+JWS, authentication, SSRF, bootstrap and signing-security regressions remain
+enabled; no protection or service/API/CLI behavior is changed.
+
+Reproduction and private-state handling are documented in the
+[smoke README](../scripts/acme-smoke/README.md#pinned-linux-certbot-forced-renewal).
+Exact commits, workflow runs and observed results are recorded in Issue #21.
+This slice proves forced single-name HTTP-01 renewal and ordinary not-due
+skipping. It does not prove ordinary aged-certificate renewal, ARI,
+authorization reuse, key reuse, multi-name or lego renewal, restart recovery,
+revocation, live malicious-protocol requests, public DNS/port-80 routing,
+DNS-01/EAB, production readiness or general RFC 8555 conformance. Signed
+alpha.1 remains unchanged; PostgreSQL intermittency #5 remains separate.

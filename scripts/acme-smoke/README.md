@@ -201,3 +201,44 @@ exit. Only fixed stages and public certificate metadata reach CI output.
 The locked Python dependency set targets Linux/Python 3.12. See the
 [compatibility matrix](../../docs/acme-client-compatibility.md) for evidence
 classification and limitations. The existing lego lane remains separate.
+
+## Pinned Linux Certbot forced renewal
+
+After provisioning the same pinned Certbot environment and Community/OpenSSL
+core, run from the repository root (Go, Python and OpenSSL required):
+
+```bash
+python3 scripts/acme-smoke/run_live_renewal.py .tmp/certbot-venv/bin/certbot build-renewal/anopki-core
+```
+
+This separate Linux runner keeps one service and local HTTP-01 responder alive
+while Certbot saves and reuses its account and renewal lineage. It allocates
+loopback ports automatically and needs no PowerShell. It performs:
+
+1. Initial `certonly --webroot` for `edge-01.example.test`, with a 24-hour
+   certificate and the isolated service directory explicitly selected.
+2. Ordinary `renew --cert-name edge-01.example.test --no-random-sleep-on-renew`.
+   The fresh certificate is not due. The runner requires the skip result and
+   unchanged certificate, account, archive version and one valid order.
+3. The identical renewal invocation with `--force-renewal`. No server, domain,
+   account or authenticator override is passed to either renewal invocation;
+   Certbot restores them from its saved configuration. The runner requires a
+   second valid order under the same account, fresh HTTP-01 authorization and
+   token, and archive/live advancement to version 2. Both versions are checked
+   with OpenSSL, including distinct serials and rotated leaf keys.
+
+This proves **forced renewal**, not ordinary renewal of an aged certificate.
+Certbot 5.6.0 defaults to renewal halfway through a lifetime shorter than ten
+days. No clock, certificate, database or due-date configuration is altered to
+make it due. Certbot may add `acme_renewal_info.ari_retry_after` bookkeeping;
+all other renewal settings and the account files must remain unchanged.
+ARI support is not established. Disabling random sleep only avoids Certbot's
+scheduling delay; it does not change its due-date decision.
+
+The runner uses private mode-0700 temporary state and a restrictive file umask, captures
+all child logs privately, stops the service/responder, and removes keys, DB,
+Certbot lineage and raw logs on ordinary success and failure. It prints only
+fixed stages and public certificate metadata; nothing private is uploaded.
+Abrupt runner termination may leave state until ephemeral runner teardown.
+See the [compatibility matrix](../../docs/acme-client-compatibility.md) for the
+precise evidence and remaining limitations.
