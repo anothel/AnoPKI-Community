@@ -60,7 +60,38 @@ exact-commit CI run; the new Linux row has reproducible execution evidence.
   Failures expose only the failed stage, so deeper diagnosis requires an
   isolated local reproduction. Certificate metadata is safe console evidence.
 - This covers fresh single-name issuance with the default RSA account key and
-  ECDSA leaf key. Renewal, revocation, standalone, multi-name orders and live
+  ECDSA leaf key. Renewal, revocation, standalone and live
   negative ACME protocol cases are not established by this lane. Replay and
   invalid-JWS coverage remains in the existing regression tests. DNS-01, EAB,
   public DNS/port-80 operation and the Windows non-admin gap remain outside it.
+
+
+## Multi-name HTTP-01 evidence
+
+The separate `ACME multi-name lego HTTP-01` and
+`ACME multi-name Certbot HTTP-01` CI jobs exercise fresh two-DNS-name
+orders (`edge-01.example.test`, `edge-02.example.test`) with the same pinned
+clients as the single-name lanes. These lanes use a local responder override,
+throwaway issuer and fresh SQLite database; no public CA or public DNS is used.
+The verifier requires exactly one valid order, two distinct valid DNS
+authorizations, distinct HTTP-01 tokens and a valid challenge with a validation
+timestamp for each name. OpenSSL checks the exact SAN list, issuer trust,
+server purpose, current validity, both hostnames and private-key match.
+Wrong-hostname and excessive remaining-validity checks must fail.
+
+Reproduce with `bash scripts/acme-smoke/run-live-multisan.sh lego PATH_TO_LEGO
+PATH_TO_CORE` or replace `lego` with `certbot` and pass the pinned Certbot path.
+Run from the repository root after provisioning the same tools as the existing
+single-name jobs, with ports 8080, 5002 and (lego only) 8443 free. All raw
+logs and private state are captured under a private temporary directory and
+removed on exit; only stage errors and public certificate metadata are printed.
+The harness adds an optional `-AdditionalDomain`; its default single-name
+behavior and existing lanes are preserved.
+
+Passing these scenarios establishes only fresh two-name HTTP-01 issuance in
+this isolated configuration. It does not establish renewal, revocation,
+authorization reuse, wildcard/DNS-01, EAB, public DNS/port-80 operation,
+production readiness or general RFC 8555 conformance. Service changes are
+unnecessary if both live jobs pass; protocol and signing security checks remain
+in the unchanged full CI suite. Exact run/commit evidence is recorded in Issue
+[#21](https://github.com/anothel/AnoPKI-Community/issues/21).

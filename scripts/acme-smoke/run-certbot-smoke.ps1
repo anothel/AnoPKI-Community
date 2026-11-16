@@ -2,6 +2,7 @@
 param(
     [string]$ServiceUrl = "http://127.0.0.1:8080",
     [string]$Domain = "edge-01.example.test",
+    [string]$AdditionalDomain = "",
     [string]$Email = "ops@example.test",
     [string]$WorkDir = ".tmp\acme-smoke",
     [int]$Http01Port = 5002,
@@ -457,6 +458,15 @@ try {
             "--logs-dir", $logsDir,
             "-d", $Domain
         )
+    }
+
+    if ($AdditionalDomain) {
+        if ($AdditionalDomain -eq $Domain) { throw "AdditionalDomain must be distinct" }
+        if ($Client -eq "lego") {
+            $certbotArgs = $certbotArgs[0..($certbotArgs.Count - 2)] + @("--domains", $AdditionalDomain, "run")
+        } else {
+            $certbotArgs += @("-d", $AdditionalDomain)
+        }
     }
 
     Write-Host "service: $ServiceUrl"
