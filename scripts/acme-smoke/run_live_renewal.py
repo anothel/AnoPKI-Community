@@ -4,6 +4,7 @@
 import argparse
 import contextlib
 import functools
+import glob
 import http.server
 import json
 import os
@@ -78,6 +79,13 @@ def exercise(root, certbot, core, stage):
         with (root/f'{label}.log').open('wb') as output:
             subprocess.run(args, cwd=cwd, stdout=output, stderr=output, check=True, timeout=180)
 
+    stage[0] = 'client-configuration'
+    # Certbot 5.6.0 reads both default cli.ini files even with --config-dir
+    # or an explicit empty --config. Refuse ambient settings/hooks before any
+    # client invocation; do not read, modify or print their private contents.
+    defaults = ['/etc/letsencrypt/cli.ini',
+                os.path.join(os.environ.get('XDG_CONFIG_HOME', '~/.config'), 'letsencrypt', 'cli.ini')]
+    require(not any(glob.glob(os.path.expanduser(path)) for path in defaults))
     run([str(certbot), '--version'], 'versions')
     require((root/'versions.log').read_text().strip() == 'certbot 5.6.0')
     print('Real client: Certbot 5.6.0; ordinary renew skip then forced renew; isolated SQLite', flush=True)

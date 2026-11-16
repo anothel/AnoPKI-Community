@@ -235,6 +235,12 @@ all other renewal settings and the account files must remain unchanged.
 ARI support is not established. Disabling random sleep only avoids Certbot's
 scheduling delay; it does not change its due-date decision.
 
+Use a clean runner with neither `/etc/letsencrypt/cli.ini` nor
+`$XDG_CONFIG_HOME/letsencrypt/cli.ini` (default `~/.config/letsencrypt/cli.ini`).
+The runner refuses these ambient configuration files before invoking Certbot,
+so inherited hooks, forced-renewal or key-reuse settings cannot affect evidence.
+Passing an empty `--config` would still load those defaults in the pinned client.
+
 The runner uses private mode-0700 temporary state and a restrictive file umask, captures
 all child logs privately, stops the service/responder, and removes keys, DB,
 Certbot lineage and raw logs on ordinary success and failure. It prints only

@@ -115,6 +115,8 @@ configuration; they receive no replacement enrollment parameters.
 The runner does not change clocks, certificate validity, due-date settings,
 database contents or saved account keys. Certbot's ARI retry cache may change;
 the remaining renewal settings and all account files must be preserved.
+The runner rejects Certbot's global/user `cli.ini` defaults before any client
+invocation, preventing ambient hooks or renewal options from affecting the run.
 
 The evidence verifier requires exactly two distinct valid orders and
 certificates under one valid account, distinct valid DNS authorizations and

@@ -6,6 +6,7 @@ import subprocess
 import sys
 import tempfile
 import unittest
+from unittest import mock
 
 RUNNER = pathlib.Path(__file__).with_name('run_live_renewal.py')
 
@@ -18,6 +19,24 @@ def load_runner():
 
 
 class RunnerTests(unittest.TestCase):
+    def test_ambient_certbot_configuration_rejected_before_client_runs(self):
+        runner = load_runner()
+        with tempfile.TemporaryDirectory() as tmp:
+            root = pathlib.Path(tmp)
+            config = root/'letsencrypt/cli.ini'
+            config.parent.mkdir()
+            config.write_text('force-renewal = true\npost-hook = unwanted-command\n')
+            fake = root/'certbot'
+            marker = root/'invoked'
+            fake.write_text(f'#!/bin/sh\ntouch "{marker}"\nexit 1\n')
+            fake.chmod(0o700)
+            stage = ['versions']
+            with mock.patch.dict(os.environ, {'XDG_CONFIG_HOME': str(root)}):
+                with self.assertRaises(Exception):
+                    runner.exercise(root, fake, pathlib.Path('/bin/false'), stage)
+            self.assertFalse(marker.exists(), 'ambient config must be rejected before invoking Certbot')
+            self.assertEqual(stage[0], 'client-configuration')
+
     def test_wrong_version_fails_privately_and_removes_state(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = pathlib.Path(tmp)
