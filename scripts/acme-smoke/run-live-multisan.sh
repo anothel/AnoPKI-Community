@@ -20,7 +20,7 @@ if [ "$client" = certbot ]; then
     test "$(cat "$work/version")" = 'certbot 5.6.0'
     path_arg=-CertbotPath
 else
-    grep -Eq '^lego version 4\.35\.2(\+dev-release)? ' "$work/version"
+    grep -Eq '^lego version v?4\.35\.2(\+dev-release)? ' "$work/version"
     path_arg=-LegoPath
 fi
 echo "Real $client multi-name HTTP-01; isolated SQLite and local responder"
