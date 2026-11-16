@@ -248,3 +248,47 @@ fixed stages and public certificate metadata; nothing private is uploaded.
 Abrupt runner termination may leave state until ephemeral runner teardown.
 See the [compatibility matrix](../../docs/acme-client-compatibility.md) for the
 precise evidence and remaining limitations.
+
+## Pinned Linux lego renewal
+
+```sh
+python3 scripts/acme-smoke/run_lego_renewal.py .tmp/lego-bin/lego build-acme/anopki-core
+```
+
+The separate `ACME lego renewal HTTP-01` CI lane installs lego v4.35.2 and
+retains one account, certificate directory, issuer and running SQLite service.
+The pinned client's `cmd/cmd_renew.go` defaults to `--days 30`, not dynamic
+lifetime calculation. A fresh 24-hour smoke certificate is therefore already
+eligible for ordinary renewal. The runner exercises:
+
+1. Initial genuine `run` issuance.
+2. `renew --dynamic --no-random-sleep`: not-due skip, with unchanged account,
+   complete certificate storage and exactly one valid order.
+3. Ordinary `renew --no-random-sleep`: a second valid order/certificate.
+4. `renew --no-random-sleep --days -1`: unconditional renewal, a third valid
+   order/certificate. Negative days is supported by the pinned client.
+
+Unlike Certbot, lego requires the server, email, domains and challenge options
+on renewal; the same arguments and saved `--path` are retained. No second `run`,
+clock changes, database edits, certificate edits or ACME validation bypasses occur.
+Lego requires HTTPS: this lane uses the existing throwaway loopback TLS proxy
+and `--tls-skip-verify` for that adapter only. ACME JWS, nonce/replay, HTTP-01,
+SSRF and signing validation remain unchanged.
+Each renewal must preserve the exact account files and issuer, produce a fresh
+valid HTTP-01 authorization, and leave prior orders/certificates unchanged.
+OpenSSL checks each adjacent certificate pair against database-bound leaves and
+the actual issuer: exact SAN, hostname, server purpose, validity, distinct
+positive serials, private-key matches, rotated leaf public keys, and downloaded
+chain/bundle assembly. Key rotation is asserted from evidence, not inferred from
+success; `--reuse-key` is not passed or covered.
+
+The existing deterministic `TestACMERenewalNewOrderRequiresFreshNonceAndAuthorization`
+regression covers response nonce chaining, consumed nonce and exact JWS replay
+rejection, and authorization-before-signing for renewed orders. This is separate
+from live client evidence; the live runner does not inject malicious replays.
+Private logs, keys and databases are mode-restricted and deleted on normal
+success/failure, never uploaded. Abrupt termination can leave state until runner
+teardown. ARI, aged dynamic renewal, restart recovery, multi-name renewal,
+revocation, public DNS/port-80 operation, DNS-01 and EAB are not established.
+This remains evaluation-only evidence, not production readiness or general
+RFC 8555 conformance. Issue #5 and signed alpha.1 assets are unaffected.
