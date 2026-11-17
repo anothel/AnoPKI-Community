@@ -1773,3 +1773,19 @@ func (tx *memoryTx) UpdateACMEChallengeIfStatus(ctx context.Context, challenge d
 	return updateACMEChallengeIfStatus(tx.acmeChallenges, challenge, currentStatus)
 }
 
+func certificateByIssuerSerial(certificates map[string]domain.Certificate, issuerID, serial string) (domain.Certificate, error) {
+	for _, certificate := range certificates {
+		if certificate.IssuerID == issuerID && certificate.SerialNumber == serial {
+			return copyCertificate(certificate), nil
+		}
+	}
+	return domain.Certificate{}, domain.ErrCertificateNotFound
+}
+func (s *MemoryStore) GetCertificateByIssuerSerial(ctx context.Context, issuerID, serial string) (domain.Certificate, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return certificateByIssuerSerial(s.certificates, issuerID, serial)
+}
+func (tx *memoryTx) GetCertificateByIssuerSerial(ctx context.Context, issuerID, serial string) (domain.Certificate, error) {
+	return certificateByIssuerSerial(tx.certificates, issuerID, serial)
+}

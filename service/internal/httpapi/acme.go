@@ -478,6 +478,10 @@ func (s *Server) acmeRevokeCertificate(w http.ResponseWriter, r *http.Request) {
 		s.writeError(w, r, err)
 		return
 	}
+	if hasRFCCertificate(jws.Payload) {
+		s.acmeRevokeRFCCertificate(w, r, jws)
+		return
+	}
 	var req acmeRevokeCertificateRequest
 	if err := json.Unmarshal(jws.Payload, &req); err != nil {
 		s.writeError(w, r, domain.ErrInvalidRequest)

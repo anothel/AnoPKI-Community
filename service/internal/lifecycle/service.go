@@ -2707,6 +2707,12 @@ func (s *Service) RevokeCertificate(ctx context.Context, actor string, certifica
 	return s.revokeCertificate(ctx, actor, certificateID, reason, false)
 }
 
+// RevokeCertificateWithoutReason preserves the absence of an RFC revocation reason.
+// Legacy entry points deliberately continue to reject the internal marker.
+func (s *Service) RevokeCertificateWithoutReason(ctx context.Context, actor, certificateID string) (domain.Certificate, error) {
+	return s.revokeCertificateWithReason(ctx, actor, certificateID, domain.RevocationNotProvided, false)
+}
+
 func (s *Service) ForceRevokeCertificate(ctx context.Context, actor string, certificateID string, reason domain.RevocationReason) (domain.Certificate, error) {
 	return s.revokeCertificate(ctx, actor, certificateID, reason, true)
 }
@@ -2730,6 +2736,13 @@ func (s *Service) revokeCertificate(ctx context.Context, actor string, certifica
 		return domain.Certificate{}, domain.ErrInvalidRequest
 	}
 
+	return s.revokeCertificateWithReason(ctx, actor, certificateID, reason, force)
+}
+
+func (s *Service) revokeCertificateWithReason(ctx context.Context, actor, certificateID string, reason domain.RevocationReason, force bool) (domain.Certificate, error) {
+	if isBlank(certificateID) || (!isValidRevocationReason(reason) && reason != domain.RevocationNotProvided) {
+		return domain.Certificate{}, domain.ErrInvalidRequest
+	}
 	var certificate domain.Certificate
 	now := s.clock.Now()
 	if err := s.repo.WithinTx(ctx, func(repo store.Repository) error {
@@ -5114,4 +5127,12 @@ func copyStringSlice(values []string) []string {
 		return []string{}
 	}
 	return append([]string(nil), values...)
+}
+
+// GetCertificateByIssuerSerial performs an indexed internal identity lookup.
+func (s *Service) GetCertificateByIssuerSerial(ctx context.Context, issuerID, serial string) (domain.Certificate, error) {
+	if isBlank(issuerID) || isBlank(serial) {
+		return domain.Certificate{}, domain.ErrInvalidRequest
+	}
+	return s.repo.GetCertificateByIssuerSerial(ctx, issuerID, serial)
 }

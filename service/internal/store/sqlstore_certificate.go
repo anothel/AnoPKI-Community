@@ -1221,3 +1221,25 @@ WHERE issuer_id = $1
 	}
 	return domain.ErrInvalidTransition
 }
+
+func (s *SQLStore) GetCertificateByIssuerSerial(ctx context.Context, issuerID, serial string) (domain.Certificate, error) {
+	return s.repository().GetCertificateByIssuerSerial(ctx, issuerID, serial)
+}
+func (r sqlRepository) GetCertificateByIssuerSerial(ctx context.Context, issuerID, serial string) (domain.Certificate, error) {
+	certificate, err := scanCertificate(r.exec.QueryRowContext(ctx, certificateByIssuerSerialQuery, issuerID, serial))
+	if errors.Is(err, sql.ErrNoRows) {
+		return domain.Certificate{}, domain.ErrCertificateNotFound
+	}
+	if err != nil {
+		return domain.Certificate{}, err
+	}
+	return certificate, nil
+}
+
+const certificateByIssuerSerialQuery = `
+SELECT id, identity_id, issuer_id, enrollment_id, certificate_profile_id, serial_number, subject,
+	dns_names, ip_addresses, not_before, not_after, status, certificate_pem,
+	renewal_notified_at, created_at, updated_at
+FROM certificates
+WHERE issuer_id = $1 AND serial_number = $2
+ AND issuer_id <> '' AND serial_number <> ''`

@@ -405,6 +405,18 @@ int main(int argc, char *argv[])
 	require(status == V_OCSP_CERTSTATUS_REVOKED);
 	require(reason == OCSP_REVOKED_STATUS_KEYCOMPROMISE);
 
+	for (const std::string reason_value : {"not_provided", "unspecified", ""})
+	{
+		auto absent_request = response_request;
+		absent_request.certificates[0].revocation_reason = reason_value;
+		const auto absent_result = anopki::core::generate_ocsp_response(absent_request);
+		const auto absent_response = ocsp_response_from_der(absent_result.response_der);
+		OCSPBasicResponsePtr absent_basic{OCSP_response_get1_basic(absent_response.get())};
+		int absent_status = -1, absent_reason = -2;
+		require(OCSP_resp_find_status(absent_basic.get(), id.get(), &absent_status, &absent_reason, nullptr, nullptr, nullptr) == 1);
+		require(absent_status == V_OCSP_CERTSTATUS_REVOKED);
+		require(absent_reason == (reason_value == "not_provided" ? OCSP_REVOKED_STATUS_NOSTATUS : OCSP_REVOKED_STATUS_UNSPECIFIED));
+	}
 	const EvpPkeyPtr responder_key = make_rsa_key();
 	const X509Ptr responder = make_ocsp_responder_certificate(
 	    responder_key.get(), issuer.get(), issuer_key.get(), "OCSP Responder", 2001, true);

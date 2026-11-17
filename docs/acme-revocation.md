@@ -1,48 +1,71 @@
-# ACME revocation investigation
+# ACME certificate revocation
 
-At starting main `0eecee493495534891f5602acd5f1ba0cce0db85`, standard revocation is **unsupported**. This corrects the previous conformance matrix's “Pass”, which referred only to an internal service-extension fixture. No runtime contract or authorization change is included in this investigation.
+Community/OpenSSL supports an additive, scoped RFC 8555 §7.6 revocation path alongside the existing certificate-ID extension. This remains evaluation-only, with **partial RFC support**: cross-account authorization based on authorizations for every certificate identifier is deferred under [#31](https://github.com/anothel/AnoPKI-Community/issues/31) and fails closed. No complete RFC 8555 conformance or production-readiness claim is made.
 
-## Actual pinned-client evidence
+## Requests and authority
 
-The isolated `run_live_revocation.py` runner uses Certbot/acme 5.6.0 with the existing locked dependencies, a fresh SQLite service and Community/OpenSSL issuer. Initial HTTP-01 issuance supplies a throwaway target for revocation, not additional issuance/renewal compatibility claims. OpenSSL verifies that leaf against the actual issuer and hostname.
+The advertised `/acme/revoke-cert` accepts two distinct shapes inside the existing signed JWS envelope:
 
-Both real commands fail with HTTP 400 `urn:ietf:params:acme:error:malformed`, detail `invalid request`:
+- Legacy: `{"certificate_id":"...","reason":"superseded"}`. Existing ownership checks, string-reason validation, HTTP error behavior and `{}` success response remain in place. Empty reasons and the internal `not_provided` marker remain invalid legacy inputs.
+- RFC: `{"certificate":"BASE64URL_DER","reason":4}`, with optional integer `reason`. Strict unpadded base64url, exactly one DER certificate, canonical field names and unambiguous JSON are required. Duplicate or unknown fields, mixed formats, null/noninteger reasons and malformed/trailing certificate data are rejected.
 
-- `certbot revoke --cert-path LEAF --reason superseded --no-delete-after-revoke` uses the retained account key and `kid`.
-- The same command with `--key-path LEAF_KEY` uses the matching leaf key and `jwk`.
+Both paths retain the existing JWS signature, algorithm, exact protected URL and one-time nonce checks. The RFC path adds a separate rate-limit bucket using the existing configured limit/window; the legacy path retains its prior rate behavior.
 
-The runner internally parses each command's private debug-log segment. It requires a JWS addressed to this local revoke endpoint, the expected `kid`/`jwk` form, exactly `certificate` and `reason` payload fields, decoded DER equal to the actual OpenSSL leaf, numeric reason 4, and the exact HTTP problem. After each failure it requires unchanged certificate rows, zero revocations, and the original valid order/authorization/challenge state. Raw logs, keys and database remain inside a private temporary directory and are removed on exit; nothing private is uploaded. Abrupt process termination can leave state until ephemeral runner teardown.
+The RFC path resolves a stored issuer and uses the indexed issuer-ID/serial lookup, then requires exact stored leaf DER equality. A serial, public key or matching issuer name alone cannot identify the target. It does not load the complete certificate inventory for unregistered JWK requests.
 
-Reproduce from the repository root, with the pinned requirements installed and the native core built:
+RFC authority is limited to:
+
+1. A valid issuing account whose stored order links to the target certificate. Inactive accounts are rejected on the new RFC path; the legacy path is unchanged.
+2. A verified JWK whose SubjectPublicKeyInfo equals the target certificate's public key. That key does not need an ACME account. A key shared by another certificate does not bypass exact target DER matching.
+
+Other accounts remain unauthorized, including accounts with identifier authorizations. Revocation authority does not expand for legacy requests or other endpoints. The existing lifecycle state-transition rules, transactional revocation record, audit event and outbox event are reused. Failures roll back those changes together.
+
+RFC success is HTTP 200 with an empty body and fresh `Replay-Nonce`. Unsupported integer reason codes return `badRevocationReason`; authorized attempts to revoke an already revoked certificate return `alreadyRevoked`. These are scoped RFC responses; legacy error mappings remain unchanged. Unauthorized requests are checked before exposing the already-revoked state. Exact replays return `badNonce` after success or rejection.
+
+## Reason semantics and approved internal transport
+
+Supported numeric codes are 0, 1, 2, 3, 4, 5 and 9, mapped to the existing explicit domain reasons. Codes 6, 8 and 10 are not supported by this lifecycle and are rejected. No new certificate-hold/remove-from-CRL authority is introduced.
+
+| RFC input | Stored/audit/outbox/Core reason | CRL/OCSP encoding |
+| --- | --- | --- |
+| Omitted `reason` | `not_provided` | No CRL entry reasonCode extension; no OCSP revocationReason field |
+| Explicit `reason: 0` | `unspecified` | Existing explicit code-0 encoding retained |
+| Explicit supported nonzero code | Existing reason string | Existing reason encoding retained |
+
+The owner explicitly approved `not_provided` as an internal absence marker. It is created only by the optional-reason RFC path, through a separate lifecycle entry point; public legacy reason validators exclude it. It is not a numeric reason code or an arbitrary default. The marker round-trips unchanged through SQLite/PostgreSQL TEXT storage, lifecycle reads, audit/outbox JSON and internal Core CLI reason arrays. No schema migration or historical record rewrite is needed.
+
+Only the new marker changes native encoding: CRL skips the per-entry reason extension; OCSP uses OpenSSL's `OCSP_REVOKED_STATUS_NOSTATUS` (-1). Existing empty and `unspecified` Core values retain their prior meaning. This work does not reinterpret historical unspecified values or make a broader PKIX conformance claim about existing explicit-reason behavior.
+
+## Real clients and signed status evidence
+
+The Certbot runner uses locked Certbot/acme 5.6.0 and fresh local issuer/SQLite state for each scenario:
+
+- Genuine `certbot revoke --reason superseded --no-delete-after-revoke` with its saved issuing account.
+- Genuine `certbot revoke --key-path LEAF_KEY --reason unspecified --no-delete-after-revoke` with the matching certificate key.
+- A separately identified **protocol probe**, using the pinned acme network and a certificate-only payload, tests omitted reason. This probe is not a Certbot CLI omission claim.
+
+The lego runner uses v4.35.2 and fresh state for each scenario:
+
+- Genuine `lego revoke --keep` sends explicit numeric 0.
+- Genuine `lego revoke --keep --reason 4` sends superseded.
+
+The pinned lego CLI's `cmd/cmd_revoke.go` always passes a pointer to its numeric flag value. Omitting the CLI flag therefore does **not** omit the wire field. Both CLIs' actual behavior is kept distinct from the omitted-reason protocol probe.
+
+For every scenario, OpenSSL checks downloaded leaf DER against the database, actual issuer trust and hostname. Before revocation, a service-signed CRL and signature-verified OCSP response show good status. After revocation, the verifier requires revoked certificate state, exactly one revocation with the expected reason, matching audit/outbox metadata, a signature-verified CRL causing `openssl verify -crl_check` to fail specifically with `certificate revoked`, and a signature-verified OCSP response reporting revoked. It also checks reason presence/absence in both signed objects, distinguishing `not_provided`, explicit 0 and superseded.
+
+Reproduce from the repository root with the native Community/OpenSSL core and pinned client dependencies installed:
 
 ```sh
-python scripts/acme-smoke/run_live_revocation.py PATH_TO_CERTBOT PATH_TO_CORE
+python scripts/acme-smoke/run_live_revocation.py PATH_TO_CERTBOT_VENV/bin/certbot PATH_TO_CORE
+python scripts/acme-smoke/run_lego_revocation.py PATH_TO_LEGO PATH_TO_CORE
 ```
 
-This is live Certbot evidence. Lego v4.35.2 was inspected at `certificate/certificates.go` (`RevokeWithReason`), `acme/commons.go` (`RevokeCertMessage`) and `acme/api/certificate.go` (`Revoke`): it sends base64url DER in `certificate`, with an optional numeric reason, through the account-signing transport. A live lego revocation execution is not claimed here.
+Both runners use local responders, throwaway keys and private temporary state, capturing raw logs and deleting keys/databases/logs on exit. The lego runner retains the existing throwaway loopback TLS adapter and transport-only `--tls-skip-verify`; issuer trust is independently checked with OpenSSL. No public CA or production credentials are used. No raw private artifacts are uploaded. Abrupt termination can leave state until ephemeral runner teardown.
 
-## Why it fails and what remains protected
+## Regression coverage and limits
 
-`httpapi/acme.go` first verifies JWS media type, exact protected URL, supported algorithm, exclusive kid/jwk, one-time nonce, key lookup and signature. Payload decoding then expects `certificate_id` and a required string `reason`. Numeric reason fails JSON decoding; omission still fails because certificate ID/reason are empty. No DER lookup occurs.
+Focused tests cover authorization, exact DER mismatch, malformed/ambiguous payloads, omitted versus explicit reasons, inactive accounts, rate limits, nonce replay after rejection/success, and `alreadyRevoked`. Marker persistence/serialization tests run against memory, SQLite and PostgreSQL parity fixtures. Lifecycle audit/outbox failures test transactional rollback. Native ASN.1 tests verify absence for the marker and unchanged explicit/old-empty encodings. Existing issuance, renewal, signing, authentication, SSRF and replay suites remain enabled.
 
-`requireACMECertificateAccount` requires a nonempty account ID and an order belonging to that account with the target certificate ID. A verified JWK alone supplies no account ID, so even a matching certificate key cannot authorize this extension. Other accounts cannot revoke through it. Certificates contain PEM, issuer, serial and lifecycle status; order records link certificate IDs to accounts. Lifecycle revocation validates its reason and atomically changes status, records the revocation, audit event and outbox event, rolling back on failure.
+The historical baseline `bd93661d30f70a503279e4784fee2334fe756ef7` rejected both real Certbot revocation modes with HTTP 400 because it accepted only ID/string requests. The earlier conformance matrix's revocation “Pass” was based on that service extension. Exact new commit, PR/client results, full CI and post-merge evidence are recorded in [#21](https://github.com/anothel/AnoPKI-Community/issues/21).
 
-`TestACMERevocationContractAndSecurity` pins owner success and duplicate transition rejection, other-account rejection, forged owner signatures, unrelated JWK and owner-JWK-without-kid rejection, malformed standard payloads, invalid reasons and exact JWS replays after both rejection and success. Rejections must leave certificate status and issuer revocation entries unchanged. This repository fixture does not establish live malicious-client coverage or DER parsing support.
-
-The standard request fails before revocation, so no newly revoked serial can be verified in CRL/OCSP as a result of these client commands. Existing CRL/OCSP regressions remain enabled; their results must not be presented as successful ACME revocation. A combined live revocation-to-CRL/OCSP test remains a gap after the contract decision.
-
-## Minimal proposed design — pending owner approval
-
-[RFC 8555 §7.6](https://www.rfc-editor.org/rfc/rfc8555.html#section-7.6) requires the base64url DER certificate and permits an omitted or numeric reason. It requires acceptance of the issuing account and accounts holding authorizations for all identifiers, and acceptance of the certificate private key, without requiring an ACME account for that key. Current behavior does not provide these semantics.
-
-Proposed additive implementation, **not authorized or implemented by this PR**:
-
-1. Preserve the ID/string extension and all service API/CLI contracts. Add a separate, unambiguous RFC payload shape on the advertised endpoint. Reject mixed certificate/ID formats; validate strict DER, encoding and numeric reason types. Define supported reason codes and omitted-reason semantics explicitly rather than silently mapping to an existing string default.
-2. Resolve DER to one stored certificate by issuer identity and serial, then require exact DER equality. Never trust a caller-selected serial or public key alone. Reject malformed, foreign and unknown certificates without changing state.
-3. Keep the existing issuing-account ownership check for kid requests. Supporting other accounts with authorizations for every identifier requires explicit authorization freshness/scope rules; absence of those rules must fail closed and be documented as partial support.
-4. For RFC JWK requests only, verify the JWS with that JWK and require its public key to equal the target certificate's SubjectPublicKeyInfo. This is a new authorization path requiring owner approval. Do not expand JWK authority for the existing ID format or other endpoints. Preserve nonce consumption, signature/algorithm and exact-URL validation.
-5. Reuse transactional lifecycle revocation, audit and outbox. Specify RFC `alreadyRevoked`, unauthorized and bad-reason errors without changing legacy error contracts. Add actual client success lanes, security negatives for malformed DER/unrelated keys/foreign issuers/replays, and real CRL/OCSP/OpenSSL evidence before claiming support.
-
-Owner decision required: approve the additive payload/reason/error semantics and certificate-key authorization, and decide whether all-identifiers-authorized accounts are included or explicitly deferred. Until then the endpoint remains incompatible with standard revocation.
-
-Evaluation-only. No production-readiness or general RFC 8555 conformance claim. Existing issuance/renewal lanes, signing/SSRF/authentication guards and signed alpha.1 assets remain unchanged. PostgreSQL #5 and audit incident #29 are independent unresolved issues. Exact PR and CI evidence belongs in Issue #21.
+Other-account identifier authorization (#31), live malicious-client traffic, public DNS/port-80 routing, DNS-01 and EAB remain outside this slice. Audit intermittency [#29](https://github.com/anothel/AnoPKI-Community/issues/29) and PostgreSQL intermittency [#5](https://github.com/anothel/AnoPKI-Community/issues/5) remain independent and unresolved. Signed alpha.1 tags and release assets are unchanged.

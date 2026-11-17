@@ -54,6 +54,7 @@ type CertificateRepository interface {
 	CreateCertificate(ctx context.Context, certificate domain.Certificate) error
 	GetCertificate(ctx context.Context, id string) (domain.Certificate, error)
 	GetCertificateByEnrollmentID(ctx context.Context, enrollmentID string) (domain.Certificate, error)
+	GetCertificateByIssuerSerial(ctx context.Context, issuerID, serial string) (domain.Certificate, error)
 	ListCertificates(ctx context.Context) ([]domain.Certificate, error)
 	ListCertificateInventory(ctx context.Context, filter CertificateInventoryFilter) ([]CertificateInventoryRecord, error)
 	ListCertificatesExpiringWithin(ctx context.Context, now time.Time, cutoff time.Time, limit int, offset int) ([]domain.Certificate, error)

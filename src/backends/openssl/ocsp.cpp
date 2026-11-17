@@ -355,6 +355,10 @@ int ocsp_status(std::string_view status)
 
 int ocsp_revocation_reason(std::string_view reason)
 {
+	if (reason == "not_provided")
+	{
+		return OCSP_REVOKED_STATUS_NOSTATUS;
+	}
 	if (reason == "key_compromise")
 	{
 		return OCSP_REVOKED_STATUS_KEYCOMPROMISE;

@@ -15,7 +15,7 @@ This matrix tracks implemented ACME protocol behavior in `anopki-service`.
 | HTTP-01 | Key authorization validation, challenge `Link: rel="up"`, and polling behavior | Pass | `TestValidateACMEHTTP01ChallengeVerifiesKeyAuthorizationAndPromotesOrder`, `TestACMEProtocolCertbotCompatibilityFixture`, live lego and certbot smoke |
 | Finalize | RFC `csr` payload, empty-subject SAN CSR handling, and local `csr_pem` compatibility payload | Pass | `TestACMEProtocolFinalizesRFC8555CSRPayload`, `TestNormalizeACMEFinalizeRequestDefaultsSubjectFromCSRIdentifier`, compatibility fixture |
 | Certificate download | PEM certificate chain via GET and POST-as-GET | Pass | `TestACMEProtocolCertbotCompatibilityFixture` |
-| Revocation | RFC 8555 §7.6 DER certificate, numeric/optional reason, account or certificate-key authorization | Unsupported | Real pinned Certbot rejects with HTTP 400; existing ID/string service extension remains supported. [Evidence and approval proposal](acme-revocation.md) |
+| Revocation | DER certificate, optional numeric reason, issuing-account or matching certificate-key authorization | Partial support | Live pinned Certbot and lego; omitted-reason protocol probe; exact DER/JWS/replay/transaction/native reason tests. Other-account identifier authorization deferred under #31. [Scope and evidence](acme-revocation.md) |
 | Rate limits | Rate-limit account, order, challenge, and finalize POST paths | Pass | `TestACMEProtocolRateLimitsAccountRequests` |
 | External Account Binding | EAB for external subscriber/account integration | Deferred | No real subscriber/account integration selected |
 | DNS-01 | DNS challenge validation | Deferred | No operator-owned DNS provider integration selected |

@@ -194,5 +194,20 @@ int main(int argc, char *argv[])
 	require(der_info.issuer == pem_info.issuer);
 	require(der_info.revoked_certificate_count == pem_info.revoked_certificate_count);
 	require(der_info.crl_number == pem_info.crl_number);
+	for (const std::string reason_value : {"not_provided", "unspecified", ""})
+	{
+		request.revoked_certificates[0].reason = reason_value;
+		const auto reason_result = anopki::core::generate_crl(request);
+		const auto reason_crl = crl_from_pem(reason_result.crl_pem);
+		X509_REVOKED *entry = sk_X509_REVOKED_value(X509_CRL_get_REVOKED(reason_crl.get()), 0);
+		const int index = X509_REVOKED_get_ext_by_NID(entry, NID_crl_reason, -1);
+		require((index < 0) == (reason_value == "not_provided"));
+		if (index >= 0)
+		{
+			auto *decoded = static_cast<ASN1_ENUMERATED *>(X509_REVOKED_get_ext_d2i(entry, NID_crl_reason, nullptr, nullptr));
+			require(decoded != nullptr && ASN1_ENUMERATED_get(decoded) == 0);
+			ASN1_ENUMERATED_free(decoded);
+		}
+	}
 	return 0;
 }

@@ -163,6 +163,8 @@ const (
 	RevocationCessationOfOperation RevocationReason = "cessation_of_operation"
 	RevocationPrivilegeWithdrawn   RevocationReason = "privilege_withdrawn"
 	RevocationUnspecified          RevocationReason = "unspecified"
+	// RevocationNotProvided is internal to RFC requests with no reason field.
+	RevocationNotProvided RevocationReason = "not_provided"
 )
 
 type IssuerKind string

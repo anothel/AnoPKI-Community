@@ -29,6 +29,7 @@ func TestPostgresIntegrationRepositoryParity(t *testing.T) {
 		{name: "certificate_profile_issuer_transition", run: testCertificateProfileIssuerConditionalUpdate},
 		{name: "nested_transactions", run: testNestedWithinTxUsesSameTransaction},
 		{name: "acme_state", run: testACMEState},
+		{name: "revocation_reason", run: testRevocationReasonRoundTrip},
 	}
 
 	for _, tt := range tests {

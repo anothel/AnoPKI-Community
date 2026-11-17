@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: MPL-2.0
-"""Linux-only, pinned real Certbot revocation rejection evidence. Run at repo root."""
+"""Linux-only, pinned real Certbot revocation interoperability evidence. Run at repo root."""
 import argparse
 import base64
 import functools
@@ -22,23 +22,24 @@ import urllib.request
 from verify_multisan import require
 from verify_renewal import NAME, verify_orders
 from run_live_renewal import private_process, QuietWebroot
+from verify_revocation import prepare, verify_database, verify_status
 
 
-def verify_wire(path, mode, leaf, directory):
+def verify_wire(path, mode, leaf, directory, numeric_reason=4):
     # Parse private Certbot debug logs internally; never print JWS or key material.
     content = path.read_text()
     objects = []
     decoder = json.JSONDecoder()
     for match in re.finditer(r'\{', content):
         try:
-            value, _ = decoder.raw_decode(content[match.start():])
+            value, consumed = decoder.raw_decode(content[match.start():])
             if isinstance(value, dict):
-                objects.append(value)
+                objects.append((value, match.start()+consumed))
         except ValueError:
             pass
     expected = subprocess.check_output(['openssl', 'x509', '-in', str(leaf), '-outform', 'DER'])
     found = False
-    for value in objects:
+    for value, end in objects:
         if not all(field in value for field in ('protected', 'payload', 'signature')):
             continue
         decode = lambda field: json.loads(base64.urlsafe_b64decode(value[field]+'==='))
@@ -50,20 +51,24 @@ def verify_wire(path, mode, leaf, directory):
             continue
         if mode == 'certificate-key' and ('jwk' not in header or 'kid' in header):
             continue
-        require(set(payload) == {'certificate', 'reason'} and payload['reason'] == 4)
+        require(set(payload) == {'certificate', 'reason'} and type(payload['reason']) is int and payload['reason'] == numeric_reason)
         require(base64.urlsafe_b64decode(payload['certificate']+'===') == expected)
-        found = True
+        response = re.search(r'Received response:\s*\nHTTP ([0-9]{3})(?:\s|$)', content[end:])
+        if response and response.group(1) == '200':
+            found = True
     require(found)
-    require(any(value.get('type') == 'urn:ietf:params:acme:error:malformed'
-                and value.get('status') == 400 and value.get('detail') == 'invalid request'
-                for value in objects))
 
 
-def exercise(root, certbot, core, stage):
+def exercise(root, certbot, core, stage, mode="account-key"):
     def run(args, label, cwd=None):
         stage[0] = label
         with (root/f'{label}.log').open('wb') as output:
-            subprocess.run(args, cwd=cwd, stdout=output, stderr=output, check=True, timeout=180)
+            result = subprocess.run(args, cwd=cwd, stdout=output, stderr=output, timeout=180)
+        if result.returncode:
+            if label == 'omitted-reason-probe':
+                steps = re.findall(r'PROBE_STAGE=([a-z]+)', (root/f'{label}.log').read_text())
+                stage[0] = 'omitted-reason-'+(steps[-1] if steps else 'startup')
+            raise RuntimeError('private command failed')
 
     stage[0] = 'client-configuration'
     # Certbot 5.6.0 reads both default cli.ini files even with --config-dir
@@ -123,34 +128,28 @@ def exercise(root, certbot, core, stage):
                 stage[0] = 'revocation-evidence'
                 leaf = root/'config/live'/NAME/'cert.pem'
                 key = root/'config/live'/NAME/'privkey.pem'
-                with sqlite3.connect(root/'anopki.db') as db:
-                    first = verify_orders(db, 1)
-                    before = db.execute('SELECT id, status, certificate_pem FROM certificates').fetchall()
-                    issuer = db.execute('SELECT certificate_pem FROM issuers').fetchone()[0]
-                (root/'issuer.pem').write_text(issuer)
-                run(['openssl', 'verify', '-CAfile', str(root/'issuer.pem'),
-                     '-verify_hostname', NAME, str(leaf)], 'openssl-trust')
-                for mode, options in [('account-key', []), ('certificate-key', ['--key-path', str(key)])]:
+                certificate, issuer = prepare(root, leaf)
+                verify_status(root, url, leaf, issuer)
+                if mode == 'omitted':
+                    stage[0] = 'pinned-acme-omitted-reason-probe'
+                    expected = 'not_provided'
+                    run([str(certbot.parent/'python'), 'scripts/acme-smoke/revoke_without_reason.py',
+                         str(root), url, str(leaf)], 'omitted-reason-probe')
+                else:
+                    numeric, expected = (4, 'superseded') if mode == 'account-key' else (0, 'unspecified')
+                    options = [] if mode == 'account-key' else ['--key-path', str(key)]
                     stage[0] = mode+'-revoke'
-                    # Certbot rotates logs per invocation; isolate each mode.
                     revoke_common = common.copy()
                     log_dir = root/('logs-'+mode)
                     revoke_common[revoke_common.index('--logs-dir')+1] = str(log_dir)
-                    wire_log = log_dir/'letsencrypt.log'
-                    with (root/(mode+'.log')).open('wb') as output:
-                        result = subprocess.run([str(certbot), 'revoke', *revoke_common,
-                            '--server', directory, '--cert-path', str(leaf),
-                            '--reason', 'superseded', '--no-delete-after-revoke', *options],
-                            stdout=output, stderr=output, timeout=60)
-                    require(result.returncode != 0)
-                    log = (root/(mode+'.log')).read_text()
-                    require('invalid request' in log.lower())
-                    verify_wire(wire_log, mode, leaf, directory)
-                    with sqlite3.connect(root/'anopki.db') as db:
-                        require(db.execute('SELECT id, status, certificate_pem FROM certificates').fetchall() == before)
-                        require(db.execute('SELECT COUNT(*) FROM revocations').fetchone()[0] == 0)
-                        require(verify_orders(db, 1) == first)
-                    print('Certbot '+mode+': HTTP 400 malformed/invalid request; certificate and revocation state unchanged', flush=True)
+                    run([str(certbot), 'revoke', *revoke_common, '--server', directory,
+                         '--cert-path', str(leaf), '--reason', expected,
+                         '--no-delete-after-revoke', *options], mode+'-revoke')
+                    verify_wire(log_dir/'letsencrypt.log', mode, leaf, directory, numeric)
+                verify_database(root, certificate, expected)
+                stage[0] = mode+'-signed-status'
+                verify_status(root, url, leaf, issuer, expected, revoked=True)
+                print(('Pinned-acme protocol probe' if mode == 'omitted' else 'Certbot '+mode)+': HTTP 200; database/audit/outbox and signed CRL/OCSP verify revoked with '+expected, flush=True)
         finally:
             responder.shutdown()
             thread.join(timeout=5)
@@ -165,13 +164,14 @@ def main():
     stage = ['versions']
     try:
         pathlib.Path('.tmp').mkdir(exist_ok=True)
-        with tempfile.TemporaryDirectory(prefix='acme-revocation.', dir=pathlib.Path('.tmp').resolve()) as tmp:
-            exercise(pathlib.Path(tmp), args.certbot.resolve(), args.core.resolve(), stage)
+        for mode in ('account-key', 'certificate-key', 'omitted'):
+            with tempfile.TemporaryDirectory(prefix='acme-revocation.', dir=pathlib.Path('.tmp').resolve()) as tmp:
+                exercise(pathlib.Path(tmp), args.certbot.resolve(), args.core.resolve(), stage, mode)
     except Exception:
         # Never print subprocess output, exception details, JWS, DB rows or keys.
         print(f'Real Certbot revocation investigation failed at stage: {stage[0]}', file=sys.stderr)
         return 1
-    print('Real Certbot revocation incompatibility reproduced; private state removed')
+    print('Real Certbot account-key and certificate-key revocation verified; private state removed')
     return 0
 
 

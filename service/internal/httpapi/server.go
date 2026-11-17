@@ -1339,7 +1339,8 @@ func isPublicACMEProtocolEndpoint(method string, path string) bool {
 	if (method == http.MethodHead || method == http.MethodGet) && path == "/acme/new-nonce" {
 		return true
 	}
-	if method == http.MethodPost && (path == "/acme/new-account" || path == "/acme/new-order" || path == "/acme/key-change" || path == "/acme/revoke-cert") {
+	if method == http.MethodPost && (path == "/acme/new-account" || path == "/acme/new-order" ||
+		path == "/acme/key-change" || path == "/acme/revoke-cert") {
 		return true
 	}
 	if method == http.MethodPost && strings.HasPrefix(path, "/acme/account/") {
@@ -1361,8 +1362,12 @@ func (s *Server) checkACMERateLimit(r *http.Request) error {
 	if !isRateLimitedACMEProtocolEndpoint(r.Method, r.URL.Path) {
 		return nil
 	}
+	return s.checkACMERateLimitClass(r, acmeRateLimitClass(r.URL.Path))
+}
+
+func (s *Server) checkACMERateLimitClass(r *http.Request, class string) error {
 	now := time.Now()
-	key := requestClientIP(r, s.auth.TrustedProxies) + " " + acmeRateLimitClass(r.URL.Path)
+	key := requestClientIP(r, s.auth.TrustedProxies) + " " + class
 	s.rateMu.Lock()
 	defer s.rateMu.Unlock()
 	bucket := s.rates[key]
@@ -1371,7 +1376,7 @@ func (s *Server) checkACMERateLimit(r *http.Request) error {
 	}
 	if bucket.Count >= s.acme.RateLimit {
 		s.rates[key] = bucket
-		recordEventMetric("rate_limit:acme_" + acmeRateLimitClass(r.URL.Path))
+		recordEventMetric("rate_limit:acme_" + class)
 		return domain.ErrRateLimited
 	}
 	bucket.Count++
@@ -1519,6 +1524,10 @@ func (s *Server) writeACMEProblem(w http.ResponseWriter, r *http.Request, status
 }
 
 func acmeProblemType(err error) string {
+	var problem *acmeRevocationError
+	if errors.As(err, &problem) {
+		return problem.kind
+	}
 	switch {
 	case errors.Is(err, errACMEBadNonce):
 		return "urn:ietf:params:acme:error:badNonce"
@@ -1608,6 +1617,10 @@ func publicErrorMessage(err error) string {
 }
 
 func statusForError(err error) int {
+	var problem *acmeRevocationError
+	if errors.As(err, &problem) {
+		return problem.status
+	}
 	switch {
 	case errors.Is(err, errACMEBadNonce):
 		return http.StatusBadRequest
@@ -1660,4 +1673,3 @@ func statusForError(err error) int {
 		return http.StatusInternalServerError
 	}
 }
-
