@@ -23,7 +23,7 @@ func TestACMERFCRevocationAuthorizationAndReasons(t *testing.T) {
 				api := newTestAPI(t)
 				cert := api.createCertificate(t)
 				key := newACMETestSigner(t).(*acmeECTestSigner)
-				template := &x509.Certificate{SerialNumber: big.NewInt(123), Subject: pkix.Name{CommonName: "test"}, NotBefore: testNow, NotAfter: cert.NotAfter}
+				template := &x509.Certificate{SerialNumber: big.NewInt(123), Subject: pkix.Name{CommonName: "test"}, DNSNames: []string{"edge-01.example.test"}, NotBefore: testNow, NotAfter: cert.NotAfter}
 				der, err := x509.CreateCertificate(rand.Reader, template, template, &key.key.PublicKey, key.key)
 				if err != nil {
 					t.Fatal(err)
@@ -48,6 +48,15 @@ func TestACMERFCRevocationAuthorizationAndReasons(t *testing.T) {
 				owner := register(api.acmeSigner)
 				otherKey := newACMETestSigner(t)
 				other := register(otherKey)
+				// Even complete, currently valid identifier authorization does
+				// not grant this other account revocation authority (#31).
+				if err := api.repo.CreateACMEOrder(api.ctx, domain.ACMEOrder{ID: "other-order", AccountID: other.ID, Status: domain.ACMEOrderReady, RequestedDNSNames: []string{"edge-01.example.test"}, ExpiresAt: testNow.Add(time.Hour), CreatedAt: testNow, UpdatedAt: testNow}); err != nil {
+					t.Fatal(err)
+				}
+				if err := api.repo.CreateACMEAuthorization(api.ctx, domain.ACMEAuthorization{ID: "other-auth", OrderID: "other-order", IdentifierType: "dns", IdentifierValue: "edge-01.example.test", Status: domain.ACMEAuthorizationValid, ExpiresAt: testNow.Add(time.Hour), CreatedAt: testNow, UpdatedAt: testNow}); err != nil {
+					t.Fatal(err)
+				}
+
 				if err := api.repo.CreateACMEOrder(api.ctx, domain.ACMEOrder{ID: "order", AccountID: owner.ID, CertificateID: cert.ID, Status: domain.ACMEOrderValid, CreatedAt: testNow, UpdatedAt: testNow}); err != nil {
 					t.Fatal(err)
 				}
