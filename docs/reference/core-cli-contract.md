@@ -198,3 +198,14 @@ Product-profile and adapter control failures use these stable codes:
 dependency version, readiness, capabilities, ABI metadata, and the explicit
 `fallback_enabled` value. It does not change any existing issuance/status wire
 payload.
+
+## Internal absent revocation reason
+
+The owner-approved internal `not_provided` marker in `revocation_reasons`
+represents an omitted reason on the scoped RFC ACME path. It omits the CRL
+entry reasonCode and OCSP revocationReason fields. Existing explicit reasons,
+including `unspecified`, and historical empty values retain their prior
+encoding. Public legacy service validators reject the marker. Storage,
+audit/outbox metadata and the internal Core transport preserve it unchanged;
+no migration or historical rewrite is performed. See
+[ACME reason semantics](../acme-revocation.md#reason-semantics-and-approved-internal-transport).

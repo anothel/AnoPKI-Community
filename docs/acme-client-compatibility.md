@@ -147,12 +147,14 @@ revocation, live malicious-protocol requests, public DNS/port-80 routing,
 DNS-01/EAB, production readiness or general RFC 8555 conformance. Signed
 alpha.1 remains unchanged; PostgreSQL intermittency #5 remains separate.
 
-## Revocation contract gap
+## Scoped RFC revocation
 
-Pinned Certbot 5.6.0 account-key and certificate-key revocation both fail with
-HTTP 400 `malformed` / `invalid request`, leaving certificate and revocation
-state unchanged. The endpoint implements a certificate-ID/string-reason service
-extension, not RFC 8555 §7.6. See [the investigation and pending owner design
-approval](acme-revocation.md). Lego v4.35.2 source has the same DER/numeric
-payload mismatch; live lego revocation is not yet established. This finding
-does not invalidate the completed issuance or renewal evidence.
+Pinned Certbot 5.6.0 issuing-account and certificate-key revocation, plus pinned
+lego v4.35.2 default-zero and explicit-superseded revocation, are exercised by
+separate live CI runners. A separately identified pinned-acme protocol probe
+covers omitted reasons; neither CLI's default is presented as omission.
+All scenarios verify revoked database/audit/outbox state and actual signed
+CRL/OCSP output with OpenSSL. See [request semantics, evidence and
+limitations](acme-revocation.md). The certificate-ID/string extension remains
+supported. Cross-account identifier authorization remains deferred under #31;
+this is partial RFC 8555 support and evaluation-only functionality.

@@ -51,10 +51,11 @@ func TestACMERevocationContractAndSecurity(t *testing.T) {
 		{"forged owner signature", owner.Location, otherSigner, payload, 400},
 		{"unregistered unrelated JWK", "", newACMETestSigner(t), payload, 400},
 		{"owner JWK without account KID", "", api.acmeSigner, payload, 400},
-		{"standard numeric reason", owner.Location, api.acmeSigner, map[string]any{"certificate": "MAA", "reason": 0}, 400},
-		{"standard omitted reason", owner.Location, api.acmeSigner, map[string]any{"certificate": "MAA"}, 400},
+		{"invalid DER numeric reason", owner.Location, api.acmeSigner, map[string]any{"certificate": "MAA", "reason": 0}, 400},
+		{"invalid DER omitted reason", owner.Location, api.acmeSigner, map[string]any{"certificate": "MAA"}, 400},
 		{"malformed certificate", owner.Location, api.acmeSigner, map[string]any{"certificate": "%%%", "reason": 1}, 400},
 		{"numeric reason with legacy ID", owner.Location, api.acmeSigner, map[string]any{"certificate_id": cert.ID, "reason": 1}, 400},
+		{"internal marker legacy reason", owner.Location, api.acmeSigner, map[string]any{"certificate_id": cert.ID, "reason": "not_provided"}, 400},
 		{"invalid legacy reason", owner.Location, api.acmeSigner, map[string]any{"certificate_id": cert.ID, "reason": "invalid"}, 400},
 	}
 	for _, tc := range cases {

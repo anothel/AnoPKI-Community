@@ -315,15 +315,18 @@ void add_revoked_entry(X509_CRL *crl, const RevokedCertificate &entry)
 	{
 		throw_error(kCRLCreateFailed);
 	}
-	Asn1EnumeratedPtr reason{ASN1_ENUMERATED_new()};
-	if (!reason || ASN1_ENUMERATED_set(reason.get(), reason_code(entry.reason)) != 1)
+	if (entry.reason != "not_provided")
 	{
-		throw_error(kCRLCreateFailed);
-	}
-	X509ExtensionPtr reason_extension{X509V3_EXT_i2d(NID_crl_reason, 0, reason.get())};
-	if (!reason_extension || X509_REVOKED_add_ext(revoked.get(), reason_extension.get(), -1) != 1)
-	{
-		throw_error(kCRLCreateFailed);
+		Asn1EnumeratedPtr reason{ASN1_ENUMERATED_new()};
+		if (!reason || ASN1_ENUMERATED_set(reason.get(), reason_code(entry.reason)) != 1)
+		{
+			throw_error(kCRLCreateFailed);
+		}
+		X509ExtensionPtr reason_extension{X509V3_EXT_i2d(NID_crl_reason, 0, reason.get())};
+		if (!reason_extension || X509_REVOKED_add_ext(revoked.get(), reason_extension.get(), -1) != 1)
+		{
+			throw_error(kCRLCreateFailed);
+		}
 	}
 	if (X509_CRL_add0_revoked(crl, revoked.get()) != 1)
 	{
