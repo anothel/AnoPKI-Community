@@ -146,3 +146,13 @@ authorization reuse, key reuse, multi-name or lego renewal, restart recovery,
 revocation, live malicious-protocol requests, public DNS/port-80 routing,
 DNS-01/EAB, production readiness or general RFC 8555 conformance. Signed
 alpha.1 remains unchanged; PostgreSQL intermittency #5 remains separate.
+
+## Revocation contract gap
+
+Pinned Certbot 5.6.0 account-key and certificate-key revocation both fail with
+HTTP 400 `malformed` / `invalid request`, leaving certificate and revocation
+state unchanged. The endpoint implements a certificate-ID/string-reason service
+extension, not RFC 8555 §7.6. See [the investigation and pending owner design
+approval](acme-revocation.md). Lego v4.35.2 source has the same DER/numeric
+payload mismatch; live lego revocation is not yet established. This finding
+does not invalidate the completed issuance or renewal evidence.

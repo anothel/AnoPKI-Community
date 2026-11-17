@@ -784,6 +784,37 @@ jobs:
       - name: Verify ordinary skip and genuine forced renewal using retained state
         run: python scripts/acme-smoke/run_live_renewal.py .tmp/certbot-venv/bin/certbot build-renewal/anopki-core
 
+  acme-revocation-certbot:
+    name: ACME Certbot revocation contract gap
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.26.11"
+          cache-dependency-path: |
+            service/go.mod
+            service/go.sum
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Provision Community OpenSSL build tools
+        run: sudo apt-get update && sudo apt-get install -y cmake g++ libssl-dev pkg-config openssl
+      - name: Build Community OpenSSL core
+        run: |
+          cmake -S . -B build-renewal -DCMAKE_BUILD_TYPE=Debug -DANOPKI_PRODUCT_PROFILE=community-openssl
+          cmake --build build-renewal --target anopki-core --parallel 2
+      - name: Install pinned real Certbot and dependencies
+        run: |
+          python -m venv .tmp/certbot-venv
+          .tmp/certbot-venv/bin/python -m pip install -r scripts/acme-smoke/certbot-requirements.txt
+          .tmp/certbot-venv/bin/python -m pip check
+      - name: Test revocation wire evidence verifier
+        run: python scripts/acme-smoke/test_run_live_revocation.py
+      - name: Verify real account-key and certificate-key revocation rejection
+        run: python scripts/acme-smoke/run_live_revocation.py .tmp/certbot-venv/bin/certbot build-renewal/anopki-core
+
   acme-harness:
     name: ACME harness self-test
     runs-on: ubuntu-latest
