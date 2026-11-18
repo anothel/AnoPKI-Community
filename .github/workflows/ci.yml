@@ -203,10 +203,17 @@ jobs:
           --commit "${GITHUB_SHA}"
         env:
           ANOPKI_POSTGRES_TEST_DSN: postgres://anopki:anopki@localhost:5432/anopki_test?sslmode=disable
+      - name: Validate safe Audit integrity evidence
+        id: audit-evidence
+        if: ${{ !cancelled() }}
+        run: python scripts/verify-audit-integrity-drill.py --validate-evidence --out-dir .tmp/audit-integrity-evidence/ci
       - uses: actions/upload-artifact@v4
+        if: ${{ !cancelled() && steps.audit-evidence.outcome == 'success' }}
         with:
           name: anopki-audit-integrity-verification
-          path: .tmp/audit-integrity-evidence/ci/
+          path: |
+            .tmp/audit-integrity-evidence/ci/audit-integrity-verification.json
+            .tmp/audit-integrity-evidence/ci/audit-integrity-verification.md
           if-no-files-found: error
 
   authorization-boundary-drill:

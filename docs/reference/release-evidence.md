@@ -172,11 +172,22 @@ legacy migration backfill before the unique sequence index, row and checkpoint
 tamper detection, full-prune checkpoint protection, integrity API reporting,
 and retention checkpoints. Release and CI runs require the focused PostgreSQL
 repository parity subtest in addition to the local Memory/SQLite/API set.
-Evidence is strict JSON, Markdown and two redacted logs, packaged as
+Evidence schema 2 contains only allowlisted JSON and Markdown reports, packaged as
 `anopki-audit-integrity-verification.tar.gz`. Release validation rejects skipped
 PostgreSQL evidence, failed or missing tests, command drift, unknown fields,
 extra archive members, commit mismatch, DSNs, database credentials, raw key
-references, and private-key material.
+references, and private-key material. Schema 1 validation remains available for
+existing release evidence; schema 2 records process exit codes, required test
+outcomes, and complete package execution without retaining arbitrary output.
+
+CI validates both reports before uploading them after success or failure. A
+report with a running stage indicates interrupted execution; setup errors and
+nonzero exits are distinct from missing tests and incomplete package results.
+Sensitivity checks reject recognized sensitive output, while the strict report
+projection excludes all arbitrary output, command prefixes and exception text.
+Failures before the runner starts remain identified by Actions step outcomes.
+Passing repeat runs do not prove that the intermittent failure in Issue #29 is
+fixed.
 
 ## Generic Authorization Boundary Evidence Runner
 

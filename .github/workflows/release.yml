@@ -111,7 +111,8 @@ jobs:
           ANOPKI_POSTGRES_TEST_DSN: postgres://anopki:anopki@localhost:5432/anopki_recovery_control?sslmode=disable
       - name: Package Audit integrity verification evidence
         run: |
-          tar -czf dist/anopki-audit-integrity-verification.tar.gz -C .tmp/release-audit-integrity-evidence audit-integrity-verification.json audit-integrity-verification.md audit-integrity-baseline-test.log audit-integrity-postgres-test.log
+          python scripts/verify-audit-integrity-drill.py --validate-evidence --out-dir .tmp/release-audit-integrity-evidence
+          tar -czf dist/anopki-audit-integrity-verification.tar.gz -C .tmp/release-audit-integrity-evidence audit-integrity-verification.json audit-integrity-verification.md
       - name: Run generic authorization boundary verification
         run: |
           python scripts/test_verify_authorization_boundary.py

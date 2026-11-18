@@ -149,7 +149,7 @@ def evidence_sensitivity(texts: tuple[str, ...]) -> dict[str, bool]:
         "private_key_markers_found": any(marker in lowered for marker in private_key_markers),
         "raw_key_references_in_evidence": any(marker in lowered for marker in raw_key_markers),
         "database_credentials_in_evidence": any(marker in lowered for marker in database_markers),
-        "sensitive_values_in_evidence": any(marker in lowered for marker in sensitive_markers),
+        "sensitive_values_in_evidence": any(marker in lowered for marker in sensitive_markers) or bool(re.search(r"(?i)(password|credential|token|secret|authorization|dsn|private[_ -]?key)\s*[=:]", lowered)),
     }
 
 
@@ -198,7 +198,8 @@ def postgres_command(go_executable: str | list[str]) -> list[str]:
 
 def evidence_template(commit: str, require_postgres: bool) -> dict[str, Any]:
     return {
-        "schema_version": 1,
+        "schema_version": 2,
+        "stages": {},
         "evidence_type": "community_audit_integrity_drill",
         "product": "AnoPKI",
         "edition": "community",
@@ -260,101 +261,97 @@ def run_drill(
     commit: str,
     require_postgres: bool = False,
 ) -> dict[str, Any]:
+    # Never persist arbitrary subprocess text, command prefixes or exceptions.
     evidence = evidence_template(resolve_commit(root, commit), require_postgres)
+    output_dir.mkdir(parents=True, exist_ok=True)
+    for name in ("audit-integrity-baseline-test.log", "audit-integrity-postgres-test.log"):
+        (output_dir / name).unlink(missing_ok=True)
+    evidence["blocker"] = "execution incomplete"
+    write_evidence(output_dir, evidence)
     environment = os.environ.copy()
     environment["GOTOOLCHAIN"] = "local"
     environment["GOCACHE"] = str(root / ".tmp" / "go-cache" / "audit-integrity-build")
     environment["GOMODCACHE"] = str(root / ".tmp" / "go-cache" / "audit-integrity-mod")
-    Path(environment["GOCACHE"]).mkdir(parents=True, exist_ok=True)
-    Path(environment["GOMODCACHE"]).mkdir(parents=True, exist_ok=True)
 
-    version_result = subprocess.run(
-        go_arguments(go_executable, "version"),
-        cwd=root / "service",
-        env=environment,
-        text=True,
-        stdout=subprocess.PIPE,
-        stderr=subprocess.STDOUT,
-        check=False,
-    )
-    evidence["go_version"] = redact(version_result.stdout.strip(), output_dir) or "unavailable"
-    if version_result.returncode != 0:
-        evidence["blocker"] = "unable to execute selected Go toolchain"
+    def execute(stage: str, command: list[str], expected: tuple = ()) -> tuple[str, dict]:
+        record = {"status": "running", "exit_code": None, "packages": []}
+        evidence["stages"][stage] = record
         write_evidence(output_dir, evidence)
-        return evidence
+        try:
+            Path(environment["GOCACHE"]).mkdir(parents=True, exist_ok=True)
+            Path(environment["GOMODCACHE"]).mkdir(parents=True, exist_ok=True)
+            result = subprocess.run(
+                command, cwd=root / "service", env=environment, text=True,
+                stdout=subprocess.PIPE, stderr=subprocess.STDOUT, check=False,
+            )
+        except (OSError, subprocess.SubprocessError, UnicodeError):
+            record["status"] = "setup_error"
+            write_evidence(output_dir, evidence)
+            return "", {}
+        record["exit_code"] = result.returncode
+        # A deny check is defense in depth; publication uses a strict projection.
+        flags = evidence_sensitivity((redact(result.stdout, output_dir),))
+        flags["sensitive_values_in_evidence"] |= any(flags.values())
+        for key, value in flags.items():
+            evidence["redaction"][key] |= value
+        observed = parse_test_events(result.stdout)
+        packages = sorted({package for package, _ in expected})
+        terminal = {}
+        for line in result.stdout.splitlines():
+            try:
+                event = json.loads(line)
+            except (ValueError, TypeError):
+                continue
+            if isinstance(event, dict) and event.get("Package") in packages and not event.get("Test"):
+                if event.get("Action") in ("pass", "fail", "skip"):
+                    terminal[event["Package"]] = event["Action"]
+        record["packages"] = [{"package": package, "status": terminal.get(package, "incomplete")} for package in packages]
+        statuses = [test_status(observed, *test) for test in expected]
+        record["status"] = (
+            "nonzero_exit" if result.returncode != 0 and "fail" not in statuses
+            else "failed" if "fail" in statuses or "fail" in terminal.values()
+            else "missing" if "missing" in statuses
+            else "incomplete" if any(package not in terminal for package in packages)
+            else "failed" if any(status != "pass" for status in statuses + list(terminal.values()))
+            else "passed"
+        )
+        write_evidence(output_dir, evidence)
+        return result.stdout, observed
+
+    version_output, _ = execute("toolchain", go_arguments(go_executable, "version"))
     try:
-        version = parse_go_version(version_result.stdout)
-    except DrillFailure as exc:
-        evidence["blocker"] = str(exc)
+        version = parse_go_version(version_output)
+    except DrillFailure:
+        evidence["blocker"] = "unable to parse or execute selected Go toolchain"
         write_evidence(output_dir, evidence)
         return evidence
-    if version < MINIMUM_GO_VERSION:
-        evidence["blocker"] = f"unsupported Go version {version[0]}.{version[1]}.{version[2]}; minimum is 1.25.11"
+    evidence["go_version"] = "go version go" + ".".join(map(str, version))
+    if evidence["stages"]["toolchain"]["status"] != "passed" or version < MINIMUM_GO_VERSION:
+        evidence["blocker"] = "unsupported or failed Go toolchain"
         write_evidence(output_dir, evidence)
         return evidence
 
-    output_dir.mkdir(parents=True, exist_ok=True)
-    baseline = baseline_command(go_executable)
-    evidence["test_commands"]["baseline"] = [redact(item, output_dir) for item in baseline]
-    baseline_result = subprocess.run(
-        baseline,
-        cwd=root / "service",
-        env=environment,
-        text=True,
-        stdout=subprocess.PIPE,
-        stderr=subprocess.STDOUT,
-        check=False,
-    )
-    baseline_log = redact(baseline_result.stdout, output_dir)
-    (output_dir / "audit-integrity-baseline-test.log").write_text(baseline_log, encoding="utf-8")
-    baseline_observed = parse_test_events(baseline_result.stdout)
+    evidence["test_commands"] = {"baseline": baseline_command("go"), "postgres": postgres_command("go")}
+    _, baseline_observed = execute("baseline", baseline_command(go_executable), BASELINE_TESTS)
     evidence["tests"] = [
-        {
-            "backend": "memory-sqlite-http",
-            "package": package,
-            "name": name,
-            "status": test_status(baseline_observed, package, name),
-        }
+        {"backend": "memory-sqlite-http", "package": package, "name": name,
+         "status": test_status(baseline_observed, package, name)}
         for package, name in BASELINE_TESTS
     ]
-    baseline_passed = baseline_result.returncode == 0 and all(
-        item["status"] == "pass" for item in evidence["tests"]
-    )
-
-    postgres = postgres_command(go_executable)
-    evidence["test_commands"]["postgres"] = [redact(item, output_dir) for item in postgres]
+    baseline_passed = evidence["stages"]["baseline"]["status"] == "passed"
     postgres_status = "not_run"
-    postgres_log = "PostgreSQL Audit integrity parity not requested for this local run.\n"
     if require_postgres:
         if not environment.get(POSTGRES_DSN_ENV, "").strip():
             postgres_status = "missing"
-            postgres_log = f"{POSTGRES_DSN_ENV} is required but was not set.\n"
+            evidence["stages"]["postgres"] = {"status": "missing_dsn", "exit_code": None, "packages": []}
         else:
-            postgres_result = subprocess.run(
-                postgres,
-                cwd=root / "service",
-                env=environment,
-                text=True,
-                stdout=subprocess.PIPE,
-                stderr=subprocess.STDOUT,
-                check=False,
-            )
-            postgres_log = postgres_result.stdout
-            postgres_observed = parse_test_events(postgres_result.stdout)
-            postgres_status = test_status(postgres_observed, *POSTGRES_TEST)
-            if postgres_result.returncode != 0 and postgres_status == "pass":
+            _, observed = execute("postgres", postgres_command(go_executable), (POSTGRES_TEST,))
+            postgres_status = test_status(observed, *POSTGRES_TEST)
+            if evidence["stages"]["postgres"]["status"] != "passed" and postgres_status == "pass":
                 postgres_status = "fail"
-    postgres_log = redact(postgres_log, output_dir)
-    (output_dir / "audit-integrity-postgres-test.log").write_text(postgres_log, encoding="utf-8")
-    evidence["redaction"] = evidence_sensitivity((baseline_log, postgres_log))
     sensitive_evidence_passed = not any(evidence["redaction"].values())
     evidence["tests"].append(
-        {
-            "backend": "postgresql",
-            "package": POSTGRES_TEST[0],
-            "name": POSTGRES_TEST[1],
-            "status": postgres_status,
-        }
+        {"backend": "postgresql", "package": POSTGRES_TEST[0], "name": POSTGRES_TEST[1], "status": postgres_status}
     )
 
     expected_baseline = {name: test_status(baseline_observed, package, name) for package, name in BASELINE_TESTS}
@@ -401,6 +398,103 @@ def run_drill(
     return evidence
 
 
+def validate_evidence(output_dir: Path) -> None:
+    """Fail closed: only the runner's bounded structured vocabulary may upload."""
+    report = output_dir / "audit-integrity-verification.json"
+    try:
+        evidence = json.loads(report.read_text(encoding="utf-8"))
+        allowed = set()
+        template = evidence_template("unavailable", False)
+        if not isinstance(evidence, dict) or set(evidence) != set(template):
+            raise ValueError()
+        for key, value in evidence.items():
+            if type(value) is not type(template[key]):
+                raise ValueError()
+        statuses = {"pass", "fail", "skip", "missing", "not_run"}
+        expected_tests = [
+            {"backend": "memory-sqlite-http", "package": package, "name": name}
+            for package, name in BASELINE_TESTS
+        ] + [{"backend": "postgresql", "package": POSTGRES_TEST[0], "name": POSTGRES_TEST[1]}]
+        if len(evidence["tests"]) not in (0, len(BASELINE_TESTS), len(expected_tests)):
+            raise ValueError()
+        for test, expected in zip(evidence["tests"], expected_tests):
+            if not isinstance(test, dict) or set(test) != {*expected, "status"}:
+                raise ValueError()
+            if any(test[k] != v for k, v in expected.items()) or test["status"] not in statuses:
+                raise ValueError()
+        if evidence["checks"] and (
+            len(evidence["checks"]) != len(EXPECTED_CHECKS) or any(
+                set(check) != {"name", "status"} or check["name"] != name
+                or check["status"] not in {"passed", "failed", "not_run"}
+                for check, name in zip(evidence["checks"], EXPECTED_CHECKS)
+            )
+        ):
+            raise ValueError()
+        if set(evidence["redaction"]) != set(template["redaction"]) or any(
+            type(v) is not bool for v in evidence["redaction"].values()
+        ):
+            raise ValueError()
+        if evidence["test_commands"] not in (
+            template["test_commands"], {"baseline": baseline_command("go"), "postgres": postgres_command("go")}
+        ):
+            raise ValueError()
+        if set(evidence["stages"]) - {"toolchain", "baseline", "postgres"}:
+            raise ValueError()
+        for stage, record in evidence["stages"].items():
+            if not isinstance(record, dict) or set(record) != {"status", "exit_code", "packages"}:
+                raise ValueError()
+            if record["status"] not in {"running", "passed", "failed", "missing", "incomplete", "setup_error", "nonzero_exit", "missing_dsn"}:
+                raise ValueError()
+            code = record["exit_code"]
+            if code is not None and (type(code) is not int or not -255 <= code <= 255):
+                raise ValueError()
+            packages = sorted({p for p, _ in (BASELINE_TESTS if stage == "baseline" else (POSTGRES_TEST,) if stage == "postgres" else ())})
+            if not isinstance(record["packages"], list) or len(record["packages"]) not in (0, len(packages)):
+                raise ValueError()
+            for item, package in zip(record["packages"], packages):
+                if not isinstance(item, dict) or set(item) != {"package", "status"} or item["package"] != package or item["status"] not in {"pass", "fail", "skip", "incomplete"}:
+                    raise ValueError()
+        def strings(value: Any) -> set[str]:
+            if isinstance(value, str):
+                return {value}
+            if isinstance(value, dict):
+                return set(value) | set().union(*(strings(v) for v in value.values()), set())
+            if isinstance(value, list):
+                return set().union(*(strings(v) for v in value), set())
+            return set()
+        allowed |= strings(template)
+        allowed |= set(EXPECTED_CHECKS)
+        allowed |= {value for test in (*BASELINE_TESTS, POSTGRES_TEST) for value in test}
+        allowed |= set(baseline_command("go") + postgres_command("go"))
+        allowed |= {
+            "toolchain", "baseline", "postgres", "status", "exit_code", "packages",
+            "package", "backend", "name", "memory-sqlite-http", "postgresql",
+            "pass", "fail", "skip", "missing", "not_run", "passed", "failed",
+            "running", "setup_error", "nonzero_exit", "incomplete", "missing_dsn",
+            "execution incomplete", "unable to parse or execute selected Go toolchain",
+            "unsupported or failed Go toolchain",
+            "one or more required Memory/SQLite/API Audit integrity tests failed or were missing",
+            "required PostgreSQL Audit integrity parity test failed or was missing",
+            "generated Audit integrity evidence contained prohibited sensitive content",
+        }
+        allowed |= {evidence["commit"], evidence["started_at"], evidence["completed_at"], evidence["go_version"]}
+        if evidence["commit"] != "unavailable" and not COMMIT_RE.fullmatch(evidence["commit"]):
+            raise ValueError()
+        for key in ("started_at", "completed_at"):
+            if not re.fullmatch(r"\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z", evidence[key]):
+                raise ValueError()
+        if evidence["go_version"] != "unavailable" and not re.fullmatch(r"go version go\d+\.\d+\.\d+", evidence["go_version"]):
+            raise ValueError()
+        if strings(evidence) - allowed or evidence["schema_version"] != 2:
+            raise ValueError()
+        if any(evidence_sensitivity((report.read_text(),)).values()):
+            raise ValueError()
+        # Recreate Markdown from validated JSON; never trust existing Markdown.
+        write_evidence(output_dir, evidence)
+    except (OSError, ValueError, KeyError, TypeError, AttributeError):
+        raise DrillFailure("unsafe or invalid Audit integrity evidence") from None
+
+
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--go", default="go")
@@ -408,7 +502,11 @@ def main() -> int:
     parser.add_argument("--commit", default="")
     parser.add_argument("--require-postgres", action="store_true")
     parser.add_argument("--list", action="store_true")
+    parser.add_argument("--validate-evidence", action="store_true")
     args = parser.parse_args()
+    if args.validate_evidence:
+        validate_evidence(args.out_dir.resolve())
+        return 0
     if args.list:
         formatter = subprocess.list2cmdline if os.name == "nt" else shlex.join
         print(formatter(baseline_command(args.go)))
