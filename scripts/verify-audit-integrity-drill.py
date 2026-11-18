@@ -325,7 +325,7 @@ def run_drill(
         evidence["blocker"] = "unable to parse or execute selected Go toolchain"
         write_evidence(output_dir, evidence)
         return evidence
-    evidence["go_version"] = ".".join(map(str, version))
+    evidence["go_version"] = "go version go" + ".".join(map(str, version))
     if evidence["stages"]["toolchain"]["status"] != "passed" or version < MINIMUM_GO_VERSION:
         evidence["blocker"] = "unsupported or failed Go toolchain"
         write_evidence(output_dir, evidence)
@@ -483,7 +483,7 @@ def validate_evidence(output_dir: Path) -> None:
         for key in ("started_at", "completed_at"):
             if not re.fullmatch(r"\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z", evidence[key]):
                 raise ValueError()
-        if evidence["go_version"] != "unavailable" and not re.fullmatch(r"\d+\.\d+\.\d+", evidence["go_version"]):
+        if evidence["go_version"] != "unavailable" and not re.fullmatch(r"go version go\d+\.\d+\.\d+", evidence["go_version"]):
             raise ValueError()
         if strings(evidence) - allowed or evidence["schema_version"] != 2:
             raise ValueError()

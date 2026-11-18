@@ -666,6 +666,9 @@ def require_audit_integrity_evidence_archive(dist: Path) -> tuple[Path, dict[str
                 if normalized in files:
                     fail(f"{path.name} contains duplicate member: {normalized}")
                 files[normalized] = member
+            structured_files = {"audit-integrity-verification.json", "audit-integrity-verification.md"}
+            if set(files) == structured_files:
+                expected_files = structured_files
             missing = sorted(expected_files - set(files))
             extra = sorted(set(files) - expected_files)
             if missing:
@@ -708,13 +711,43 @@ def require_audit_integrity_evidence_archive(dist: Path) -> tuple[Path, dict[str
         "go_version", "postgres_required", "test_commands", "tests", "checks",
         "redaction", "blocker",
     }
+    if evidence.get("schema_version") == 2:
+        expected_fields.add("stages")
+        if set(files) != {"audit-integrity-verification.json", "audit-integrity-verification.md"}:
+            fail("Audit integrity schema 2 must contain only structured reports")
+        # Use the same strict publication boundary as CI for future releases.
+        import runpy
+        import tempfile
+        runner = runpy.run_path(str(Path(__file__).with_name("verify-audit-integrity-drill.py")))
+        with tempfile.TemporaryDirectory() as dirname:
+            output = Path(dirname)
+            (output / "audit-integrity-verification.json").write_text(contents["audit-integrity-verification.json"], encoding="utf-8")
+            try:
+                runner["validate_evidence"](output)
+            except runner["DrillFailure"]:
+                fail("Audit integrity schema 2 evidence is unsafe or invalid")
+            if (output / "audit-integrity-verification.md").read_text(encoding="utf-8") != contents["audit-integrity-verification.md"]:
+                fail("Audit integrity schema 2 Markdown does not match validated report")
+        stages = evidence["stages"]
+        if set(stages) != {"toolchain", "baseline", "postgres"} or any(
+            stage["status"] != "passed" or stage["exit_code"] != 0
+            or any(package["status"] != "pass" for package in stage["packages"])
+            for stage in stages.values()
+        ):
+            fail("Audit integrity schema 2 execution did not complete successfully")
+        for name in ("baseline", "postgres"):
+            expected_count = 2 if name == "baseline" else 1
+            if len(stages[name]["packages"]) != expected_count:
+                fail("Audit integrity schema 2 package execution is incomplete")
+    elif set(files) != expected_files or len(files) != 4:
+        fail("Audit integrity schema 1 requires legacy evidence members")
     missing_fields = sorted(expected_fields - set(evidence))
     extra_fields = sorted(set(evidence) - expected_fields)
     if missing_fields:
         fail("Audit integrity verification evidence missing fields:\n" + "\n".join(missing_fields))
     if extra_fields:
         fail("Audit integrity verification evidence has unknown fields:\n" + "\n".join(extra_fields))
-    if evidence["schema_version"] != 1 or evidence["evidence_type"] != "community_audit_integrity_drill":
+    if evidence["schema_version"] not in (1, 2) or evidence["evidence_type"] != "community_audit_integrity_drill":
         fail("Audit integrity verification evidence identity is invalid")
     if evidence["product"] != "AnoPKI" or evidence["edition"] != "community" or evidence["product_profile"] != "community-openssl":
         fail("Audit integrity verification evidence profile is invalid")

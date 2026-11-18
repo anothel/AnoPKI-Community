@@ -237,6 +237,56 @@ def main() -> None:
         result = subprocess.run([sys.executable, str(RUNNER), "--validate-evidence", "--out-dir", str(out)], capture_output=True)
         assert result.returncode != 0
 
+    # Exercise the real runner through the release archive consumer.
+    import tarfile
+    release_spec = importlib.util.spec_from_file_location("release_artifacts", ROOT / "scripts/validate-release-artifacts.py")
+    release = importlib.util.module_from_spec(release_spec)
+    release_spec.loader.exec_module(release)
+    with tempfile.TemporaryDirectory() as dirname:
+        root = Path(dirname)
+        old = MODULE.os.environ.get(MODULE.POSTGRES_DSN_ENV)
+        MODULE.os.environ[MODULE.POSTGRES_DSN_ENV] = "postgres://redacted"
+        try:
+            evidence = MODULE.run_drill(ROOT, root / "out", fake_go(root / "go"), "a" * 40, require_postgres=True)
+        finally:
+            if old is None:
+                MODULE.os.environ.pop(MODULE.POSTGRES_DSN_ENV, None)
+            else:
+                MODULE.os.environ[MODULE.POSTGRES_DSN_ENV] = old
+        assert evidence["result"] == "passed"
+        with tarfile.open(root / release.AUDIT_INTEGRITY_EVIDENCE_NAME, "w:gz") as archive:
+            for report in (root / "out").iterdir():
+                archive.add(report, arcname=report.name)
+        import shlex
+        release_workflow = (ROOT / ".github/workflows/release.yml").read_text()
+        tar_line = next(line.strip() for line in release_workflow.splitlines() if "tar -czf dist/anopki-audit-integrity-verification.tar.gz" in line)
+        command = shlex.split(tar_line.replace("dist/anopki-audit-integrity-verification.tar.gz", str(root / release.AUDIT_INTEGRITY_EVIDENCE_NAME)).replace(".tmp/release-audit-integrity-evidence", str(root / "out")))
+        assert subprocess.run(command, capture_output=True).returncode == 0
+        _, accepted = release.require_audit_integrity_evidence_archive(root)
+        assert accepted["commit"] == "a" * 40
+        for kind in ("nonzero", "incomplete", "unknown_field", "unsafe_markdown"):
+            altered = json.loads(json.dumps(evidence))
+            markdown = (root / "out" / "audit-integrity-verification.md").read_text()
+            if kind == "nonzero":
+                altered["stages"]["baseline"]["exit_code"] = 7
+            elif kind == "incomplete":
+                altered["stages"]["postgres"]["packages"] = []
+            elif kind == "unknown_field":
+                altered["unexpected"] = "passed"
+            else:
+                markdown += "token=private-value"
+            (root / "out" / "audit-integrity-verification.json").write_text(json.dumps(altered))
+            (root / "out" / "audit-integrity-verification.md").write_text(markdown)
+            with tarfile.open(root / release.AUDIT_INTEGRITY_EVIDENCE_NAME, "w:gz") as archive:
+                for report in (root / "out").iterdir():
+                    archive.add(report, arcname=report.name)
+            try:
+                release.require_audit_integrity_evidence_archive(root)
+            except SystemExit:
+                pass
+            else:
+                raise AssertionError("unsafe schema 2 release accepted: " + kind)
+
     workflow = (ROOT / ".github/workflows/ci.yml").read_text().split("  audit-integrity-drill:", 1)[1].split("  authorization-boundary-drill:", 1)[0]
     assert "--validate-evidence" in workflow
     assert "steps.audit-evidence.outcome == 'success'" in workflow
