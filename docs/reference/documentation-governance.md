@@ -53,6 +53,10 @@ These can be uploaded to the AnoPKI GPT project sources so future project chats 
 - Remove completed tasks from `docs/ROADMAP.md`; the roadmap is future-only.
 - Delete or archive dated plans after their useful implementation context has been extracted.
 - Keep only one owner for each fact:
+  - Current publication facts and exact release evidence: `docs/reference/release-evidence.md`; README and CHANGELOG link to it.
+  - Verified ACME client scenarios: `docs/acme-client-compatibility.md`; revocation authority, reason semantics and signed status evidence: `docs/acme-revocation.md`.
+  - Remaining work: `docs/ROADMAP.md` links to open issues; completed phases belong in CHANGELOG or evidence references.
+  - Historical closeouts retain their original dated claims; they do not override current references.
   - API facts: `docs/reference/openapi.json`, `service/README.md`, and API validators.
   - Security status: `SECURITY.md`, `docs/security/*`, and release evidence.
   - Release process: `docs/runbooks/release-process.md` and `docs/reference/release-evidence.md`.

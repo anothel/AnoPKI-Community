@@ -1,5 +1,9 @@
 # Release Readiness Action Plan — Closed
 
+Historical snapshot from the 2026-07-24 closeout, before engineering reopened
+and the November release attempts. Status fields below are preserved as recorded;
+see [publication history](release-evidence.md#publication-history) for later events.
+
 This document closes the execution plan derived from the 2026-06-28 repository
 analysis. It is a historical record, not an active plan.
 

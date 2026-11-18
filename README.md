@@ -17,11 +17,9 @@ Current implementation includes:
 - Audit metadata, lifecycle outbox events, webhook notification endpoints, bounded retry, and dead-letter handling.
 - ACME-shaped protocol adapter with account, order, authorization, HTTP-01 challenge, finalize, and certificate download flows.
 
-See [docs/ROADMAP.md](docs/ROADMAP.md) for active alpha readiness,
-remaining risks and deferred work. The
-[release readiness action plan](docs/reference/release-readiness-action-plan.md)
-preserves the historical closeout; the current release decision is tracked
-in [Issue #12](https://github.com/anothel/AnoPKI-Community/issues/12).
+See [release evidence](docs/reference/release-evidence.md) for
+the published evaluation-only alpha and subsequent development, and
+[docs/ROADMAP.md](docs/ROADMAP.md) for remaining and deferred work.
 
 ## Repository Layout
 
@@ -302,7 +300,7 @@ Start with the [Documentation Index](docs/INDEX.md). It is the canonical map for
 Most-used docs:
 
 - [Service README](service/README.md): API behavior, configuration, ACME status, auth, workers, and operator endpoints.
-- [Roadmap](docs/ROADMAP.md): deferred, unselected work and the rule for reopening engineering.
+- [Roadmap](docs/ROADMAP.md): remaining interoperability work, unresolved incidents, and deferred scope.
 - [Security policy](SECURITY.md): reporting, supported status, production expectations, known constraints, and disclosure process.
 - [Contributing guide](CONTRIBUTING.md): prerequisites, local verification, roadmap rules, documentation expectations, and commit guidance.
 - [Project scope](docs/reference/project-scope.md): supported PKI domains, explicit non-goals, and current boundaries.
@@ -312,9 +310,9 @@ Most-used docs:
 - [Release evidence](docs/reference/release-evidence.md): artifact, SBOM, signing, scan, compatibility, and backend evidence baseline.
 - [Documentation governance](docs/reference/documentation-governance.md): what belongs in Git, what belongs in internal/GPT project sources, and how to retire stale docs.
 
-There is no active engineering or release execution plan. Existing validation,
-security, and release documents remain as historical evidence or conditional
-reference material; using them for new work requires a new product decision.
+Current release history and development evidence are maintained in
+[release evidence](docs/reference/release-evidence.md); dated closeout records
+preserve the earlier freeze rather than describing current engineering.
 
 ## License
 
@@ -322,21 +320,9 @@ Licensed under the Mozilla Public License, Version 2.0. See [LICENSE](LICENSE).
 
 ## Current Status
 
-```text
-PROJECT=AnoPKI-Community
-ENGINEERING_STATUS=CLOSED_AND_FROZEN
-VERSION=0.1.0-alpha.0
-ENGINEERING_BASELINE=5348a478ff1117482a8d168b655dad290367b188
-ENTERPRISE_CONSUMED_BASELINE=ab9d76597df93ac1ac8b7938f4d25ba64f59f8dc
-BASELINE_RELATION=ONE_COMMUNITY_ONLY_TEST_EVIDENCE_COMMIT_AHEAD
-PUBLIC_TAG=NONE
-PUBLIC_RELEASE=NOT_PUBLISHED
-PRODUCTION_READY=NO
-ACTIVE_NEXT_WORK=NONE
-FUTURE_WORK=DEFERRED_NOT_SELECTED
-REOPEN_REQUIRES_NEW_PRODUCT_DECISION
-FINAL_CLOSEOUT_COMMIT=RECORDED_IN_EXTERNAL_CLOSEOUT_EVIDENCE
-```
-
-This status freezes the engineering baseline without publishing a release,
-claiming production readiness, creating a tag, or selecting future work.
+Engineering is active on the Community/OpenSSL evaluation scope. Published
+`v0.1.0-alpha.1` is evaluation-only; subsequent mainline ACME work is not part
+of that release. See [publication history](docs/reference/release-evidence.md)
+and [verified client scenarios](docs/acme-client-compatibility.md).
+No production readiness, stable API compatibility or general RFC 8555
+conformance is claimed.

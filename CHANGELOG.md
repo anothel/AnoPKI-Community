@@ -3,23 +3,35 @@
 All notable changes to this project will be recorded here.
 
 The project is pre-1.0 and was reopened for stabilization on 2026-11-15.
-Alpha publication depends on full release evidence, signing and approval; see
-[GitHub Releases](https://github.com/anothel/AnoPKI-Community/releases)
-for actual publication status.
+Published release status and exact signing/publication evidence are maintained
+in [release evidence](docs/reference/release-evidence.md#publication-history).
 
-## Alpha.1 release recovery — 2026-11-15
+## Unreleased — after alpha.1
 
-- The GitHub-verified SSH-signed `v0.1.0-alpha.0` tag was created, but the
-  tag-triggered build succeeded while publish failed before signing assets.
-  GitHub Actions checkout had replaced the local annotated tag ref with its
-  peeled commit; the fail-closed annotated-tag gate caught that mismatch.
-- Restore the exact remote annotated tag object before checking its type,
-  GitHub signature verification, peeled commit and main ancestry. Retain all
-  existing Sigstore signing, immutable release-asset and approval guards.
-- Advance `VERSION` to `0.1.0-alpha.1` for a new signed candidate after
-  review. Preserve the already signed alpha.0 tag without force-moving it.
-  No successful public release, compatibility freeze or production-readiness
-  claim is made by this changelog entry.
+- Phase 5: real lego and Certbot single-name issuance (PRs #24/#25), two-name
+  issuance (#26), Certbot forced renewal (#27), and lego renewal (#28).
+  See [client compatibility](docs/acme-client-compatibility.md) for precise
+  modes, environments and limitations; Issue #21 remains open.
+- Scoped RFC revocation (#32), following the historical contract-gap evidence
+  (#30): issuing-account and matching-certificate-key requests, optional numeric
+  reasons, and signed CRL/OCSP evidence. See [revocation](docs/acme-revocation.md).
+  Cross-account identifier authority remains deferred under Issue #31.
+- Audit CI diagnostics (#33); audit intermittency #29 and PostgreSQL
+  intermittency #5 remain unresolved.
+
+## Published evaluation-only alpha.1 — 2026-11-15
+
+- Published Community/OpenSSL prerelease, without production-readiness or stable
+  compatibility guarantees. Subsequent Phase 5 work above is not in this release.
+- Restored the remote annotated tag object before verification and advanced
+  `VERSION` to `0.1.0-alpha.1` (PR #18), preserving all signing/approval gates.
+
+## Historical alpha.0 publication failure — 2026-11-15
+
+- The GitHub-verified SSH-signed alpha.0 tag's artifact build passed, but
+  publication failed before asset signing when checkout replaced the local
+  annotated tag ref with its peeled commit. No alpha.0 Release was published;
+  its signed tag is preserved unchanged. Alpha.1 rolled forward from this failure.
 
 ## Alpha readiness — 2026-11-15
 

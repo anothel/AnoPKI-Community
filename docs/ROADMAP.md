@@ -1,41 +1,22 @@
-# AnoPKI Community Roadmap — Active Alpha Readiness
+# AnoPKI Community Roadmap
 
-Updated: 2026-11-15
+Updated: 2026-11-18
 
-The owner resumed AnoPKI-Community engineering on 2026-11-15 after the
-historical 2026-07-24 freeze. The old baseline is preserved in repository
-history but no longer represents the current development status.
+Future work only. Delivered changes and release history belong in the
+[changelog](../CHANGELOG.md) and [release evidence](reference/release-evidence.md).
 
-```text
-ENGINEERING_STATUS=ACTIVE_STABILIZATION
-ACTIVE_NEXT_WORK=PHASE_4_ALPHA_READINESS
-PUBLIC_RELEASE=NOT_PUBLISHED
-PRODUCTION_READY=NO
-```
+## Remaining evaluation work
 
-## Completed stabilization
-
-- Phase 1: CI stabilization, PostgreSQL lease fixes and runner portability — PR #2.
-- Phase 2: loopback-only development defaults and production ACME smoke guards — PR #3.
-- Phase 3: behavior-preserving HTTP DTO, ACME verifier/SSRF and MemoryStore
-  helper extraction — PRs #6, #8 and #11.
-- PostgreSQL failover diagnostics — PR #9. Five additional PostgreSQL 16
-  reruns passed, but the historical intermittent failure remains open in #5.
-
-## Active alpha readiness
-
-- Issue #12 tracks Community/OpenSSL `v0.1.0-alpha.1` release recovery:
-  exact-commit CI, recovery and security evidence, SBOM, checksums, release
-  signing, environment approvals, and an explicit go/no-go.
-- The GitHub-verified signed `v0.1.0-alpha.0` tag is preserved as evidence:
-  its artifact build passed, but the tag-only publish job failed because
-  checkout rewrote the local annotated tag ref to its peeled commit.
-  No GitHub Release was published. Do not rewrite or delete that signed tag.
-- Windows runtime and live ACME-client interoperability still require evidence.
-- The alpha target is evaluation-only. No stable compatibility or production
-  readiness guarantee is being made.
-- Publication is permitted only after all release checks and cryptographic
-  signing gates pass. No bypass or production deployment is authorized.
+- [Issue #21](https://github.com/anothel/AnoPKI-Community/issues/21): remaining
+  real-client interoperability scope beyond the
+  [verified scenarios](acme-client-compatibility.md); keep open.
+- [Issue #29](https://github.com/anothel/AnoPKI-Community/issues/29): reproduce
+  and classify audit hash-chain intermittency. Diagnostics do not establish a fix.
+- [Issue #5](https://github.com/anothel/AnoPKI-Community/issues/5): classify
+  PostgreSQL intermittency; later passing runs do not establish remediation.
+- [Issue #31](https://github.com/anothel/AnoPKI-Community/issues/31): separately
+  design cross-account ACME revocation authority for all certificate identifiers.
+  This authority remains deferred and denied.
 
 ## Community boundary
 
@@ -60,6 +41,3 @@ These areas remain outside the selected stabilization and alpha scope:
   load-balancer traffic-shift evidence.
 - OIDC/SAML, enterprise RBAC, UI, deployment adapters, and public CA/root-store
   business.
-
-Archived closeout records still describe the previous freeze. Test evidence
-alone neither authorizes publication nor establishes production readiness.

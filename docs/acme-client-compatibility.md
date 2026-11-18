@@ -1,6 +1,29 @@
 # ACME client compatibility
 
-Only verified or deliberately blocked client states belong here.
+Only verified or deliberately blocked client states belong here. Evidence below
+is for development after the published alpha.1; it does not expand that release.
+
+## Verified scenario map
+
+The sections below own client scope and limitations; revocation semantics and
+results live in the [dedicated revocation reference](acme-revocation.md).
+All live CI scenarios use isolated Linux/SQLite/Community OpenSSL and local
+HTTP-01 responders. They do not establish public DNS/port-80 operation,
+DNS-01, EAB, production readiness or general RFC 8555 conformance.
+
+| Scenario | Verified scope | Exact post-merge evidence |
+| --- | --- | --- |
+| Single-name issuance | Pinned lego v4.35.2 and Certbot/acme 5.6.0; account through certificate retrieval | PRs [#24](https://github.com/anothel/AnoPKI-Community/pull/24)/[#25](https://github.com/anothel/AnoPKI-Community/pull/25); [CI 43758808293](https://github.com/anothel/AnoPKI-Community/actions/runs/43758808293) at `13adc2bf643d6a764c65c6cae86ca8a40de5389d` |
+| Two-name issuance | Both clients; exactly two valid DNS authorizations and exact SANs | [#26](https://github.com/anothel/AnoPKI-Community/pull/26); [CI 43791064443](https://github.com/anothel/AnoPKI-Community/actions/runs/43791064443) at `3fd23a579b15738f15a79ef54a0c6adb23335a54` |
+| Certbot renewal | Ordinary not-due skip, then forced single-name renewal with saved account/lineage | [#27](https://github.com/anothel/AnoPKI-Community/pull/27); [CI 43880094164](https://github.com/anothel/AnoPKI-Community/actions/runs/43880094164) at `ad29a0c3e219de81c3b90861b98efdf5a52d9fbf` |
+| lego renewal | Dynamic not-due skip, ordinary threshold renewal and unconditional renewal | [#28](https://github.com/anothel/AnoPKI-Community/pull/28); [CI 43979370109](https://github.com/anothel/AnoPKI-Community/actions/runs/43979370109) at `0eecee493495534891f5602acd5f1ba0cce0db85` |
+| Scoped revocation | [Client/key/reason scenarios and signed status evidence](acme-revocation.md#real-clients-and-signed-status-evidence) | [#32](https://github.com/anothel/AnoPKI-Community/pull/32); [CI 44201929495](https://github.com/anothel/AnoPKI-Community/actions/runs/44201929495) at `28cd7b9a4e02848d9dc37266536f996b361696b1` |
+
+Issue [#21](https://github.com/anothel/AnoPKI-Community/issues/21) remains open
+for remaining interoperability scope. The following local reports are separate
+from exact-commit CI evidence.
+
+## Issuance environments
 
 | Client | OS / shell | Account key | Challenge | Smoke result | Evidence |
 | --- | --- | --- | --- | --- | --- |
@@ -60,8 +83,9 @@ exact-commit CI run; the new Linux row has reproducible execution evidence.
   Failures expose only the failed stage, so deeper diagnosis requires an
   isolated local reproduction. Certificate metadata is safe console evidence.
 - This covers fresh single-name issuance with the default RSA account key and
-  ECDSA leaf key. Renewal, revocation, standalone and live
-  negative ACME protocol cases are not established by this lane. Replay and
+  ECDSA leaf key. This issuance lane alone does not establish renewal,
+  revocation, standalone or live negative ACME protocol cases; separate
+  renewal and revocation evidence is linked above. Replay and
   invalid-JWS coverage remains in the existing regression tests. DNS-01, EAB,
   public DNS/port-80 operation and the Windows non-admin gap remain outside it.
 
@@ -88,8 +112,9 @@ removed on exit; only stage errors and public certificate metadata are printed.
 The harness adds an optional `-AdditionalDomain`; its default single-name
 behavior and existing lanes are preserved.
 
-Passing these scenarios establishes only fresh two-name HTTP-01 issuance in
-this isolated configuration. It does not establish renewal, revocation,
+Passing these issuance scenarios establishes only fresh two-name HTTP-01
+issuance in this isolated configuration. Separate renewal and revocation lanes
+are linked above; this lane does not establish multi-name renewal or revocation,
 authorization reuse, wildcard/DNS-01, EAB, public DNS/port-80 operation,
 production readiness or general RFC 8555 conformance. Service changes are
 unnecessary if both live jobs pass; protocol and signing security checks remain
@@ -142,10 +167,27 @@ Reproduction and private-state handling are documented in the
 Exact commits, workflow runs and observed results are recorded in Issue #21.
 This slice proves forced single-name HTTP-01 renewal and ordinary not-due
 skipping. It does not prove ordinary aged-certificate renewal, ARI,
-authorization reuse, key reuse, multi-name or lego renewal, restart recovery,
-revocation, live malicious-protocol requests, public DNS/port-80 routing,
+authorization reuse, key reuse, multi-name renewal, restart recovery,
+or live malicious-protocol requests, public DNS/port-80 routing,
 DNS-01/EAB, production readiness or general RFC 8555 conformance. Signed
 alpha.1 remains unchanged; PostgreSQL intermittency #5 remains separate.
+
+## lego renewal evidence
+
+Pinned lego v4.35.2 (including the source-installed `+dev-release` build)
+performs initial single-name issuance, `renew --dynamic --no-random-sleep`
+not-due skipping, ordinary `renew --no-random-sleep`, then unconditional
+`renew --no-random-sleep --days -1`. Its default 30-day threshold makes the
+fresh 24-hour leaf due for ordinary renewal; dynamic lifetime calculation is
+opt-in. Zero exit status alone is not counted as issuance.
+
+The runner verifies retained account/issuer state, three distinct valid orders
+and certificates with fresh authorizations, and OpenSSL trust, SAN, validity,
+chain and rotated-key evidence. Reproduction, private-state handling and
+transport details are maintained in the
+[lego renewal runbook](../scripts/acme-smoke/README.md#pinned-linux-lego-renewal).
+This does not establish aged dynamic renewal, ARI, key reuse, multi-name renewal,
+restart recovery or live malicious-protocol cases. Revocation is separate.
 
 ## Scoped RFC revocation
 
