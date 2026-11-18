@@ -1,5 +1,9 @@
 # v0.1.0-alpha.0 Closeout Evidence
 
+Historical snapshot from the 2026-07-24 closeout, before engineering reopened
+and the November release attempts. Status fields below are preserved as recorded;
+see [publication history](release-evidence.md#publication-history) for later events.
+
 This is a local engineering closeout record. It is not a release candidate,
 release authorization, compatibility guarantee, or production-readiness claim.
 

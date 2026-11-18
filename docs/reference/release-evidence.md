@@ -1,24 +1,34 @@
 # Release Evidence
 
-This reference preserves release artifact, supply-chain and compatibility
-requirements. The owner reopened Community stabilization on 2026-11-15.
-Evidence-gated alpha preparation is active under issue #12. This is not a
-production-readiness or stable-compatibility statement.
+This reference owns publication history and release evidence requirements.
+Community/OpenSSL remains evaluation-only, without a stable compatibility or
+production-readiness guarantee.
 
-Historical closeout record:
-[v0.1.0-alpha.0 closeout evidence](release-candidate-v0.1.0-alpha.0.md).
-That record describes the previous freeze, not the active release decision.
+## Publication history
 
-Current state: `PUBLIC_RELEASE=NOT_PUBLISHED`,
-`ACTIVE_NEXT_WORK=PHASE_4_ALPHA_READINESS`, `PRODUCTION_READY=NO`.
-The exact release commit, dry-run, signature trust and environment approval
-must be validated before tagging or publishing. The valid GitHub-verified
-signed `v0.1.0-alpha.0` tag is retained, but its 2026-11-15 tag-only
-workflow failed at annotated-tag inspection after checkout replaced the
-local tag ref with a peeled commit. No GitHub Release was published.
-The recovery candidate is `v0.1.0-alpha.1`: refetch the original signed
-tag object from the remote before applying all existing tag, signature,
-main-ancestry, and Cosign gates. Never force-move the signed alpha.0 tag.
+Verified against GitHub on 2026-11-18:
+
+| Record | Outcome and evidence |
+| --- | --- |
+| 2026-07-24 alpha.0 engineering closeout | Historical freeze and local non-publication snapshot: [unaltered closeout record](release-candidate-v0.1.0-alpha.0.md). It predates the November tags and reopening. |
+| 2026-11-15 signed `v0.1.0-alpha.0` attempt | Artifact build passed, but [run 43684702714](https://github.com/anothel/AnoPKI-Community/actions/runs/43684702714) failed before signing/publication because checkout replaced the local annotated tag ref with its peeled commit. No alpha.0 GitHub Release was published. Preserve the original signed tag. |
+| 2026-11-15 published `v0.1.0-alpha.1` | [GitHub prerelease](https://github.com/anothel/AnoPKI-Community/releases/tag/v0.1.0-alpha.1), published at 07:07:34 UTC, `draft=false`, `prerelease=true`. GitHub-verified signed tag object `f49876ec648b4f0e4ed40d7a8a007b54b32e14a5` peels to `c79fce62ef23bb815a6574e3f8b91c5781ec0273`. [Release run 43687865353](https://github.com/anothel/AnoPKI-Community/actions/runs/43687865353) passed tag, main-ancestry, signing and signature-identity gates. |
+| Subsequent mainline development | Phase 5 evidence through [PR #32](https://github.com/anothel/AnoPKI-Community/pull/32) is development after alpha.1, not a change to its signed artifacts. [Main CI 44201929495](https://github.com/anothel/AnoPKI-Community/actions/runs/44201929495) passed at `28cd7b9a4e02848d9dc37266536f996b361696b1`. [PR #33](https://github.com/anothel/AnoPKI-Community/pull/33) subsequently added audit CI diagnostics; it does not establish remediation of #29. |
+
+Alpha.1 has 65 nonempty assets: 16 original artifacts, their 16 signatures,
+16 certificates and 16 Sigstore bundles, plus `SIGNING-STATUS.txt`. These
+include Linux amd64 service/core archives, checksums, SBOM, profile metadata
+and verification evidence. The published release notes retain the then-current
+recovery changelog; read the actual publication state above alongside that
+historical text. Do not rewrite signed tags, published assets or release notes.
+[Issue #12](https://github.com/anothel/AnoPKI-Community/issues/12) records the
+completed Phase 4 go/no-go and publication evidence.
+
+Current ACME scenario evidence and limits are maintained in
+[client compatibility](../acme-client-compatibility.md) and
+[revocation](../acme-revocation.md), not inferred from alpha.1 publication.
+Remaining interoperability and unresolved incidents are tracked in the
+[future-only roadmap](../ROADMAP.md). Passing runs do not close those incidents.
 
 ## Tool Decisions
 
@@ -370,9 +380,9 @@ evidence still needs release workflow artifacts containing archives,
 
 ## Required Evidence Per Release Candidate
 
-This required heading and the commands below are retained only as a dormant,
-conditional checklist for a future release candidate. They do not authorize a
-tag, release, dry-run, publication, or new engineering work.
+The commands below are the per-candidate checklist. A future release needs its
+own exact-commit evidence and approval gates; historical passes do not authorize
+a new tag or publication.
 
 - `python scripts/validate-docs.py`
 - `python scripts/test_validate_docs.py`

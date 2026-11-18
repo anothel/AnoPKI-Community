@@ -8,7 +8,7 @@ This index is the public entry point for repository documentation. Keep it short
 | --- | --- |
 | [Project scope](reference/project-scope.md) | You need to understand what AnoPKI is, what it is not, and where the current service boundaries are. |
 | [Project identity and license](reference/project-identity-and-license.md) | You need canonical naming, technical identifiers, or MPL-2.0 license wording. |
-| [Roadmap](ROADMAP.md) | You need the frozen status, deferred work, or reopening rule. |
+| [Roadmap](ROADMAP.md) | You need remaining evaluation work, unresolved incidents, or deferred scope. |
 | [Security policy](../SECURITY.md) | You need security status, reporting guidance, production expectations, or known constraints. |
 | [Contributing guide](../CONTRIBUTING.md) | You need local verification commands and contribution expectations. |
 | [Service README](../service/README.md) | You need service behavior, endpoints, configuration, auth, workers, or ACME details. |
@@ -35,7 +35,8 @@ This index is the public entry point for repository documentation. Keep it short
 | [Core CLI contract](reference/core-cli-contract.md) | JSON contract between the Go service and C++ core CLI. |
 | [Core boundary integration](reference/core-boundary-integration.md) | How service/core responsibilities are separated. |
 | [ACME RFC 8555 conformance](acme-rfc8555-conformance.md) | Implemented ACME protocol behavior and fixture evidence. |
-| [ACME client compatibility](acme-client-compatibility.md) | Real-client smoke states and known compatibility gaps. |
+| [ACME client compatibility](acme-client-compatibility.md) | Real-client scenarios and known compatibility gaps. |
+| [ACME revocation](acme-revocation.md) | Scoped RFC requests, authority, reason semantics, signed status evidence and deferred cross-account support. |
 | [Webhook receivers](reference/webhook-receivers.md) | Receiver verification and examples. |
 
 ## Policy And Security
@@ -65,7 +66,6 @@ This index is the public entry point for repository documentation. Keep it short
 | [Production recovery](runbooks/production-recovery.md) | Backup, rollback, restore, and disaster-recovery drill rules. |
 | [Bootstrap API key](runbooks/bootstrap-api-key.md) | First operator provisioning, bootstrap removal, key rotation, and disable flow. |
 | [Release process](runbooks/release-process.md) | Release candidate checklist, verification, metadata, and approval gates. |
-| [Release evidence](reference/release-evidence.md) | Artifact, SBOM, signing, scan, and compatibility evidence baseline. |
 | [Incident response](runbooks/incident-response.md) | Mis-issuance, key exposure, CA outage, renewal, revocation, and webhook incidents. |
 | [Webhook outbox safety](runbooks/webhook-outbox-safety.md) | Receiver verification, replay cache, schema versioning, and dead-letter replay. |
 | [Public TLS readiness](runbooks/public-tls-readiness.md) | Validity ceilings, validation reuse, CAA checks, and mass-revocation drill. |
@@ -81,8 +81,8 @@ This index is the public entry point for repository documentation. Keep it short
 | Document | Purpose |
 | --- | --- |
 | [Release readiness action plan](reference/release-readiness-action-plan.md) | Closed historical execution record; no active next work. |
-| [v0.1.0-alpha.0 closeout evidence](reference/release-candidate-v0.1.0-alpha.0.md) | Frozen baseline status, local validation, and explicit non-publication state. |
-| [Release evidence](reference/release-evidence.md) | Inactive conditional reference for a future, separately authorized release decision. |
+| [v0.1.0-alpha.0 closeout evidence](reference/release-candidate-v0.1.0-alpha.0.md) | Dated July closeout snapshot, before November tags and publication. |
+| [Release evidence](reference/release-evidence.md) | Publication history, signed alpha.1 evidence, and per-candidate artifact/signing requirements. |
 | [Observability](reference/observability.md) | Structured logs, expvar counters, request IDs, and remaining observability gaps. |
 | [Fuzzing](reference/fuzzing.md) | Parser fuzzing scope and local invocation. |
 | [Issuance consistency](reference/issuance-consistency.md) | Signing claim, retry, and audit repair behavior. |

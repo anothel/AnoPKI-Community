@@ -1,6 +1,10 @@
 # RFC 8555 conformance matrix
 
 This matrix tracks implemented ACME protocol behavior in `anopki-service`.
+“Pass” means the listed scoped tests pass, not general RFC 8555 conformance
+or production readiness. Protocol fixtures and real-client execution are
+separate evidence; see the [verified scenario map](acme-client-compatibility.md#verified-scenario-map)
+for pinned clients, exact commits, CI and limitations.
 
 | Area | RFC 8555 behavior | Status | Evidence |
 | --- | --- | --- | --- |
@@ -19,5 +23,6 @@ This matrix tracks implemented ACME protocol behavior in `anopki-service`.
 | Rate limits | Rate-limit account, order, challenge, and finalize POST paths | Pass | `TestACMEProtocolRateLimitsAccountRequests` |
 | External Account Binding | EAB for external subscriber/account integration | Deferred | No real subscriber/account integration selected |
 | DNS-01 | DNS challenge validation | Deferred | No operator-owned DNS provider integration selected |
-| certbot live smoke | Linux/elevated Windows live client run | Pass | WSL certbot 5.6.0 HTTP-01 webroot smoke |
+| Real-client issuance | Single-name and two-name HTTP-01 | Scoped evidence | [Pinned Linux lego/Certbot scenarios](acme-client-compatibility.md#verified-scenario-map); WSL is a historical local report, elevated Windows is not established |
 | Certbot forced renewal | New order using saved account and renewal lineage | Scoped evidence | `ACME Certbot forced renewal HTTP-01`: pinned 5.6.0 ordinary not-due skip, then real `renew --force-renewal`; [scope and limits](acme-client-compatibility.md#certbot-forced-renewal-evidence) |
+| lego renewal | Dynamic skip, ordinary threshold and unconditional single-name renewal | Scoped evidence | [Pinned v4.35.2 modes and limits](acme-client-compatibility.md#lego-renewal-evidence) |
