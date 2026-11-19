@@ -66,10 +66,17 @@ These can be uploaded to the AnoPKI GPT project sources so future project chats 
 
 Before merging a documentation change:
 
-1. Confirm every linked document exists.
+1. Confirm relative links resolve to an existing repository path and, for Markdown targets, an existing heading or explicit anchor.
 2. Confirm the document does not reintroduce the previous project name except in migration or historical context.
 3. Confirm license references say `MPL-2.0`.
 4. Confirm current implementation claims are backed by code, tests, or release evidence.
 5. Confirm future work is either in `docs/ROADMAP.md` or explicitly marked as a non-goal/deferred item.
 6. Confirm internal/GPT-only material is not copied into public docs without being converted into maintained form.
-7. Run `python scripts/validate-docs.py` and relevant contract validators.
+7. Run `python scripts/validate-docs.py`, `python scripts/test_validate_docs.py`, and relevant contract validators.
+
+## Automated Consistency Checks
+
+- Use relative Markdown links for repository navigation. The validator checks inline and reference links in root Markdown files, maintained `docs/` pages, and the service, ACME smoke, and fixture READMEs. It checks headings and explicit anchors in Markdown destinations. External URLs require review.
+- Give each destination one entry in `docs/INDEX.md`. Links to distinct headings are valid choices. For an intentional repeat, add `<!-- index-repeat: reason -->` on the repeated entry's line.
+- Keep ROADMAP lists open and forward-looking. Move checked-off tasks and completed sections to the changelog or evidence. A short dated context note may link to the record of prior work.
+- The validator guards specific publication facts and claims that exceed the verified client scenarios. Update those assertions when reviewed evidence changes the supported scope. Dated release and client records retain the context in which they were written.
