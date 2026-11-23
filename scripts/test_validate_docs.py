@@ -403,13 +403,32 @@ def test_broken_links_report_source_and_destination(tmp_path: Path) -> None:
         ), result.stderr
 
 
+def test_nested_markdown_links_are_checked(tmp_path: Path) -> None:
+    copy_docs_inputs(tmp_path)
+    source = tmp_path / "service/guides/status.md"
+    source.parent.mkdir()
+    source.write_text("[Status](../../docs/ROADMAP.md#remaining-evaluation-work)\n", encoding="utf-8")
+    for ignored in ("build-release/report.md", "cmake-build-debug/report.md", "out/report.md", "docs/superpowers/plan.md"):
+        path = tmp_path / ignored
+        path.parent.mkdir()
+        path.write_text("[Generated or internal](missing.md)\n", encoding="utf-8")
+
+    result = run_validator(tmp_path)
+    assert result.returncode == 0, result.stderr
+
+    append_doc(tmp_path, "service/guides/status.md", "[Typo](../../docs/ROADMAP.md#old-heading)")
+    result = run_validator(tmp_path)
+    assert result.returncode == 1
+    assert "service/guides/status.md:3: missing heading or anchor:" in result.stderr
+
+
 def test_index_duplicate_uses_normalized_destination(tmp_path: Path) -> None:
     copy_docs_inputs(tmp_path)
     append_doc(
         tmp_path, "docs/INDEX.md",
         "## More navigation\n\n"
         "Document | Purpose\n--- | ---\n"
-        "[Another roadmap](ROADMAP.md) | Another entry for the same file.\n\n"
+        "**[Another roadmap](ROADMAP.md)** | Another entry for the same file.\n\n"
         "- [Duplicate][roadmap]\n"
         "- [New destination](acme-revocation.md#reason-semantics-and-approved-internal-transport)"
         " [Again](acme-revocation.md#reason-semantics-and-approved-internal-transport)\n"
@@ -450,6 +469,22 @@ def test_completed_roadmap_work_fails(tmp_path: Path) -> None:
         assert detail in result.stderr, result.stderr
 
 
+def test_published_prerelease_is_not_future_work(tmp_path: Path) -> None:
+    copy_docs_inputs(tmp_path)
+    append_doc(
+        tmp_path, "docs/ROADMAP.md",
+        "- Publish the next prerelease after reviewing new evidence.\n"
+        "- Publish the signed `v0.1.0-alpha.1` prerelease verification findings after the audit.",
+    )
+    result = run_validator(tmp_path)
+    assert result.returncode == 0, result.stderr
+
+    append_doc(tmp_path, "docs/ROADMAP.md", "- [ ] Publish the signed\n  `v0.1.0-alpha.1` GitHub prerelease.")
+    result = run_validator(tmp_path)
+    assert result.returncode == 1
+    assert "Publish the signed `v0.1.0-alpha.1` GitHub prerelease" in result.stderr
+
+
 def test_dated_history_and_scoped_claims_pass(tmp_path: Path) -> None:
     copy_docs_inputs(tmp_path)
     append_doc(
@@ -467,7 +502,21 @@ def test_dated_history_and_scoped_claims_pass(tmp_path: Path) -> None:
         "On 2026-07-24, there was no published GitHub Release.\n"
         "Certbot and lego are supported only for the verified scenarios.\n\n"
         "### Historical closeout — 2026-07-24\n\n"
-        "No GitHub Release has been published.",
+        "No GitHub Release has been published.\n\n"
+        "#### Archived notes\n\nCertbot and lego are fully supported.\n\n"
+        "### Current limits\n\nCertbot and lego are supported only on the verified paths.",
+    )
+    append_doc(
+        tmp_path, "service/README.md",
+        "AnoPKI is not production-ready.\n"
+        "No GitHub Release has been published as of 2026-07-24.\n"
+        "Full RFC 8555 compliance is not claimed.\n"
+        "> ACME is fully RFC 8555 compliant.\n\n"
+        "```markdown\nCommunity/OpenSSL is production-ready.\n```",
+    )
+    append_doc(
+        tmp_path, "docs/acme-rfc8555-conformance.md",
+        "ACME is RFC 8555 compliant\nfor the verified HTTP-01 paths only.",
     )
     result = run_validator(tmp_path)
     assert result.returncode == 0, result.stderr
@@ -500,6 +549,69 @@ def test_conflicting_release_publication_flags_fail(tmp_path: Path) -> None:
     assert result.returncode == 1
     assert "alpha.1 publication record" in result.stderr
     assert "alpha.0 tag attempt" in result.stderr
+
+
+def test_alpha1_publication_pointers_cannot_drift(tmp_path: Path) -> None:
+    copy_docs_inputs(tmp_path)
+    evidence = tmp_path / "docs/reference/release-evidence.md"
+    original = evidence.read_text(encoding="utf-8")
+    for pointer, replacement in (
+        ("github.com/anothel/AnoPKI-Community/releases/tag/", "example.test/releases/tag/"),
+        ("actions/runs/43687865353", "actions/runs/44201929495"),
+        ("f49876ec648b4f0e4ed40d7a8a007b54b32e14a5", "0" * 40),
+        ("c79fce62ef23bb815a6574e3f8b91c5781ec0273", "0" * 40),
+        ("GitHub-verified signed tag object", "Unsigned lightweight tag object"),
+        ("peels to", "is unrelated to"),
+        ("actions/runs/43687865353) passed", "actions/runs/43687865353) failed"),
+    ):
+        evidence.write_text(original.replace(pointer, replacement, 1), encoding="utf-8")
+        result = run_validator(tmp_path)
+        assert result.returncode == 1, pointer
+        assert "alpha.1 publication record" in result.stderr
+
+
+def test_current_status_points_to_canonical_evidence(tmp_path: Path) -> None:
+    copy_docs_inputs(tmp_path)
+    path = tmp_path / "README.md"
+    original = path.read_text(encoding="utf-8")
+    path.write_text(
+        original.replace("[publication history](docs/reference/release-evidence.md)", "[publication history][release]")
+        + "\n## Link references\n\n[release]: docs/reference/release-evidence.md#publication-history\n",
+        encoding="utf-8",
+    )
+    result = run_validator(tmp_path)
+    assert result.returncode == 0, result.stderr
+    for link, replacement in (
+        ("[publication history](docs/reference/release-evidence.md)",
+         "[publication history](docs/reference/release-readiness-action-plan.md)"),
+        ("[publication history](docs/reference/release-evidence.md)",
+         "[publication history](docs/reference/release-evidence.md#sqlite-recovery-evidence-runner)"),
+        ("[verified client scenarios](docs/acme-client-compatibility.md)",
+         "[verified client scenarios](docs/acme-rfc8555-conformance.md)"),
+    ):
+        path.write_text(original.replace(link, replacement, 1), encoding="utf-8")
+        result = run_validator(tmp_path)
+        assert result.returncode == 1, link
+        assert "README.md: Current Status must link to" in result.stderr
+
+
+def test_overclaims_in_current_status_docs_fail(tmp_path: Path) -> None:
+    copy_docs_inputs(tmp_path)
+    append_doc(tmp_path, "service/README.md", "**Community/OpenSSL is production-ready.**")
+    append_doc(tmp_path, "docs/acme-rfc8555-conformance.md", "ACME is fully RFC 8555 compliant.")
+    append_doc(
+        tmp_path, "README.md",
+        "### Historical notes (2026-07-24)\n\nNo GitHub Release has been published.\n\n"
+        "### Release qualification\n\n`v0.1.0-alpha.1` is generally\navailable.",
+    )
+    result = run_validator(tmp_path)
+    assert result.returncode == 1
+    for name, claim in (
+        ("service/README.md", "Community/OpenSSL is production-ready"),
+        ("docs/acme-rfc8555-conformance.md", "ACME is fully RFC 8555 compliant"),
+        ("README.md", "v0.1.0-alpha.1 is generally available"),
+    ):
+        assert any(line.startswith(f"{name}:") and claim in line for line in result.stderr.splitlines()), result.stderr
 
 
 def test_contradictory_client_support_fails(tmp_path: Path) -> None:
@@ -599,12 +711,17 @@ def main() -> None:
     for test in (
         test_relative_links_and_fragments_pass,
         test_broken_links_report_source_and_destination,
+        test_nested_markdown_links_are_checked,
         test_index_duplicate_uses_normalized_destination,
         test_index_intentional_repeat_passes,
         test_completed_roadmap_work_fails,
+        test_published_prerelease_is_not_future_work,
         test_dated_history_and_scoped_claims_pass,
         test_contradictory_current_release_claims_fail,
         test_conflicting_release_publication_flags_fail,
+        test_alpha1_publication_pointers_cannot_drift,
+        test_current_status_points_to_canonical_evidence,
+        test_overclaims_in_current_status_docs_fail,
         test_contradictory_client_support_fails,
     ):
         with tempfile.TemporaryDirectory() as dirname:

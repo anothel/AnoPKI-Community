@@ -7,6 +7,7 @@ from __future__ import annotations
 import argparse
 import html
 import json
+import os
 import re
 import sys
 import unicodedata
@@ -165,17 +166,17 @@ INDEX_REPEAT = re.compile(r"<!--\s*index-repeat:\s*\S.+?-->")
 
 
 def maintained_markdown(root: Path) -> list[Path]:
-    docs = list(root.glob("*.md"))
-    docs.extend(
-        path for path in (root / "docs").rglob("*.md")
-        if not is_generated_or_ignored_path(path, root)
-        and "superpowers" not in path.relative_to(root / "docs").parts
-    )
-    docs.extend(path for path in (
-        root / "service/README.md",
-        root / "scripts/acme-smoke/README.md",
-        *root.glob("tests/fixtures/*/README.md"),
-    ) if path.is_file())
+    docs = []
+    for directory, subdirs, files in os.walk(root):
+        parent = Path(directory)
+        subdirs[:] = [
+            name for name in subdirs
+            if not is_generated_or_ignored_path(parent / name, root)
+            and name not in {".idea", ".vs", "out", "vcpkg_installed"}
+            and not name.startswith("cmake-build-")
+            and parent / name != root / "docs/superpowers"
+        ]
+        docs.extend(parent / name for name in files if Path(name).suffix.lower() == ".md")
     return sorted(docs)
 
 
@@ -276,8 +277,8 @@ def is_index_entry(line: str, column: int) -> bool:
     if LIST_ITEM.match(line):
         return True
     # The first column contains navigation. Later columns are descriptions.
-    prefix = line[:column].strip()
-    return "|" in line[column:] and prefix in ("", "|")
+    prefix = line[:column].strip().removeprefix("|").strip()
+    return "|" in line[column:] and not prefix.strip("*_~")
 
 
 def check_markdown_links(root: Path) -> None:
@@ -398,7 +399,10 @@ def check_future_only_roadmap(root: Path) -> None:
     )
     completed_item = re.compile(
         r"^(?:\[[xX]\](?:\s|$)|(?:completed|delivered|shipped|done)\s*:"
-        r"|phase\s+\d+\s+(?:(?:is|was)\s+)?(?:complete[d]?|closed|shipped)\b)",
+        r"|phase\s+\d+\s+(?:(?:is|was)\s+)?(?:complete[d]?|closed|shipped)\b"
+        r"|(?:\[ \]\s+)?publish\s+(?:the\s+)?(?:signed\s+)?v?0\.1\.0-alpha\.1"
+        r"(?:\s+(?:GitHub\s+)?(?:pre)?release)?(?:\s+(?:on|to)\s+GitHub)?"
+        r"(?:\s+(?:after|once|when)\b|[.!]?$))",
         re.I,
     )
     problems = [
@@ -407,7 +411,7 @@ def check_future_only_roadmap(root: Path) -> None:
     ]
     problems.extend(
         (number, text) for number, text in roadmap_work_items(roadmap)
-        if completed_item.match(text.lstrip("*_"))
+        if completed_item.match(text.lstrip("*_ ").replace("\x60", ""))
     )
     if problems:
         fail("ROADMAP lists completed work; record delivery in CHANGELOG or evidence:\n" + "\n".join(
@@ -543,9 +547,31 @@ def check_acme_compatibility_matrix(root: Path) -> None:
         fail("ACME compatibility matrix missing required evidence:\n" + "\n".join(missing))
 
 
+def current_status_prose(text: str, *, section_only: bool) -> str:
+    """Keep current prose at its original line numbers for diagnostics."""
+    active_level = None if section_only else 0
+    historical_level = None
+    lines = []
+    for line in text.splitlines():
+        if heading := ATX_HEADING.match(line):
+            level = len(heading[1])
+            if active_level and level <= active_level:
+                active_level = None
+            if section_only and heading[2].casefold() == "current status":
+                active_level = level
+            if historical_level is not None and level <= historical_level:
+                historical_level = None
+            if historical_level is None and re.search(r"\b\d{4}-\d{2}-\d{2}\b", heading[2]) and re.search(
+                r"\b(?:historical|closeout|snapshot)\b", heading[2], re.I,
+            ):
+                historical_level = level
+            lines.append("")
+        else:
+            lines.append(line if active_level is not None and historical_level is None else "")
+    return "\n".join(lines)
+
+
 def check_current_release_and_client_status(root: Path) -> None:
-    readme = markdown_blocks((root / "README.md").read_text(encoding="utf-8"))
-    current_status = re.search(r"^## Current Status[ \t]*\n(.*?)(?=^#{1,6}\s|\Z)", readme, re.M | re.S)
     evidence_path = "docs/reference/release-evidence.md"
     evidence = markdown_blocks((root / evidence_path).read_text(encoding="utf-8"))
     compatibility_path = "docs/acme-client-compatibility.md"
@@ -566,46 +592,72 @@ def check_current_release_and_client_status(root: Path) -> None:
     alpha1_rows = re.findall(
         r"^\|[^|\n]*\bpublished v?0\.1\.0-alpha\.1\b[^|\n]*\|(.+)\|$", publication, re.M | re.I,
     )
-    if len(alpha1_rows) != 1 or not all(
-        token in alpha1_rows[0]
-        for token in ("/releases/tag/v0.1.0-alpha.1)", "draft=false", "prerelease=true")
-    ) or re.search(r"\b(?:draft=true|prerelease=false)\b", alpha1_rows[0]):
-        problems.append(f"{evidence_path}: alpha.1 publication record must show the published prerelease")
+    release_repo = "https://github.com/anothel/AnoPKI-Community"
+    run_url = f"{release_repo}/actions/runs/43687865353"
+    signed_tag = "f49876ec648b4f0e4ed40d7a8a007b54b32e14a5"
+    peeled_commit = "c79fce62ef23bb815a6574e3f8b91c5781ec0273"
+    alpha1 = alpha1_rows[0] if len(alpha1_rows) == 1 else ""
+    flags = set(re.findall(r"\b(?:draft|prerelease)=(?:true|false)\b", alpha1))
+    if (
+        f"]({release_repo}/releases/tag/v0.1.0-alpha.1)" not in alpha1
+        or flags != {"draft=false", "prerelease=true"}
+        or not re.search(rf"\bverified signed tag(?: object)? {signed_tag} peels to {peeled_commit}\b", alpha1)
+        or not re.search(rf"\]\({re.escape(run_url)}\) (?:passed|succeeded)\b", alpha1)
+    ):
+        problems.append(f"{evidence_path}: alpha.1 publication record must retain the signed prerelease evidence")
 
-    # Look only for affirmative, unqualified claims in current status prose.
+    # Match complete assertions, leaving trailing qualifications and questions alone.
+    claim_end = r"\b(?=[*_]*[ \t]*(?:[.!]|\n[ \t]*(?:\n|[-*] )|\Z))"
     release_claim = re.compile(
-        r"^ *(?:[-*] )?(?:"
+        r"^ *(?:[-*] )?[*_]*(?:"
         r"no\s+(?:GitHub\s+)?(?:pre)?releases?\s+(?:has|have)\s+(?:yet\s+)?been\s+published"
         r"|(?:the\s+)?(?:current|latest)\s+(?:published\s+)?(?:GitHub\s+)?(?:pre)?release\s+is\s+(?:v?0\.1\.0-)?alpha\.0"
         r"|(?:v?0\.1\.0-)?alpha\.1\s+(?:(?:has|have)\s+not\s+(?:yet\s+)?been\s+published|is\s+(?:still\s+)?unpublished)"
         r"|(?:(?:published\s+)?(?:v?0\.1\.0-)?alpha\.1|(?:the\s+)?(?:current|latest)\s+(?:pre)?release)"
-        r"\s+is\s+(?:a\s+)?(?:production[- ]ready|stable(?:\s+release)?|supported production release|generally available)"
-        r")\b",
+        r"\s+is\s+(?:a\s+)?(?:production[-\s]+ready|stable(?:\s+release)?|supported\s+production\s+release|generally\s+available)"
+        r"|(?:AnoPKI(?:-Community)?|Community/OpenSSL|the\s+service)\s+is\s+production[- ]ready"
+        r")" + claim_end,
         re.I | re.M,
     )
     client_claim = re.compile(
-        r"^ *(?:[-*] )?(?:"
+        r"^ *(?:[-*] )?[*_]*(?:"
         r"all\s+ACME\s+clients\s+are\s+(?:fully\s+)?supported"
         r"|(?:Certbot\s+and\s+lego|lego\s+and\s+Certbot)\s+are\s+fully\s+supported"
         r"|(?:AnoPKI(?:-Community)?|the\s+service|ACME)\s+(?:fully\s+supports\s+all\s+ACME\s+clients"
-        r"|(?:is\s+fully\s+compliant\s+with|implements\s+all\s+of)\s+RFC\s*8555)"
+        r"|(?:is\s+fully\s+compliant\s+with|implements\s+all\s+of)\s+RFC\s*8555"
+        r"|is\s+(?:fully\s+)?RFC\s*8555[-\s]+compliant)"
         r"|(?:Windows\s+non-admin\s+Certbot|Certbot\s+on\s+Windows\s+without\s+administrator\s+rights)"
         r"\s+is\s+(?:fully\s+)?(?:supported|verified)"
-        r")\b",
+        r")" + claim_end,
         re.I | re.M,
     )
-    if current_status:
-        status = current_status[1].replace("\x60", "")
-        problems.extend(f"README.md: current release claim conflicts with release evidence: {m[0].strip()}"
-                        for m in release_claim.finditer(status))
-    else:
-        status = ""
-    scenario_summary = compatibility.split("\n## Issuance environments\n", 1)[0]
-    for path, prose in (
-        ("README.md", status), (compatibility_path, scenario_summary.replace("\x60", "")),
+    for path in (
+        "README.md", "service/README.md", "docs/reference/api-surface-status.md",
+        "docs/acme-rfc8555-conformance.md", compatibility_path,
     ):
-        problems.extend(f"{path}: current client claim exceeds verified scenarios: {m[0].strip()}"
-                        for m in client_claim.finditer(prose))
+        source = root / path
+        prose = markdown_blocks(source.read_text(encoding="utf-8"))
+        status = current_status_prose(prose, section_only=path == "README.md")
+        if path == "README.md":
+            active_lines = {number for number, line in enumerate(status.splitlines(), start=1) if line.strip()}
+            targets = {
+                resolved for line, _, destination, image in markdown_links(prose)
+                if line in active_lines and not image and (resolved := local_destination(root, source, destination))
+            }
+            for reference, fragment in (
+                (evidence_path, "publication-history"), (compatibility_path, "verified-scenario-map"),
+            ):
+                target = (root / reference).resolve()
+                if (target, "") not in targets and (target, fragment) not in targets:
+                    problems.append(f"README.md: Current Status must link to {reference} or its #{fragment} section")
+        status = status.replace("\x60", "")
+        for pattern, message in (
+            (release_claim, "current release claim conflicts with release evidence"),
+            (client_claim, "current client claim exceeds verified scenarios"),
+        ):
+            for claim in pattern.finditer(status):
+                number = status.count("\n", 0, claim.start()) + 1
+                problems.append(f"{path}:{number}: {message}: {' '.join(claim[0].strip('*_ ').split())}")
     for number, line in enumerate(compatibility.splitlines(), start=1):
         if re.match(
             r"^\|\s*certbot(?:/acme)? 5\.6\.0\s*\|\s*Windows non-admin PowerShell\s*\|"
