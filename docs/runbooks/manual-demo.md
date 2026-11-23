@@ -35,8 +35,23 @@ New-Item -ItemType Directory -Force .tmp-demo | Out-Null
 openssl ecparam -name prime256v1 -genkey -noout -out .tmp-demo\issuer.key
 openssl req -new -x509 -key .tmp-demo\issuer.key -days 365 -subj "/CN=AnoPKI-demo-ca" -out .tmp-demo\issuer.crt
 openssl ecparam -name prime256v1 -genkey -noout -out .tmp-demo\leaf.key
-openssl req -new -key .tmp-demo\leaf.key -subj "/CN=edge-01" -out .tmp-demo\leaf.csr
+@'
+[req]
+prompt = no
+distinguished_name = dn
+req_extensions = req_ext
+
+[dn]
+CN = edge-01
+
+[req_ext]
+subjectAltName = DNS:edge-01.example.test,IP:127.0.0.1
+'@ | Set-Content -Encoding ascii .tmp-demo\leaf.cnf
+openssl req -new -key .tmp-demo\leaf.key -config .tmp-demo\leaf.cnf -out .tmp-demo\leaf.csr
+if ($LASTEXITCODE -ne 0) { throw "Could not generate the leaf CSR." }
 ```
+
+The explicit request config keeps the leaf SANs independent of the default OpenSSL request configuration.
 
 ## Start Service
 
@@ -57,6 +72,18 @@ Run from the repository root:
 ```powershell
 $base = "http://localhost:8080"
 $headers = @{ "X-Actor" = "demo-admin" }
+$dnsName = "edge-01.example.test"
+$ipAddress = "127.0.0.1"
+
+# Enrollment requires an exact match between the CSR and requested DNS/IP SANs.
+$csrText = openssl req -in .tmp-demo\leaf.csr -noout -text
+if ($LASTEXITCODE -ne 0) { throw "Could not inspect the leaf CSR." }
+$sanExtension = $csrText | Select-String '^\s*X509v3 Subject Alternative Name:\s*$' -Context 0,1
+$sanLine = ($sanExtension.Context.PostContext -join " ").Trim()
+$expectedSans = @("DNS:$dnsName", "IP Address:$ipAddress")
+if (Compare-Object $expectedSans ($sanLine -split '\s*,\s*') -CaseSensitive) {
+    throw "The leaf CSR SANs must match the enrollment request. Regenerate the leaf CSR."
+}
 
 $issuer = Invoke-RestMethod -Method Post -Uri "$base/issuers" -Headers $headers -ContentType "application/json" -Body (@{
     name = "demo-intermediate"
@@ -76,8 +103,8 @@ $enrollment = Invoke-RestMethod -Method Post -Uri "$base/enrollments" -Headers $
     issuer_id = $issuer.id
     csr_pem = Get-Content -Raw .tmp-demo\leaf.csr
     requested_subject = "CN=edge-01"
-    requested_dns_names = @("edge-01.example.test")
-    requested_ip_addresses = @("127.0.0.1")
+    requested_dns_names = @($dnsName)
+    requested_ip_addresses = @($ipAddress)
     requested_not_after = (Get-Date).ToUniversalTime().AddDays(30).ToString("o")
 } | ConvertTo-Json)
 
