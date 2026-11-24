@@ -16,6 +16,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"testing/synctest"
 	"time"
 
 	"github.com/anothel/anopki/service/internal/corecli"
@@ -164,6 +165,33 @@ func TestRunServerUntilShutdownReturnsServeError(t *testing.T) {
 	if !errors.Is(err, wantErr) {
 		t.Fatalf("runServerUntilShutdown error = %v, want %v", err, wantErr)
 	}
+}
+
+func TestRunServerUntilShutdownPropagatesGraceDeadline(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		root, cancel := context.WithCancel(t.Context())
+		defer cancel()
+		started := make(chan struct{})
+		stop := make(chan struct{})
+		result := make(chan error, 1)
+		go func() {
+			result <- runServerUntilShutdown(root, func() error {
+				close(started)
+				<-stop
+				return http.ErrServerClosed
+			}, func(ctx context.Context) error {
+				defer close(stop)
+				<-ctx.Done()
+				return ctx.Err()
+			}, time.Second, nil)
+		}()
+
+		<-started
+		cancel()
+		if err := <-result; !errors.Is(err, context.DeadlineExceeded) {
+			t.Fatalf("graceful shutdown error = %v, want deadline exceeded", err)
+		}
+	})
 }
 
 func TestHTTPServerShutdownWaitsForInFlightRequest(t *testing.T) {
