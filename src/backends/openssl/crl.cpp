@@ -60,6 +60,7 @@ using X509Ptr = std::unique_ptr<X509, OpenSslDeleter<X509, X509_free>>;
 using X509CrlPtr = std::unique_ptr<X509_CRL, OpenSslDeleter<X509_CRL, X509_CRL_free>>;
 using X509RevokedPtr = std::unique_ptr<X509_REVOKED, OpenSslDeleter<X509_REVOKED, X509_REVOKED_free>>;
 using X509ExtensionPtr = std::unique_ptr<X509_EXTENSION, OpenSslDeleter<X509_EXTENSION, X509_EXTENSION_free>>;
+using AuthorityKeyIdPtr = std::unique_ptr<AUTHORITY_KEYID, OpenSslDeleter<AUTHORITY_KEYID, AUTHORITY_KEYID_free>>;
 using Asn1IntegerPtr = std::unique_ptr<ASN1_INTEGER, OpenSslDeleter<ASN1_INTEGER, ASN1_INTEGER_free>>;
 using Asn1EnumeratedPtr = std::unique_ptr<ASN1_ENUMERATED, OpenSslDeleter<ASN1_ENUMERATED, ASN1_ENUMERATED_free>>;
 using Asn1TimePtr = std::unique_ptr<ASN1_TIME, OpenSslDeleter<ASN1_TIME, ASN1_TIME_free>>;
@@ -301,6 +302,46 @@ void add_crl_number_extension(X509_CRL *crl, std::int64_t crl_number)
 	}
 }
 
+void add_authority_key_identifier_extension(X509_CRL *crl, X509 *issuer)
+{
+	AuthorityKeyIdPtr authority_key_id{AUTHORITY_KEYID_new()};
+	if (!authority_key_id)
+	{
+		throw_error(kCRLCreateFailed);
+	}
+
+	// The key provider has already bound the signing key to this certificate.
+	const ASN1_OCTET_STRING *subject_key_id = X509_get0_subject_key_id(issuer);
+	if (subject_key_id != nullptr)
+	{
+		// Preserve even an empty SKI so verifiers comparing the identifiers still see a match.
+		authority_key_id->keyid = ASN1_OCTET_STRING_dup(subject_key_id);
+	}
+	else
+	{
+		// RFC 5280 section 4.2.1.2 method (1) for issuers without a key identifier.
+		// SHA-1 identifies the public key here. The CRL signature still uses SHA-256.
+		unsigned char digest[EVP_MAX_MD_SIZE];
+		unsigned int digest_length = 0;
+		authority_key_id->keyid = ASN1_OCTET_STRING_new();
+		if (authority_key_id->keyid == nullptr || X509_pubkey_digest(issuer, EVP_sha1(), digest, &digest_length) != 1 ||
+		    ASN1_OCTET_STRING_set(authority_key_id->keyid, digest, static_cast<int>(digest_length)) != 1)
+		{
+			throw_error(kCRLCreateFailed);
+		}
+	}
+
+	if (authority_key_id->keyid == nullptr)
+	{
+		throw_error(kCRLCreateFailed);
+	}
+	X509ExtensionPtr extension{X509V3_EXT_i2d(NID_authority_key_identifier, 0, authority_key_id.get())};
+	if (!extension || X509_CRL_add_ext(crl, extension.get(), -1) != 1)
+	{
+		throw_error(kCRLCreateFailed);
+	}
+}
+
 void add_revoked_entry(X509_CRL *crl, const RevokedCertificate &entry)
 {
 	X509RevokedPtr revoked{X509_REVOKED_new()};
@@ -384,6 +425,7 @@ GenerateCRLResult OpenSSLBackend::generate_crl(const GenerateCRLRequest &request
 	{
 		throw_error(kCRLCreateFailed);
 	}
+	add_authority_key_identifier_extension(crl.get(), issuer.get());
 	if (X509_CRL_sign(crl.get(), issuer_key.native_handle(), EVP_sha256()) <= 0)
 	{
 		openssl_key_providers::throw_provider_sign_failed(issuer_key);

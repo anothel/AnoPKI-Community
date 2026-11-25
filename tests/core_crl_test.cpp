@@ -9,6 +9,7 @@
 #include <openssl/x509.h>
 #include <openssl/x509v3.h>
 
+#include <cstdio>
 #include <cstdlib>
 #include <filesystem>
 #include <fstream>
@@ -42,11 +43,14 @@ using EvpPkeyCtxPtr = std::unique_ptr<EVP_PKEY_CTX, OpenSslDeleter<EVP_PKEY_CTX,
 using X509Ptr = std::unique_ptr<X509, OpenSslDeleter<X509, X509_free>>;
 using X509CrlPtr = std::unique_ptr<X509_CRL, OpenSslDeleter<X509_CRL, X509_CRL_free>>;
 using Asn1IntegerPtr = std::unique_ptr<ASN1_INTEGER, OpenSslDeleter<ASN1_INTEGER, ASN1_INTEGER_free>>;
+using Asn1EnumeratedPtr = std::unique_ptr<ASN1_ENUMERATED, OpenSslDeleter<ASN1_ENUMERATED, ASN1_ENUMERATED_free>>;
+using AuthorityKeyIdPtr = std::unique_ptr<AUTHORITY_KEYID, OpenSslDeleter<AUTHORITY_KEYID, AUTHORITY_KEYID_free>>;
 
-void require(bool condition)
+void require(bool condition, const char *message = "CRL test assertion failed")
 {
 	if (!condition)
 	{
+		std::fprintf(stderr, "%s\n", message);
 		std::abort();
 	}
 }
@@ -79,7 +83,7 @@ void add_extension(X509 *certificate, X509 *issuer, int nid, const char *value)
 	X509_EXTENSION_free(extension);
 }
 
-X509Ptr make_ca_certificate(EVP_PKEY *key)
+X509Ptr make_ca_certificate(EVP_PKEY *key, const char *subject_key_identifier = nullptr)
 {
 	X509Ptr certificate{X509_new()};
 	require(certificate != nullptr);
@@ -95,6 +99,10 @@ X509Ptr make_ca_certificate(EVP_PKEY *key)
 	require(X509_set_pubkey(certificate.get(), key) == 1);
 	add_extension(certificate.get(), certificate.get(), NID_basic_constraints, "critical,CA:TRUE");
 	add_extension(certificate.get(), certificate.get(), NID_key_usage, "critical,keyCertSign,cRLSign");
+	if (subject_key_identifier != nullptr)
+	{
+		add_extension(certificate.get(), certificate.get(), NID_subject_key_identifier, subject_key_identifier);
+	}
 	require(X509_sign(certificate.get(), key, EVP_sha256()) > 0);
 	return certificate;
 }
@@ -141,6 +149,23 @@ X509CrlPtr crl_from_pem(const std::string &pem)
 	return crl;
 }
 
+void verify_crl_signer(X509_CRL *crl, X509 *issuer, const ASN1_OCTET_STRING *expected_key_id)
+{
+	require(X509_NAME_cmp(X509_CRL_get_issuer(crl), X509_get_subject_name(issuer)) == 0);
+	require(X509_CRL_verify(crl, X509_get0_pubkey(issuer)) == 1, "CRL signature must verify with the issuer key");
+	int critical = -1;
+	AuthorityKeyIdPtr authority_key_id{
+	    static_cast<AUTHORITY_KEYID *>(X509_CRL_get_ext_d2i(crl, NID_authority_key_identifier, &critical, nullptr))};
+	require(authority_key_id != nullptr, "CRL must contain exactly one decodable authority key identifier");
+	require(critical == 0, "CRL authority key identifier must be noncritical");
+	require(authority_key_id->keyid != nullptr && authority_key_id->issuer == nullptr &&
+	            authority_key_id->serial == nullptr,
+	        "CRL authority key identifier must use only the key identifier field");
+	require(expected_key_id != nullptr && ASN1_OCTET_STRING_cmp(authority_key_id->keyid, expected_key_id) == 0,
+	        "CRL authority key identifier must match the signer's key identifier");
+	require(X509_check_akid(issuer, authority_key_id.get()) == X509_V_OK);
+}
+
 void write_file(const std::filesystem::path &path, const std::string &contents)
 {
 	std::ofstream output{path, std::ios::binary | std::ios::trunc};
@@ -174,6 +199,7 @@ int main(int argc, char *argv[])
 	const int crl_number_index = X509_CRL_get_ext_by_NID(crl.get(), NID_crl_number, -1);
 	require(crl_number_index >= 0);
 	X509_EXTENSION *crl_number_extension = X509_CRL_get_ext(crl.get(), crl_number_index);
+	require(X509_EXTENSION_get_critical(crl_number_extension) == 0);
 	Asn1IntegerPtr crl_number{static_cast<ASN1_INTEGER *>(X509V3_EXT_d2i(crl_number_extension))};
 	require(crl_number != nullptr);
 	BIGNUM *raw_crl_number = ASN1_INTEGER_to_BN(crl_number.get(), nullptr);
@@ -194,6 +220,35 @@ int main(int argc, char *argv[])
 	require(der_info.issuer == pem_info.issuer);
 	require(der_info.revoked_certificate_count == pem_info.revoked_certificate_count);
 	require(der_info.crl_number == pem_info.crl_number);
+
+	const X509_REVOKED *revoked = sk_X509_REVOKED_value(X509_CRL_get_REVOKED(crl.get()), 0);
+	require(ASN1_INTEGER_get(X509_REVOKED_get0_serialNumber(revoked)) == 1234);
+	int days = 0;
+	int seconds = 0;
+	require(ASN1_TIME_diff(
+	            &days, &seconds, X509_CRL_get0_lastUpdate(crl.get()), X509_REVOKED_get0_revocationDate(revoked)) == 1);
+	require(days == 0 && seconds == 3600);
+	const Asn1EnumeratedPtr reason{static_cast<ASN1_ENUMERATED *>(
+	    X509_REVOKED_get_ext_d2i(revoked, NID_crl_reason, nullptr, nullptr))};
+	require(reason != nullptr && ASN1_ENUMERATED_get(reason.get()) == CRL_REASON_KEY_COMPROMISE);
+
+	// OpenSSL's certificate SKI "hash" gives the expected key identifier for the same key without an SKI.
+	require(X509_get0_subject_key_id(ca_certificate.get()) == nullptr);
+	const X509Ptr hashed_ski_certificate = make_ca_certificate(ca_key.get(), "hash");
+	verify_crl_signer(crl.get(), ca_certificate.get(), X509_get0_subject_key_id(hashed_ski_certificate.get()));
+
+	// Preserve custom SKIs byte for byte, including an explicitly empty SKI on a legacy issuer.
+	for (const char *key_id : {"01:23:45:67:89:AB:CD:EF", "DER:04:00"})
+	{
+		const X509Ptr custom_ski_certificate = make_ca_certificate(ca_key.get(), key_id);
+		auto custom_ski_request = request;
+		custom_ski_request.issuer_certificate_pem = certificate_to_pem(custom_ski_certificate.get());
+		const auto custom_ski_result = anopki::core::generate_crl(custom_ski_request);
+		const auto custom_ski_crl = crl_from_pem(custom_ski_result.crl_pem);
+		verify_crl_signer(
+		    custom_ski_crl.get(), custom_ski_certificate.get(), X509_get0_subject_key_id(custom_ski_certificate.get()));
+	}
+
 	for (const std::string reason_value : {"not_provided", "unspecified", ""})
 	{
 		request.revoked_certificates[0].reason = reason_value;
