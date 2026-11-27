@@ -16,6 +16,7 @@ import (
 	"database/sql"
 	"encoding/base64"
 	"encoding/json"
+	"encoding/pem"
 	"errors"
 	"fmt"
 	"io"
@@ -234,7 +235,7 @@ func TestCreateIssuer(t *testing.T) {
 	status := api.doJSON(t, http.MethodPost, "/issuers", "admin", map[string]any{
 		"name":            "intermediate-ca",
 		"kind":            string(domain.IssuerIntermediateCA),
-		"certificate_pem": "issuer-cert-pem",
+		"certificate_pem": issuerTestCertificatePEM(t, "intermediate-ca"),
 		"key_ref":         "issuer-key-ref",
 	}, &created)
 	assertStatus(t, status, http.StatusCreated)
@@ -249,6 +250,22 @@ func TestCreateIssuer(t *testing.T) {
 	}
 	if created.Status != domain.IssuerActive {
 		t.Fatalf("created issuer status = %q, want %q", created.Status, domain.IssuerActive)
+	}
+}
+
+func TestCreateIssuerRejectsInvalidCertificate(t *testing.T) {
+	api := newTestAPI(t)
+
+	var response errorResponse
+	status := api.doJSON(t, http.MethodPost, "/issuers", "admin", map[string]any{
+		"name":            "intermediate-ca",
+		"kind":            string(domain.IssuerIntermediateCA),
+		"certificate_pem": "invalid certificate",
+		"key_ref":         "issuer-key-ref",
+	}, &response)
+	assertStatus(t, status, http.StatusBadRequest)
+	if response.Error != domain.ErrInvalidRequest.Error() {
+		t.Fatalf("error = %q, want %q", response.Error, domain.ErrInvalidRequest.Error())
 	}
 }
 
@@ -872,7 +889,7 @@ func TestACMEProtocolCertbotCompatibilityFixture(t *testing.T) {
 
 	certResponse := api.doACMEPostAsGETRaw(t, api.pathFromURL(t, finalized.Certificate), account.Location, api.acmeSigner)
 	assertStatus(t, certResponse.StatusCode, http.StatusOK)
-	if certResponse.ContentType != "application/pem-certificate-chain" || certResponse.Body != "issued:csr-pem\nissuer-cert-pem\n" ||
+	if certResponse.ContentType != "application/pem-certificate-chain" || certResponse.Body != "issued:csr-pem\n"+issuer.CertificatePEM ||
 		certResponse.ReplayNonce == "" || !strings.Contains(certResponse.Link, "/acme/directory>;rel=\"index\"") {
 		t.Fatalf("POST-as-GET cert response = %#v", certResponse)
 	}
@@ -1385,11 +1402,13 @@ func TestACMEOKPJWKRejectsMalformedKeys(t *testing.T) {
 func TestACMEProtocolOrderChallengeAndFinalize(t *testing.T) {
 	api := newTestAPI(t)
 	identity := api.createIdentity(t)
+	rootPEM := issuerTestCertificatePEM(t, "root-ca")
+	issuerPEM := issuerTestCertificatePEM(t, "intermediate-ca")
 	var root apiIssuer
 	status := api.doJSON(t, http.MethodPost, "/issuers", "admin", map[string]any{
 		"name":            "root-ca",
 		"kind":            string(domain.IssuerRootCA),
-		"certificate_pem": "root-cert-pem",
+		"certificate_pem": rootPEM,
 		"key_ref":         "root-key-ref",
 		"trust_anchor":    true,
 	}, &root)
@@ -1399,7 +1418,7 @@ func TestACMEProtocolOrderChallengeAndFinalize(t *testing.T) {
 		"name":             "intermediate-ca",
 		"kind":             string(domain.IssuerIntermediateCA),
 		"parent_issuer_id": root.ID,
-		"certificate_pem":  "issuer-cert-pem",
+		"certificate_pem":  issuerPEM,
 		"key_ref":          "issuer-key-ref",
 	}, &issuer)
 	assertStatus(t, status, http.StatusCreated)
@@ -1554,13 +1573,14 @@ func TestACMEProtocolOrderChallengeAndFinalize(t *testing.T) {
 	if contentType != "application/pem-certificate-chain" {
 		t.Fatalf("certificate content type = %q, want application/pem-certificate-chain", contentType)
 	}
-	if string(certificatePEM) != "issued:csr-pem\nissuer-cert-pem\nroot-cert-pem\n" {
+	wantChain := "issued:csr-pem\n" + issuerPEM + rootPEM
+	if string(certificatePEM) != wantChain {
 		t.Fatalf("certificate PEM = %q, want leaf plus issuer chain", string(certificatePEM))
 	}
 	postAsGetCert := api.doACMEPostAsGETRaw(t, certificatePath, accountKID, accountSigner)
 	assertStatus(t, postAsGetCert.StatusCode, http.StatusOK)
 	if postAsGetCert.ContentType != "application/pem-certificate-chain" ||
-		postAsGetCert.Body != "issued:csr-pem\nissuer-cert-pem\nroot-cert-pem\n" ||
+		postAsGetCert.Body != wantChain ||
 		postAsGetCert.ReplayNonce == "" ||
 		!strings.Contains(postAsGetCert.Link, "/acme/directory>;rel=\"index\"") {
 		t.Fatalf("POST-as-GET cert response = %#v", postAsGetCert)
@@ -1591,7 +1611,7 @@ func TestIssuerTrustDistributionAPI(t *testing.T) {
 	status := api.doJSON(t, http.MethodPost, "/issuers", "admin", map[string]any{
 		"name":            "root-ca",
 		"kind":            string(domain.IssuerRootCA),
-		"certificate_pem": "root-cert-pem",
+		"certificate_pem": issuerTestCertificatePEM(t, "root-ca"),
 		"key_ref":         "root-key-ref",
 		"trust_anchor":    true,
 	}, &root)
@@ -1602,7 +1622,7 @@ func TestIssuerTrustDistributionAPI(t *testing.T) {
 		"name":                    "intermediate-ca",
 		"kind":                    string(domain.IssuerIntermediateCA),
 		"parent_issuer_id":        root.ID,
-		"certificate_pem":         "intermediate-cert-pem",
+		"certificate_pem":         issuerTestCertificatePEM(t, "intermediate-ca"),
 		"key_ref":                 "intermediate-key-ref",
 		"aia_url":                 "https://pki.example.test/issuers/intermediate-ca.pem",
 		"crl_distribution_points": []string{"https://pki.example.test/crl/intermediate-ca.pem"},
@@ -4715,17 +4735,43 @@ func (api *testAPI) createIdentity(t *testing.T) domain.Identity {
 	return identity
 }
 
+func issuerTestCertificatePEM(t *testing.T, name string) string {
+	t.Helper()
+	publicKey, privateKey, err := ed25519.GenerateKey(rand.Reader)
+	if err != nil {
+		t.Fatal(err)
+	}
+	template := &x509.Certificate{
+		SerialNumber:          big.NewInt(1),
+		Subject:               pkix.Name{CommonName: name},
+		NotBefore:             testNow.Add(-time.Hour),
+		NotAfter:              testNow.AddDate(1, 0, 0),
+		BasicConstraintsValid: true,
+		IsCA:                  true,
+		KeyUsage:              x509.KeyUsageCertSign | x509.KeyUsageCRLSign,
+	}
+	der, err := x509.CreateCertificate(rand.Reader, template, template, publicKey, privateKey)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return string(pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: der}))
+}
+
 func (api *testAPI) createIssuer(t *testing.T) domain.Issuer {
 	t.Helper()
 
+	certificatePEM := issuerTestCertificatePEM(t, "intermediate-ca")
 	issuer, err := api.service.CreateIssuer(api.ctx, "admin", lifecycle.CreateIssuerRequest{
 		Name:           "intermediate-ca",
 		Kind:           domain.IssuerIntermediateCA,
-		CertificatePEM: "issuer-cert-pem",
+		CertificatePEM: certificatePEM,
 		KeyRef:         "issuer-key-ref",
 	})
 	if err != nil {
 		t.Fatalf("CreateIssuer returned error: %v", err)
+	}
+	if issuer.CertificatePEM != certificatePEM {
+		t.Fatal("CreateIssuer changed the certificate PEM")
 	}
 	return issuer
 }

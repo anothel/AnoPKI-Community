@@ -3,9 +3,16 @@ package lifecycle
 
 import (
 	"context"
+	"crypto/ed25519"
+	"crypto/rand"
+	"crypto/x509"
+	"crypto/x509/pkix"
+	"encoding/asn1"
 	"encoding/json"
+	"encoding/pem"
 	"errors"
 	"fmt"
+	"math/big"
 	"net"
 	"net/http"
 	"net/http/httptest"
@@ -25,6 +32,7 @@ import (
 )
 
 func TestManualEnrollmentLifecycle(t *testing.T) {
+	issuerPEM := issuerTestCertificatePEM(t, "issuer")
 	ctx := context.Background()
 	repo := store.NewMemoryStore()
 	issuerClient := &fakeIssuer{}
@@ -46,7 +54,7 @@ func TestManualEnrollmentLifecycle(t *testing.T) {
 	issuer, err := service.CreateIssuer(ctx, "admin", CreateIssuerRequest{
 		Name:                  "intermediate-ca",
 		Kind:                  domain.IssuerIntermediateCA,
-		CertificatePEM:        "issuer-cert-pem",
+		CertificatePEM:        issuerPEM,
 		KeyRef:                "issuer-key-ref",
 		AIAURL:                "https://pki.example.test/issuers/intermediate-ca.pem",
 		CRLDistributionPoints: []string{"https://pki.example.test/crl/intermediate-ca.crl"},
@@ -107,8 +115,8 @@ func TestManualEnrollmentLifecycle(t *testing.T) {
 	if issueRequest.CSRPEM != "csr-pem" {
 		t.Fatalf("Issue CSRPEM = %q, want %q", issueRequest.CSRPEM, "csr-pem")
 	}
-	if issueRequest.IssuerCertificatePEM != "issuer-cert-pem" {
-		t.Fatalf("Issue IssuerCertificatePEM = %q, want %q", issueRequest.IssuerCertificatePEM, "issuer-cert-pem")
+	if issueRequest.IssuerCertificatePEM != issuerPEM {
+		t.Fatalf("Issue IssuerCertificatePEM = %q, want %q", issueRequest.IssuerCertificatePEM, issuerPEM)
 	}
 	if issueRequest.IssuerKeyRef != "issuer-key-ref" {
 		t.Fatalf("Issue IssuerKeyRef = %q, want %q", issueRequest.IssuerKeyRef, "issuer-key-ref")
@@ -231,7 +239,7 @@ func TestIssueCertificateRecordsSignerMetrics(t *testing.T) {
 	issuer, err := service.CreateIssuer(ctx, "admin", CreateIssuerRequest{
 		Name:           "issuer",
 		Kind:           domain.IssuerIntermediateCA,
-		CertificatePEM: "issuer-cert",
+		CertificatePEM: issuerTestCertificatePEM(t, "issuer"),
 		KeyRef:         "issuer-key",
 	})
 	if err != nil {
@@ -416,7 +424,7 @@ func TestIssueCertificateRejectsDuplicateIssuerSerialWithoutIssuingEnrollment(t 
 	issuer, err := service.CreateIssuer(ctx, "admin", CreateIssuerRequest{
 		Name:           "intermediate-ca",
 		Kind:           domain.IssuerIntermediateCA,
-		CertificatePEM: "issuer-cert-pem",
+		CertificatePEM: issuerTestCertificatePEM(t, "issuer"),
 		KeyRef:         "issuer-key-ref",
 	})
 	if err != nil {
@@ -550,7 +558,7 @@ func TestIssueCertificateUsesEnrollmentProfile(t *testing.T) {
 	issuer, err := service.CreateIssuer(ctx, "admin", CreateIssuerRequest{
 		Name:           "intermediate-ca",
 		Kind:           domain.IssuerIntermediateCA,
-		CertificatePEM: "issuer-cert-pem",
+		CertificatePEM: issuerTestCertificatePEM(t, "issuer"),
 		KeyRef:         "issuer-key-ref",
 	})
 	if err != nil {
@@ -660,7 +668,7 @@ func TestIssueCertificatePreservesZeroProfilePathLen(t *testing.T) {
 	issuer, err := service.CreateIssuer(ctx, "admin", CreateIssuerRequest{
 		Name:           "root-ca",
 		Kind:           domain.IssuerRootCA,
-		CertificatePEM: "issuer-cert-pem",
+		CertificatePEM: issuerTestCertificatePEM(t, "issuer"),
 		KeyRef:         "issuer-key-ref",
 	})
 	if err != nil {
@@ -728,7 +736,7 @@ func TestAuditMetadataContractForProfileCertificateLifecycle(t *testing.T) {
 	issuer, err := service.CreateIssuer(ctx, "admin", CreateIssuerRequest{
 		Name:           "intermediate-ca",
 		Kind:           domain.IssuerIntermediateCA,
-		CertificatePEM: "issuer-cert-pem",
+		CertificatePEM: issuerTestCertificatePEM(t, "issuer"),
 		KeyRef:         "issuer-key-ref",
 	})
 	if err != nil {
@@ -860,6 +868,7 @@ func TestAuditMetadataContractForProfileCertificateLifecycle(t *testing.T) {
 }
 
 func TestPublishCRLSelectsRevokedCertificatesAndPersistsArtifact(t *testing.T) {
+	issuerPEM := issuerTestCertificatePEM(t, "issuer")
 	ctx := context.Background()
 	repo := store.NewMemoryStore()
 	coreClient := &fakeIssuer{crlResult: corecli.GenerateCRLResult{CRLPEM: "crl-pem"}}
@@ -869,7 +878,7 @@ func TestPublishCRLSelectsRevokedCertificatesAndPersistsArtifact(t *testing.T) {
 	issuer, err := service.CreateIssuer(ctx, "admin", CreateIssuerRequest{
 		Name:           "intermediate-ca",
 		Kind:           domain.IssuerIntermediateCA,
-		CertificatePEM: "issuer-cert-pem",
+		CertificatePEM: issuerPEM,
 		KeyRef:         "issuer-key-ref",
 	})
 	if err != nil {
@@ -878,7 +887,7 @@ func TestPublishCRLSelectsRevokedCertificatesAndPersistsArtifact(t *testing.T) {
 	otherIssuer, err := service.CreateIssuer(ctx, "admin", CreateIssuerRequest{
 		Name:           "other-ca",
 		Kind:           domain.IssuerIntermediateCA,
-		CertificatePEM: "other-cert-pem",
+		CertificatePEM: issuerTestCertificatePEM(t, "other"),
 		KeyRef:         "other-key-ref",
 	})
 	if err != nil {
@@ -946,7 +955,7 @@ func TestPublishCRLSelectsRevokedCertificatesAndPersistsArtifact(t *testing.T) {
 		t.Fatalf("CRL request count = %d, want 1", len(coreClient.crlRequests))
 	}
 	req := coreClient.crlRequests[0]
-	if req.IssuerCertificatePEM != "issuer-cert-pem" || req.IssuerKeyRef != "issuer-key-ref" {
+	if req.IssuerCertificatePEM != issuerPEM || req.IssuerKeyRef != "issuer-key-ref" {
 		t.Fatalf("CRL issuer material = %#v", req)
 	}
 	if req.CRLNumber != 1 || !req.ThisUpdate.Equal(clock.now) || !req.NextUpdate.Equal(nextUpdate) {
@@ -1005,7 +1014,7 @@ func TestPublishCRLActiveClaimPreventsSecondServiceSigning(t *testing.T) {
 	issuer, err := firstService.CreateIssuer(ctx, "admin", CreateIssuerRequest{
 		Name:           "intermediate-ca",
 		Kind:           domain.IssuerIntermediateCA,
-		CertificatePEM: "issuer-cert-pem",
+		CertificatePEM: issuerTestCertificatePEM(t, "issuer"),
 		KeyRef:         "issuer-key-ref",
 	})
 	if err != nil {
@@ -1062,7 +1071,7 @@ func TestPublishCRLMapsCoreFailure(t *testing.T) {
 	issuer, err := service.CreateIssuer(ctx, "admin", CreateIssuerRequest{
 		Name:           "intermediate-ca",
 		Kind:           domain.IssuerIntermediateCA,
-		CertificatePEM: "issuer-cert-pem",
+		CertificatePEM: issuerTestCertificatePEM(t, "issuer"),
 		KeyRef:         "issuer-key-ref",
 	})
 	if err != nil {
@@ -1099,7 +1108,7 @@ func TestPublishCRLOutageRecoversWithoutPhantomPublication(t *testing.T) {
 	issuer, err := service.CreateIssuer(ctx, "admin", CreateIssuerRequest{
 		Name:           "intermediate-ca",
 		Kind:           domain.IssuerIntermediateCA,
-		CertificatePEM: "issuer-cert-pem",
+		CertificatePEM: issuerTestCertificatePEM(t, "issuer"),
 		KeyRef:         "issuer-key-ref",
 	})
 	if err != nil {
@@ -1169,7 +1178,7 @@ func TestPublishCRLRejectsReadinessWithoutCoreSigningEvidence(t *testing.T) {
 	service := New(repo, coreClient, clock, &fakeIDGenerator{})
 	issuer, err := service.CreateIssuer(ctx, "admin", CreateIssuerRequest{
 		Name: "issuer", Kind: domain.IssuerIntermediateCA,
-		CertificatePEM: "issuer-cert", KeyRef: "issuer-key",
+		CertificatePEM: issuerTestCertificatePEM(t, "issuer"), KeyRef: "issuer-key",
 	})
 	if err != nil {
 		t.Fatalf("CreateIssuer returned error: %v", err)
@@ -1197,7 +1206,7 @@ func TestPublishCRLChecksKeyProviderBeforeSigning(t *testing.T) {
 	issuer, err := service.CreateIssuer(ctx, "admin", CreateIssuerRequest{
 		Name:           "intermediate-ca",
 		Kind:           domain.IssuerIntermediateCA,
-		CertificatePEM: "issuer-cert-pem",
+		CertificatePEM: issuerTestCertificatePEM(t, "issuer"),
 		KeyRef:         "issuer-key-ref",
 	})
 	if err != nil {
@@ -1246,7 +1255,7 @@ func TestRespondOCSPMapsCertificateStatesAndAudits(t *testing.T) {
 	issuer, err := service.CreateIssuer(ctx, "admin", CreateIssuerRequest{
 		Name:           "intermediate-ca",
 		Kind:           domain.IssuerIntermediateCA,
-		CertificatePEM: "issuer-cert-pem",
+		CertificatePEM: issuerTestCertificatePEM(t, "issuer"),
 		KeyRef:         "issuer-key-ref",
 	})
 	if err != nil {
@@ -1371,7 +1380,7 @@ func TestRespondOCSPMapsResponseFailure(t *testing.T) {
 	issuer, err := service.CreateIssuer(ctx, "admin", CreateIssuerRequest{
 		Name:           "intermediate-ca",
 		Kind:           domain.IssuerIntermediateCA,
-		CertificatePEM: "issuer-cert-pem",
+		CertificatePEM: issuerTestCertificatePEM(t, "issuer"),
 		KeyRef:         "issuer-key-ref",
 	})
 	if err != nil {
@@ -1413,7 +1422,7 @@ func TestRespondOCSPOutageRecoversWithoutSuccessAudit(t *testing.T) {
 
 	issuer, err := service.CreateIssuer(ctx, "admin", CreateIssuerRequest{
 		Name: "intermediate-ca", Kind: domain.IssuerIntermediateCA,
-		CertificatePEM: "issuer-cert-pem", KeyRef: "issuer-key-ref",
+		CertificatePEM: issuerTestCertificatePEM(t, "issuer"), KeyRef: "issuer-key-ref",
 	})
 	if err != nil {
 		t.Fatalf("CreateIssuer returned error: %v", err)
@@ -1474,7 +1483,7 @@ func TestRespondOCSPRejectsReadinessWithoutCoreSigningEvidence(t *testing.T) {
 	service := New(repo, coreClient, clock, &fakeIDGenerator{})
 	if _, err := service.CreateIssuer(ctx, "admin", CreateIssuerRequest{
 		Name: "issuer", Kind: domain.IssuerIntermediateCA,
-		CertificatePEM: "issuer-cert", KeyRef: "issuer-key",
+		CertificatePEM: issuerTestCertificatePEM(t, "issuer"), KeyRef: "issuer-key",
 	}); err != nil {
 		t.Fatalf("CreateIssuer returned error: %v", err)
 	}
@@ -1512,7 +1521,7 @@ func TestRespondOCSPChecksKeyProviderBeforeSigning(t *testing.T) {
 	_, err := service.CreateIssuer(ctx, "admin", CreateIssuerRequest{
 		Name:           "intermediate-ca",
 		Kind:           domain.IssuerIntermediateCA,
-		CertificatePEM: "issuer-cert-pem",
+		CertificatePEM: issuerTestCertificatePEM(t, "issuer"),
 		KeyRef:         "issuer-key-ref",
 	})
 	if err != nil {
@@ -1547,7 +1556,7 @@ func TestCreateOCSPResponderValidatesStoresAndAudits(t *testing.T) {
 	issuer, err := service.CreateIssuer(ctx, "admin", CreateIssuerRequest{
 		Name:           "intermediate-ca",
 		Kind:           domain.IssuerIntermediateCA,
-		CertificatePEM: "issuer-cert-pem",
+		CertificatePEM: issuerTestCertificatePEM(t, "issuer"),
 		KeyRef:         "issuer-key-ref",
 	})
 	if err != nil {
@@ -1647,7 +1656,7 @@ func TestCreateOCSPResponderRejectsUnsupportedKeyProvider(t *testing.T) {
 	issuer, err := service.CreateIssuer(ctx, "admin", CreateIssuerRequest{
 		Name:           "intermediate-ca",
 		Kind:           domain.IssuerIntermediateCA,
-		CertificatePEM: "issuer-cert-pem",
+		CertificatePEM: issuerTestCertificatePEM(t, "issuer"),
 		KeyRef:         "issuer-key-ref",
 	})
 	if err != nil {
@@ -1677,7 +1686,7 @@ func TestCreateOCSPResponderProductionPolicyRejectsFileKey(t *testing.T) {
 	issuer, err := service.CreateIssuer(ctx, "admin", CreateIssuerRequest{
 		Name:           "intermediate-ca",
 		Kind:           domain.IssuerIntermediateCA,
-		CertificatePEM: "issuer-cert-pem",
+		CertificatePEM: issuerTestCertificatePEM(t, "issuer"),
 		KeyRef:         "issuer-key-ref",
 	})
 	if err != nil {
@@ -1711,7 +1720,7 @@ func TestCreateOCSPResponderRejectsInvalidValidationResult(t *testing.T) {
 	issuer, err := service.CreateIssuer(ctx, "admin", CreateIssuerRequest{
 		Name:           "intermediate-ca",
 		Kind:           domain.IssuerIntermediateCA,
-		CertificatePEM: "issuer-cert-pem",
+		CertificatePEM: issuerTestCertificatePEM(t, "issuer"),
 		KeyRef:         "issuer-key-ref",
 	})
 	if err != nil {
@@ -1747,7 +1756,7 @@ func TestCreateOCSPResponderRequiresDisableBeforeReplacement(t *testing.T) {
 	issuer, err := service.CreateIssuer(ctx, "admin", CreateIssuerRequest{
 		Name:           "intermediate-ca",
 		Kind:           domain.IssuerIntermediateCA,
-		CertificatePEM: "issuer-cert-pem",
+		CertificatePEM: issuerTestCertificatePEM(t, "issuer"),
 		KeyRef:         "issuer-key-ref",
 	})
 	if err != nil {
@@ -1788,7 +1797,7 @@ func TestDisableOCSPResponderDisablesAndAllowsReplacement(t *testing.T) {
 	issuer, err := service.CreateIssuer(ctx, "admin", CreateIssuerRequest{
 		Name:           "intermediate-ca",
 		Kind:           domain.IssuerIntermediateCA,
-		CertificatePEM: "issuer-cert-pem",
+		CertificatePEM: issuerTestCertificatePEM(t, "issuer"),
 		KeyRef:         "issuer-key-ref",
 	})
 	if err != nil {
@@ -1864,7 +1873,7 @@ func TestRotateOCSPResponderDisablesCurrentAndCreatesNewActive(t *testing.T) {
 	issuer, err := service.CreateIssuer(ctx, "admin", CreateIssuerRequest{
 		Name:           "intermediate-ca",
 		Kind:           domain.IssuerIntermediateCA,
-		CertificatePEM: "issuer-cert-pem",
+		CertificatePEM: issuerTestCertificatePEM(t, "issuer"),
 		KeyRef:         "issuer-key-ref",
 	})
 	if err != nil {
@@ -1957,7 +1966,7 @@ func TestRotateOCSPResponderRequiresActiveResponder(t *testing.T) {
 	issuer, err := service.CreateIssuer(ctx, "admin", CreateIssuerRequest{
 		Name:           "intermediate-ca",
 		Kind:           domain.IssuerIntermediateCA,
-		CertificatePEM: "issuer-cert-pem",
+		CertificatePEM: issuerTestCertificatePEM(t, "issuer"),
 		KeyRef:         "issuer-key-ref",
 	})
 	if err != nil {
@@ -1990,7 +1999,7 @@ func TestRotateOCSPResponderValidationFailureLeavesCurrentActive(t *testing.T) {
 	issuer, err := service.CreateIssuer(ctx, "admin", CreateIssuerRequest{
 		Name:           "intermediate-ca",
 		Kind:           domain.IssuerIntermediateCA,
-		CertificatePEM: "issuer-cert-pem",
+		CertificatePEM: issuerTestCertificatePEM(t, "issuer"),
 		KeyRef:         "issuer-key-ref",
 	})
 	if err != nil {
@@ -2051,7 +2060,7 @@ func TestRespondOCSPUsesDelegatedResponderWhenActiveResponderExists(t *testing.T
 	issuer, err := service.CreateIssuer(ctx, "admin", CreateIssuerRequest{
 		Name:           "intermediate-ca",
 		Kind:           domain.IssuerIntermediateCA,
-		CertificatePEM: "issuer-cert-pem",
+		CertificatePEM: issuerTestCertificatePEM(t, "issuer"),
 		KeyRef:         "issuer-key-ref",
 	})
 	if err != nil {
@@ -2115,7 +2124,7 @@ func TestRespondOCSPFallsBackToIssuerDirectWhenNoActiveResponderExists(t *testin
 	issuer, err := service.CreateIssuer(ctx, "admin", CreateIssuerRequest{
 		Name:           "intermediate-ca",
 		Kind:           domain.IssuerIntermediateCA,
-		CertificatePEM: "issuer-cert-pem",
+		CertificatePEM: issuerTestCertificatePEM(t, "issuer"),
 		KeyRef:         "issuer-key-ref",
 	})
 	if err != nil {
@@ -2150,12 +2159,14 @@ func TestRespondOCSPFallsBackToIssuerDirectWhenNoActiveResponderExists(t *testin
 }
 
 func TestRespondOCSPTreatsIssuerHashMismatchAsUnknown(t *testing.T) {
+	issuerPEM := issuerTestCertificatePEM(t, "issuer")
+	otherIssuerPEM := issuerTestCertificatePEM(t, "other-issuer")
 	ctx := context.Background()
 	repo := store.NewMemoryStore()
 	coreClient := &fakeIssuer{
 		issuerOCSPInfos: map[string]corecli.OCSPIssuerInfo{
-			"issuer-cert-pem":       {IssuerNameHash: "expected-name-hash", IssuerKeyHash: "expected-key-hash"},
-			"other-issuer-cert-pem": {IssuerNameHash: "wrong-name-hash", IssuerKeyHash: "wrong-key-hash"},
+			issuerPEM:      {IssuerNameHash: "expected-name-hash", IssuerKeyHash: "expected-key-hash"},
+			otherIssuerPEM: {IssuerNameHash: "wrong-name-hash", IssuerKeyHash: "wrong-key-hash"},
 		},
 		ocspInfo: corecli.OCSPRequestInfo{
 			Certificates: []corecli.OCSPCertificateID{
@@ -2170,7 +2181,7 @@ func TestRespondOCSPTreatsIssuerHashMismatchAsUnknown(t *testing.T) {
 	issuer, err := service.CreateIssuer(ctx, "admin", CreateIssuerRequest{
 		Name:           "intermediate-ca",
 		Kind:           domain.IssuerIntermediateCA,
-		CertificatePEM: "issuer-cert-pem",
+		CertificatePEM: issuerPEM,
 		KeyRef:         "issuer-key-ref",
 	})
 	if err != nil {
@@ -2179,7 +2190,7 @@ func TestRespondOCSPTreatsIssuerHashMismatchAsUnknown(t *testing.T) {
 	otherIssuer, err := service.CreateIssuer(ctx, "admin", CreateIssuerRequest{
 		Name:           "other-ca",
 		Kind:           domain.IssuerIntermediateCA,
-		CertificatePEM: "other-issuer-cert-pem",
+		CertificatePEM: otherIssuerPEM,
 		KeyRef:         "other-issuer-key-ref",
 	})
 	if err != nil {
@@ -2226,7 +2237,7 @@ func TestRespondOCSPSignsUnknownOnlyRequestByIssuerHash(t *testing.T) {
 	issuer, err := service.CreateIssuer(ctx, "admin", CreateIssuerRequest{
 		Name:           "intermediate-ca",
 		Kind:           domain.IssuerIntermediateCA,
-		CertificatePEM: "issuer-cert-pem",
+		CertificatePEM: issuerTestCertificatePEM(t, "issuer"),
 		KeyRef:         "issuer-key-ref",
 	})
 	if err != nil {
@@ -2263,7 +2274,7 @@ func TestRespondOCSPTreatsSuspendedCertificateAsUnknown(t *testing.T) {
 	issuer, err := service.CreateIssuer(ctx, "admin", CreateIssuerRequest{
 		Name:           "intermediate-ca",
 		Kind:           domain.IssuerIntermediateCA,
-		CertificatePEM: "issuer-cert-pem",
+		CertificatePEM: issuerTestCertificatePEM(t, "issuer"),
 		KeyRef:         "issuer-key-ref",
 	})
 	if err != nil {
@@ -2290,11 +2301,12 @@ func TestRespondOCSPTreatsSuspendedCertificateAsUnknown(t *testing.T) {
 }
 
 func TestRespondOCSPMatchesIssuerAndStatusByHashAlgorithm(t *testing.T) {
+	issuerPEM := issuerTestCertificatePEM(t, "issuer")
 	ctx := context.Background()
 	repo := store.NewMemoryStore()
 	coreClient := &fakeIssuer{
 		issuerOCSPInfos: map[string]corecli.OCSPIssuerInfo{
-			"issuer-cert-pem": {
+			issuerPEM: {
 				IssuerNameHash: "sha256-name-hash",
 				IssuerKeyHash:  "sha256-key-hash",
 				HashAlgorithm:  "sha256",
@@ -2318,7 +2330,7 @@ func TestRespondOCSPMatchesIssuerAndStatusByHashAlgorithm(t *testing.T) {
 	issuer, err := service.CreateIssuer(ctx, "admin", CreateIssuerRequest{
 		Name:           "intermediate-ca",
 		Kind:           domain.IssuerIntermediateCA,
-		CertificatePEM: "issuer-cert-pem",
+		CertificatePEM: issuerPEM,
 		KeyRef:         "issuer-key-ref",
 	})
 	if err != nil {
@@ -2490,7 +2502,7 @@ func TestProductionPolicyRejectsCertificateForIncompleteIdentity(t *testing.T) {
 	issuer, err := service.CreateIssuer(ctx, "admin", CreateIssuerRequest{
 		Name:           "intermediate-ca",
 		Kind:           domain.IssuerIntermediateCA,
-		CertificatePEM: "issuer-cert-pem",
+		CertificatePEM: issuerTestCertificatePEM(t, "issuer"),
 		KeyRef:         "issuer-key-ref",
 	})
 	if err != nil {
@@ -2524,7 +2536,7 @@ func TestCreateIssuerRejectsInvalidRequest(t *testing.T) {
 	valid := CreateIssuerRequest{
 		Name:           "intermediate-ca",
 		Kind:           domain.IssuerIntermediateCA,
-		CertificatePEM: "issuer-cert-pem",
+		CertificatePEM: issuerTestCertificatePEM(t, "issuer"),
 		KeyRef:         "issuer-key-ref",
 	}
 	tests := []struct {
@@ -2557,6 +2569,91 @@ func TestCreateIssuerRejectsInvalidRequest(t *testing.T) {
 	}
 }
 
+func TestCreateIssuerSubjectKeyIdentifier(t *testing.T) {
+	skiOID := asn1.ObjectIdentifier{2, 5, 29, 14}
+	validSKI := pkix.Extension{Id: skiOID, Value: []byte{0x04, 0x03, 0x01, 0x02, 0x03}}
+	tests := []struct {
+		name                string
+		extensions          []pkix.Extension
+		wantValid           bool
+		withoutAutomaticSKI bool
+		pemPrefix           string
+	}{
+		{name: "valid custom identifier", extensions: []pkix.Extension{validSKI}, wantValid: true},
+		// Set the CA basic constraint explicitly so Go does not generate an SKI for this case.
+		{name: "absent", withoutAutomaticSKI: true, extensions: []pkix.Extension{{Id: asn1.ObjectIdentifier{2, 5, 29, 19}, Critical: true, Value: []byte{0x30, 0x03, 0x01, 0x01, 0xff}}}},
+		{name: "empty extension value", extensions: []pkix.Extension{{Id: skiOID}}},
+		{name: "empty identifier", extensions: []pkix.Extension{{Id: skiOID, Value: []byte{0x04, 0x00}}}},
+		{name: "truncated identifier", extensions: []pkix.Extension{{Id: skiOID, Value: []byte{0x04, 0x02, 0x01}}}},
+		{name: "wrong DER tag", extensions: []pkix.Extension{{Id: skiOID, Value: []byte{0x02, 0x01, 0x01}}}},
+		{name: "trailing DER data", extensions: []pkix.Extension{{Id: skiOID, Value: []byte{0x04, 0x01, 0x01, 0x05, 0x00}}}},
+		{name: "duplicate", extensions: []pkix.Extension{validSKI, validSKI}},
+		{name: "incomplete first PEM block", extensions: []pkix.Extension{validSKI}, pemPrefix: "-----BEGIN CERTIFICATE-----\n"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			ctx := context.Background()
+			repo := store.NewMemoryStore()
+			service := New(repo, &fakeIssuer{}, fixedClock{}, &fakeIDGenerator{})
+			certificatePEM := tt.pemPrefix + signIssuerTestCertificate(t, &x509.Certificate{
+				BasicConstraintsValid: true,
+				IsCA:                  !tt.withoutAutomaticSKI,
+				KeyUsage:              x509.KeyUsageCertSign | x509.KeyUsageCRLSign,
+				ExtraExtensions:       tt.extensions,
+			})
+
+			issuer, err := service.CreateIssuer(ctx, "admin", CreateIssuerRequest{
+				Name:           "test-ca",
+				Kind:           domain.IssuerRootCA,
+				CertificatePEM: certificatePEM,
+				KeyRef:         "issuer-key-ref",
+			})
+			if tt.wantValid {
+				if err != nil || issuer.CertificatePEM != certificatePEM {
+					t.Fatalf("CreateIssuer did not preserve the valid certificate: %v", err)
+				}
+				return
+			}
+			if !errors.Is(err, domain.ErrInvalidRequest) {
+				t.Errorf("CreateIssuer error = %v, want ErrInvalidRequest", err)
+			}
+			issuers, err := repo.ListIssuers(ctx)
+			if err != nil || len(issuers) != 0 {
+				t.Errorf("ListIssuers returned %d issuers and error %v after rejected admission", len(issuers), err)
+			}
+			if events := mustListAuditEvents(t, service, ctx); len(events) != 0 {
+				t.Errorf("found %d audit events after rejected admission", len(events))
+			}
+		})
+	}
+}
+
+func issuerTestCertificatePEM(t *testing.T, name string) string {
+	t.Helper()
+	return signIssuerTestCertificate(t, &x509.Certificate{
+		Subject:               pkix.Name{CommonName: name},
+		BasicConstraintsValid: true,
+		IsCA:                  true,
+		KeyUsage:              x509.KeyUsageCertSign | x509.KeyUsageCRLSign,
+	})
+}
+
+func signIssuerTestCertificate(t *testing.T, template *x509.Certificate) string {
+	t.Helper()
+	publicKey, privateKey, err := ed25519.GenerateKey(rand.Reader)
+	if err != nil {
+		t.Fatal(err)
+	}
+	template.SerialNumber = big.NewInt(1)
+	template.NotBefore = time.Date(2026, time.January, 1, 0, 0, 0, 0, time.UTC)
+	template.NotAfter = template.NotBefore.AddDate(1, 0, 0)
+	der, err := x509.CreateCertificate(rand.Reader, template, template, publicKey, privateKey)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return string(pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: der}))
+}
+
 func TestCreateIssuerProductionPolicyRejectsFileKey(t *testing.T) {
 	ctx := context.Background()
 	service := New(
@@ -2570,7 +2667,7 @@ func TestCreateIssuerProductionPolicyRejectsFileKey(t *testing.T) {
 	_, err := service.CreateIssuer(ctx, "admin", CreateIssuerRequest{
 		Name:           "intermediate-ca",
 		Kind:           domain.IssuerIntermediateCA,
-		CertificatePEM: "issuer-cert-pem",
+		CertificatePEM: issuerTestCertificatePEM(t, "issuer"),
 		KeyRef:         "file:/var/lib/anopki/issuer.key",
 	})
 	if !errors.Is(err, domain.ErrInvalidRequest) {
@@ -2630,7 +2727,7 @@ func TestCreateIssuerRecordsTrustDistributionMetadata(t *testing.T) {
 	root, err := service.CreateIssuer(ctx, "admin", CreateIssuerRequest{
 		Name:           "root-ca",
 		Kind:           domain.IssuerRootCA,
-		CertificatePEM: "root-cert-pem",
+		CertificatePEM: issuerTestCertificatePEM(t, "root"),
 		KeyRef:         "root-key-ref",
 		TrustAnchor:    true,
 	})
@@ -2642,7 +2739,7 @@ func TestCreateIssuerRecordsTrustDistributionMetadata(t *testing.T) {
 		Name:                  "intermediate-ca",
 		Kind:                  domain.IssuerIntermediateCA,
 		ParentIssuerID:        root.ID,
-		CertificatePEM:        "intermediate-cert-pem",
+		CertificatePEM:        issuerTestCertificatePEM(t, "intermediate"),
 		KeyRef:                "intermediate-key-ref",
 		AIAURL:                "https://pki.example.test/issuers/intermediate-ca.pem",
 		CRLDistributionPoints: []string{"https://pki.example.test/crl/intermediate-ca.pem"},
@@ -2667,7 +2764,7 @@ func TestCreateIssuerRejectsInvalidParent(t *testing.T) {
 	root, err := service.CreateIssuer(ctx, "admin", CreateIssuerRequest{
 		Name:           "root-ca",
 		Kind:           domain.IssuerRootCA,
-		CertificatePEM: "root-cert-pem",
+		CertificatePEM: issuerTestCertificatePEM(t, "root"),
 		KeyRef:         "root-key-ref",
 	})
 	if err != nil {
@@ -2678,7 +2775,7 @@ func TestCreateIssuerRejectsInvalidParent(t *testing.T) {
 		Name:           "bad-root",
 		Kind:           domain.IssuerRootCA,
 		ParentIssuerID: root.ID,
-		CertificatePEM: "bad-root-cert-pem",
+		CertificatePEM: issuerTestCertificatePEM(t, "bad-root"),
 		KeyRef:         "bad-root-key-ref",
 	})
 	if !errors.Is(err, domain.ErrInvalidRequest) {
@@ -2689,7 +2786,7 @@ func TestCreateIssuerRejectsInvalidParent(t *testing.T) {
 		Name:           "missing-parent",
 		Kind:           domain.IssuerIntermediateCA,
 		ParentIssuerID: "missing",
-		CertificatePEM: "intermediate-cert-pem",
+		CertificatePEM: issuerTestCertificatePEM(t, "intermediate"),
 		KeyRef:         "intermediate-key-ref",
 	})
 	if !errors.Is(err, domain.ErrIssuerNotFound) {
@@ -2708,7 +2805,7 @@ func TestIssuerChainAndTrustAnchors(t *testing.T) {
 	root, err := service.CreateIssuer(ctx, "admin", CreateIssuerRequest{
 		Name:           "root-ca",
 		Kind:           domain.IssuerRootCA,
-		CertificatePEM: "root-cert-pem",
+		CertificatePEM: issuerTestCertificatePEM(t, "root"),
 		KeyRef:         "root-key-ref",
 		TrustAnchor:    true,
 	})
@@ -2719,7 +2816,7 @@ func TestIssuerChainAndTrustAnchors(t *testing.T) {
 		Name:           "intermediate-ca",
 		Kind:           domain.IssuerIntermediateCA,
 		ParentIssuerID: root.ID,
-		CertificatePEM: "intermediate-cert-pem",
+		CertificatePEM: issuerTestCertificatePEM(t, "intermediate"),
 		KeyRef:         "intermediate-key-ref",
 	})
 	if err != nil {
@@ -2754,7 +2851,7 @@ func TestCreateCertificateProfile(t *testing.T) {
 	issuer, err := service.CreateIssuer(ctx, "admin", CreateIssuerRequest{
 		Name:           "intermediate-ca",
 		Kind:           domain.IssuerIntermediateCA,
-		CertificatePEM: "issuer-cert-pem",
+		CertificatePEM: issuerTestCertificatePEM(t, "issuer"),
 		KeyRef:         "issuer-key-ref",
 	})
 	if err != nil {
@@ -2829,7 +2926,7 @@ func TestCreateCertificateProfileRejectsInvalidRequest(t *testing.T) {
 	issuer, err := service.CreateIssuer(ctx, "admin", CreateIssuerRequest{
 		Name:           "intermediate-ca",
 		Kind:           domain.IssuerIntermediateCA,
-		CertificatePEM: "issuer-cert-pem",
+		CertificatePEM: issuerTestCertificatePEM(t, "issuer"),
 		KeyRef:         "issuer-key-ref",
 	})
 	if err != nil {
@@ -2923,7 +3020,7 @@ func TestCreateCertificateProfileEnforcesPublicTLSValidityCeiling(t *testing.T) 
 			issuer, err := service.CreateIssuer(ctx, "admin", CreateIssuerRequest{
 				Name:           "intermediate-ca",
 				Kind:           domain.IssuerIntermediateCA,
-				CertificatePEM: "issuer-cert-pem",
+				CertificatePEM: issuerTestCertificatePEM(t, "issuer"),
 				KeyRef:         "issuer-key-ref",
 			})
 			if err != nil {
@@ -2959,7 +3056,7 @@ func TestCreateCertificateProfileUsesConfiguredPublicTLSValidityCeiling(t *testi
 	issuer, err := service.CreateIssuer(ctx, "admin", CreateIssuerRequest{
 		Name:           "intermediate-ca",
 		Kind:           domain.IssuerIntermediateCA,
-		CertificatePEM: "issuer-cert-pem",
+		CertificatePEM: issuerTestCertificatePEM(t, "issuer"),
 		KeyRef:         "issuer-key-ref",
 	})
 	if err != nil {
@@ -3004,7 +3101,7 @@ func TestCreateEnrollmentRejectsInvalidRequest(t *testing.T) {
 			issuer, err := service.CreateIssuer(ctx, "admin", CreateIssuerRequest{
 				Name:           "intermediate-ca",
 				Kind:           domain.IssuerIntermediateCA,
-				CertificatePEM: "issuer-cert-pem",
+				CertificatePEM: issuerTestCertificatePEM(t, "issuer"),
 				KeyRef:         "issuer-key-ref",
 			})
 			if err != nil {
@@ -3106,7 +3203,7 @@ func TestCreateEnrollmentStoresCSRSANs(t *testing.T) {
 	issuer, err := service.CreateIssuer(ctx, "admin", CreateIssuerRequest{
 		Name:           "intermediate-ca",
 		Kind:           domain.IssuerIntermediateCA,
-		CertificatePEM: "issuer-cert-pem",
+		CertificatePEM: issuerTestCertificatePEM(t, "issuer"),
 		KeyRef:         "issuer-key-ref",
 	})
 	if err != nil {
@@ -3158,7 +3255,7 @@ func TestCreateEnrollmentRejectsSANMismatch(t *testing.T) {
 	issuer, err := service.CreateIssuer(ctx, "admin", CreateIssuerRequest{
 		Name:           "intermediate-ca",
 		Kind:           domain.IssuerIntermediateCA,
-		CertificatePEM: "issuer-cert-pem",
+		CertificatePEM: issuerTestCertificatePEM(t, "issuer"),
 		KeyRef:         "issuer-key-ref",
 	})
 	if err != nil {
@@ -3233,7 +3330,7 @@ func TestCreateEnrollmentEnforcesIdentitySANPolicy(t *testing.T) {
 			issuer, err := service.CreateIssuer(ctx, "admin", CreateIssuerRequest{
 				Name:           "intermediate-ca",
 				Kind:           domain.IssuerIntermediateCA,
-				CertificatePEM: "issuer-cert-pem",
+				CertificatePEM: issuerTestCertificatePEM(t, "issuer"),
 				KeyRef:         "issuer-key-ref",
 			})
 			if err != nil {
@@ -3605,7 +3702,7 @@ func TestCreateCertificateProfileRejectsUnsupportedAlgorithmPolicy(t *testing.T)
 	issuer, err := service.CreateIssuer(ctx, "admin", CreateIssuerRequest{
 		Name:           "intermediate-ca",
 		Kind:           domain.IssuerIntermediateCA,
-		CertificatePEM: "issuer-cert-pem",
+		CertificatePEM: issuerTestCertificatePEM(t, "issuer"),
 		KeyRef:         "issuer-key-ref",
 	})
 	if err != nil {
@@ -3659,7 +3756,7 @@ func TestIssueCertificateEnforcesIdentitySANPolicyBeforeSigning(t *testing.T) {
 	issuer, err := service.CreateIssuer(ctx, "admin", CreateIssuerRequest{
 		Name:           "intermediate-ca",
 		Kind:           domain.IssuerIntermediateCA,
-		CertificatePEM: "issuer-cert-pem",
+		CertificatePEM: issuerTestCertificatePEM(t, "issuer"),
 		KeyRef:         "issuer-key-ref",
 	})
 	if err != nil {
@@ -4120,7 +4217,7 @@ func TestRenewCertificateEnforcesIdentitySANPolicy(t *testing.T) {
 	issuer, err := service.CreateIssuer(ctx, "admin", CreateIssuerRequest{
 		Name:           "intermediate-ca",
 		Kind:           domain.IssuerIntermediateCA,
-		CertificatePEM: "issuer-cert-pem",
+		CertificatePEM: issuerTestCertificatePEM(t, "issuer"),
 		KeyRef:         "issuer-key-ref",
 	})
 	if err != nil {
@@ -4711,7 +4808,7 @@ func TestCreateACMEOrderEnforcesIdentitySANPolicyBeforeAuthorization(t *testing.
 	issuer, err := service.CreateIssuer(ctx, "admin", CreateIssuerRequest{
 		Name:           "intermediate-ca",
 		Kind:           domain.IssuerIntermediateCA,
-		CertificatePEM: "issuer-cert-pem",
+		CertificatePEM: issuerTestCertificatePEM(t, "issuer"),
 		KeyRef:         "issuer-key-ref",
 	})
 	if err != nil {
@@ -5925,7 +6022,7 @@ func createPendingEnrollment(t *testing.T, ctx context.Context, service *Service
 	issuer, err := service.CreateIssuer(ctx, "admin", CreateIssuerRequest{
 		Name:           "intermediate-ca",
 		Kind:           domain.IssuerIntermediateCA,
-		CertificatePEM: "issuer-cert-pem",
+		CertificatePEM: issuerTestCertificatePEM(t, "issuer"),
 		KeyRef:         "issuer-key-ref",
 	})
 	if err != nil {
@@ -5982,7 +6079,7 @@ func createProfilePolicyFixtureWithProfileMutation(t *testing.T, ctx context.Con
 	issuer, err := service.CreateIssuer(ctx, "admin", CreateIssuerRequest{
 		Name:           "intermediate-ca",
 		Kind:           domain.IssuerIntermediateCA,
-		CertificatePEM: "issuer-cert-pem",
+		CertificatePEM: issuerTestCertificatePEM(t, "issuer"),
 		KeyRef:         "issuer-key-ref",
 	})
 	if err != nil {
@@ -6420,6 +6517,8 @@ func TestEnsureAPIKeyRejectsExistingKeyWithoutOperatorScope(t *testing.T) {
 }
 
 func TestCertificateProfileIssuerRolloverAndRollbackPreservesOverlap(t *testing.T) {
+	oldIssuerPEM := issuerTestCertificatePEM(t, "old")
+	newIssuerPEM := issuerTestCertificatePEM(t, "new")
 	ctx := context.Background()
 	repo := store.NewMemoryStore()
 	coreClient := &fakeIssuer{crlResult: corecli.GenerateCRLResult{CRLPEM: "crl-pem"}}
@@ -6427,21 +6526,21 @@ func TestCertificateProfileIssuerRolloverAndRollbackPreservesOverlap(t *testing.
 	service := New(repo, coreClient, clock, &fakeIDGenerator{})
 
 	root, err := service.CreateIssuer(ctx, "admin", CreateIssuerRequest{
-		Name: "root", Kind: domain.IssuerRootCA, CertificatePEM: "root-cert", KeyRef: "root-key", TrustAnchor: true,
+		Name: "root", Kind: domain.IssuerRootCA, CertificatePEM: issuerTestCertificatePEM(t, "root"), KeyRef: "root-key", TrustAnchor: true,
 	})
 	if err != nil {
 		t.Fatalf("CreateIssuer root returned error: %v", err)
 	}
 	oldIssuer, err := service.CreateIssuer(ctx, "admin", CreateIssuerRequest{
 		Name: "intermediate-old", Kind: domain.IssuerIntermediateCA, ParentIssuerID: root.ID,
-		CertificatePEM: "old-cert", KeyRef: "old-key", CRLDistributionPoints: []string{"https://pki.example.test/old.crl"},
+		CertificatePEM: oldIssuerPEM, KeyRef: "old-key", CRLDistributionPoints: []string{"https://pki.example.test/old.crl"},
 	})
 	if err != nil {
 		t.Fatalf("CreateIssuer old returned error: %v", err)
 	}
 	newIssuer, err := service.CreateIssuer(ctx, "admin", CreateIssuerRequest{
 		Name: "intermediate-new", Kind: domain.IssuerIntermediateCA, ParentIssuerID: root.ID,
-		CertificatePEM: "new-cert", KeyRef: "new-key", CRLDistributionPoints: []string{"https://pki.example.test/new.crl"},
+		CertificatePEM: newIssuerPEM, KeyRef: "new-key", CRLDistributionPoints: []string{"https://pki.example.test/new.crl"},
 	})
 	if err != nil {
 		t.Fatalf("CreateIssuer new returned error: %v", err)
@@ -6478,7 +6577,7 @@ func TestCertificateProfileIssuerRolloverAndRollbackPreservesOverlap(t *testing.
 	}
 
 	oldCertificate := issue(oldIssuer.ID, "csr-old")
-	if got := coreClient.requests[len(coreClient.requests)-1]; got.IssuerCertificatePEM != "old-cert" || got.IssuerKeyRef != "old-key" {
+	if got := coreClient.requests[len(coreClient.requests)-1]; got.IssuerCertificatePEM != oldIssuerPEM || got.IssuerKeyRef != "old-key" {
 		t.Fatalf("old issuer request = %#v", got)
 	}
 
@@ -6494,7 +6593,7 @@ func TestCertificateProfileIssuerRolloverAndRollbackPreservesOverlap(t *testing.
 	}
 
 	_ = issue(newIssuer.ID, "csr-new")
-	if got := coreClient.requests[len(coreClient.requests)-1]; got.IssuerCertificatePEM != "new-cert" || got.IssuerKeyRef != "new-key" {
+	if got := coreClient.requests[len(coreClient.requests)-1]; got.IssuerCertificatePEM != newIssuerPEM || got.IssuerKeyRef != "new-key" {
 		t.Fatalf("new issuer request = %#v", got)
 	}
 
@@ -6559,11 +6658,11 @@ func TestCertificateProfileIssuerRolloverRejectsDifferentParentAndStaleRetry(t *
 	ctx := context.Background()
 	repo := store.NewMemoryStore()
 	service := New(repo, &fakeIssuer{}, fixedClock{now: time.Date(2026, time.January, 2, 3, 4, 5, 0, time.UTC)}, &fakeIDGenerator{})
-	rootA, _ := service.CreateIssuer(ctx, "admin", CreateIssuerRequest{Name: "root-a", Kind: domain.IssuerRootCA, CertificatePEM: "root-a-cert", KeyRef: "root-a-key", TrustAnchor: true})
-	rootB, _ := service.CreateIssuer(ctx, "admin", CreateIssuerRequest{Name: "root-b", Kind: domain.IssuerRootCA, CertificatePEM: "root-b-cert", KeyRef: "root-b-key", TrustAnchor: true})
-	oldIssuer, _ := service.CreateIssuer(ctx, "admin", CreateIssuerRequest{Name: "old", Kind: domain.IssuerIntermediateCA, ParentIssuerID: rootA.ID, CertificatePEM: "old-cert", KeyRef: "old-key"})
-	newIssuer, _ := service.CreateIssuer(ctx, "admin", CreateIssuerRequest{Name: "new", Kind: domain.IssuerIntermediateCA, ParentIssuerID: rootA.ID, CertificatePEM: "new-cert", KeyRef: "new-key"})
-	otherIssuer, _ := service.CreateIssuer(ctx, "admin", CreateIssuerRequest{Name: "other", Kind: domain.IssuerIntermediateCA, ParentIssuerID: rootB.ID, CertificatePEM: "other-cert", KeyRef: "other-key"})
+	rootA, _ := service.CreateIssuer(ctx, "admin", CreateIssuerRequest{Name: "root-a", Kind: domain.IssuerRootCA, CertificatePEM: issuerTestCertificatePEM(t, "root-a"), KeyRef: "root-a-key", TrustAnchor: true})
+	rootB, _ := service.CreateIssuer(ctx, "admin", CreateIssuerRequest{Name: "root-b", Kind: domain.IssuerRootCA, CertificatePEM: issuerTestCertificatePEM(t, "root-b"), KeyRef: "root-b-key", TrustAnchor: true})
+	oldIssuer, _ := service.CreateIssuer(ctx, "admin", CreateIssuerRequest{Name: "old", Kind: domain.IssuerIntermediateCA, ParentIssuerID: rootA.ID, CertificatePEM: issuerTestCertificatePEM(t, "old"), KeyRef: "old-key"})
+	newIssuer, _ := service.CreateIssuer(ctx, "admin", CreateIssuerRequest{Name: "new", Kind: domain.IssuerIntermediateCA, ParentIssuerID: rootA.ID, CertificatePEM: issuerTestCertificatePEM(t, "new"), KeyRef: "new-key"})
+	otherIssuer, _ := service.CreateIssuer(ctx, "admin", CreateIssuerRequest{Name: "other", Kind: domain.IssuerIntermediateCA, ParentIssuerID: rootB.ID, CertificatePEM: issuerTestCertificatePEM(t, "other"), KeyRef: "other-key"})
 	profile, err := service.CreateCertificateProfile(ctx, "admin", CreateCertificateProfileRequest{Name: "profile", IssuerID: oldIssuer.ID, ValidityPeriodSeconds: 3600, AllowedSignatureAlgorithms: []string{"sha256"}, BasicConstraints: domain.BasicConstraintsPolicy{Critical: true}})
 	if err != nil {
 		t.Fatalf("CreateCertificateProfile returned error: %v", err)
@@ -6614,9 +6713,9 @@ func TestCertificateProfileIssuerRolloverRollsBackWhenAuditFails(t *testing.T) {
 	boom := errors.New("audit unavailable")
 	repo := &failAuditRepository{Repository: base, action: "certificate_profile.issuer_rolled_over", err: boom}
 	service := New(repo, &fakeIssuer{}, fixedClock{now: time.Date(2026, time.January, 2, 3, 4, 5, 0, time.UTC)}, &fakeIDGenerator{})
-	root, _ := service.CreateIssuer(ctx, "admin", CreateIssuerRequest{Name: "root", Kind: domain.IssuerRootCA, CertificatePEM: "root-cert", KeyRef: "root-key", TrustAnchor: true})
-	oldIssuer, _ := service.CreateIssuer(ctx, "admin", CreateIssuerRequest{Name: "old", Kind: domain.IssuerIntermediateCA, ParentIssuerID: root.ID, CertificatePEM: "old-cert", KeyRef: "old-key"})
-	newIssuer, _ := service.CreateIssuer(ctx, "admin", CreateIssuerRequest{Name: "new", Kind: domain.IssuerIntermediateCA, ParentIssuerID: root.ID, CertificatePEM: "new-cert", KeyRef: "new-key"})
+	root, _ := service.CreateIssuer(ctx, "admin", CreateIssuerRequest{Name: "root", Kind: domain.IssuerRootCA, CertificatePEM: issuerTestCertificatePEM(t, "root"), KeyRef: "root-key", TrustAnchor: true})
+	oldIssuer, _ := service.CreateIssuer(ctx, "admin", CreateIssuerRequest{Name: "old", Kind: domain.IssuerIntermediateCA, ParentIssuerID: root.ID, CertificatePEM: issuerTestCertificatePEM(t, "old"), KeyRef: "old-key"})
+	newIssuer, _ := service.CreateIssuer(ctx, "admin", CreateIssuerRequest{Name: "new", Kind: domain.IssuerIntermediateCA, ParentIssuerID: root.ID, CertificatePEM: issuerTestCertificatePEM(t, "new"), KeyRef: "new-key"})
 	profile, err := service.CreateCertificateProfile(ctx, "admin", CreateCertificateProfileRequest{Name: "profile", IssuerID: oldIssuer.ID, ValidityPeriodSeconds: 3600, AllowedSignatureAlgorithms: []string{"sha256"}, BasicConstraints: domain.BasicConstraintsPolicy{Critical: true}})
 	if err != nil {
 		t.Fatalf("CreateCertificateProfile returned error: %v", err)

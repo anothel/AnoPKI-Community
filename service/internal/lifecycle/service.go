@@ -6,9 +6,12 @@ import (
 	"crypto/hmac"
 	"crypto/rand"
 	"crypto/sha256"
+	"crypto/x509"
+	"encoding/asn1"
 	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
+	"encoding/pem"
 	"errors"
 	"fmt"
 	"net/netip"
@@ -4463,7 +4466,42 @@ func validateCreateIssuerRequest(req CreateIssuerRequest, productionPolicy bool)
 			return domain.ErrInvalidRequest
 		}
 	}
+	if !hasValidIssuerSubjectKeyIdentifier(req.CertificatePEM) {
+		return domain.ErrInvalidRequest
+	}
 	return nil
+}
+
+func hasValidIssuerSubjectKeyIdentifier(certificatePEM string) bool {
+	block, remainder := pem.Decode([]byte(certificatePEM))
+	if block == nil || block.Type != "CERTIFICATE" {
+		return false
+	}
+	// pem.Decode can skip malformed blocks. Require the decoded certificate to be first.
+	if strings.Count(certificatePEM[:len(certificatePEM)-len(remainder)], "-----BEGIN ") != 1 {
+		return false
+	}
+	certificate, err := x509.ParseCertificate(block.Bytes)
+	if err != nil {
+		return false
+	}
+
+	skiOID := asn1.ObjectIdentifier{2, 5, 29, 14}
+	var value []byte
+	count := 0
+	for _, extension := range certificate.Extensions {
+		if extension.Id.Equal(skiOID) {
+			count++
+			value = extension.Value
+		}
+	}
+	if count != 1 {
+		return false
+	}
+
+	var identifier []byte
+	rest, err := asn1.Unmarshal(value, &identifier)
+	return err == nil && len(rest) == 0 && len(identifier) > 0
 }
 
 func validateSupportedSigningKeyRef(ref string) error {
