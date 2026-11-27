@@ -60,6 +60,8 @@ type AuthConfig struct {
 	AuthorizationTimeout time.Duration
 }
 
+// RequestAuthorizer evaluates admission synchronously and must return promptly
+// when its context is canceled.
 type RequestAuthorizer interface {
 	Authorize(context.Context, AuthorizationInput) (AuthorizationResult, error)
 }
@@ -220,13 +222,19 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 				ClientIP:             auditMetadata.ClientIP,
 				UserAgent:            auditMetadata.UserAgent,
 			})
+			// Check admission before cleanup cancels the evaluator context.
+			deadline, _ := authorizationContext.Deadline()
 			authorizationContextErr := authorizationContext.Err()
+			if authorizationContextErr == nil {
+				authorizationContextErr = r.Context().Err()
+			}
+			if authorizationContextErr == nil && !time.Now().Before(deadline) {
+				authorizationContextErr = context.DeadlineExceeded
+			}
 			cancelAuthorization()
-			r = r.WithContext(lifecycle.WithAuthorizationAuditMetadata(
-				r.Context(),
-				authorizationAuditMetadata(result, err, authorizationContextErr),
-			))
-			if err != nil || result.Outcome != AuthorizationOutcomeAllow {
+			decision := authorizationAuditMetadata(result, err, authorizationContextErr)
+			r = r.WithContext(lifecycle.WithAuthorizationAuditMetadata(r.Context(), decision))
+			if decision.Outcome != string(AuthorizationOutcomeAllow) {
 				s.writeError(rw, r, domain.ErrForbidden)
 				return
 			}
@@ -241,6 +249,9 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 }
 
 func authorizationAuditMetadata(result AuthorizationResult, err error, contextErr error) lifecycle.AuthorizationAuditMetadata {
+	if contextErr != nil {
+		err = contextErr
+	}
 	metadata := lifecycle.AuthorizationAuditMetadata{
 		DecisionID:      result.DecisionID,
 		ReasonCode:      result.ReasonCode,
@@ -248,10 +259,10 @@ func authorizationAuditMetadata(result AuthorizationResult, err error, contextEr
 		EvaluatorStatus: "ok",
 	}
 	switch {
-	case errors.Is(contextErr, context.DeadlineExceeded), errors.Is(err, context.DeadlineExceeded):
+	case errors.Is(err, context.DeadlineExceeded):
 		metadata.Outcome = "error"
 		metadata.EvaluatorStatus = "timeout"
-	case errors.Is(contextErr, context.Canceled), errors.Is(err, context.Canceled):
+	case errors.Is(err, context.Canceled):
 		metadata.Outcome = "error"
 		metadata.EvaluatorStatus = "canceled"
 	case err != nil:

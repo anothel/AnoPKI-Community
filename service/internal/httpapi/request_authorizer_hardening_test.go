@@ -11,6 +11,7 @@ import (
 	"strings"
 	"sync/atomic"
 	"testing"
+	"testing/synctest"
 	"time"
 
 	"github.com/anothel/anopki/service/internal/domain"
@@ -110,6 +111,57 @@ func TestRequestAuthorizerTimeoutFailsClosed(t *testing.T) {
 	if len(identities) != 0 {
 		t.Fatalf("identity count = %d, want 0", len(identities))
 	}
+}
+
+func TestRequestAuthorizerAdmissionOrdering(t *testing.T) {
+	api := newTestAPI(t)
+	synctest.Test(t, func(t *testing.T) {
+		parent, cancel := context.WithCancel(context.Background())
+		defer cancel()
+		evaluating := make(chan struct{})
+		release := make(chan struct{})
+		var evaluatorContext context.Context
+		authorizer := hardeningAuthorizerFunc(func(ctx context.Context, _ AuthorizationInput) (AuthorizationResult, error) {
+			evaluatorContext = ctx
+			close(evaluating)
+			<-release
+			return AuthorizationResult{Outcome: AuthorizationOutcomeAllow}, nil
+		})
+		server := NewWithAuthorizer(api.service, AuthConfig{Mode: AuthModeDev}, ACMEConfig{}, authorizer)
+		handlerCalled := false
+		server.mux.HandleFunc("GET /admission-test", func(w http.ResponseWriter, r *http.Request) {
+			handlerCalled = true
+			if err := evaluatorContext.Err(); !errors.Is(err, context.Canceled) {
+				t.Errorf("evaluator context at handler entry = %v, want canceled", err)
+			}
+			if err := r.Context().Err(); err != nil {
+				t.Errorf("admitted handler context: %v", err)
+			}
+			if _, ok := r.Context().Deadline(); ok {
+				t.Error("admitted handler inherited the evaluator deadline")
+			}
+			cancel()
+			if err := r.Context().Err(); !errors.Is(err, context.Canceled) {
+				t.Errorf("handler context after parent cancellation = %v, want canceled", err)
+			}
+			w.WriteHeader(http.StatusNoContent)
+		})
+		req := httptest.NewRequestWithContext(parent, http.MethodGet, "/admission-test", nil)
+		res := httptest.NewRecorder()
+		go server.ServeHTTP(res, req)
+
+		<-evaluating
+		synctest.Wait()
+		if handlerCalled {
+			t.Error("handler started before evaluation returned")
+		}
+		close(release)
+		synctest.Wait()
+		if !handlerCalled {
+			t.Error("handler was not reached after timely allow")
+		}
+		assertStatus(t, res.Code, http.StatusNoContent)
+	})
 }
 
 func TestRequestAuthorizerRunsAfterLegacyScopeAndSkipsPublicRoutes(t *testing.T) {
